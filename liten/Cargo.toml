@@ -1,0 +1,11 @@
+[package]
+name = "liten"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+crossbeam = "0.8.4"
+futures-task = "0.3.31"
+static_assertions = "1.1.0"
+liten-macros.path = "../liten-macros"
+oneshot = "0.1.9"
