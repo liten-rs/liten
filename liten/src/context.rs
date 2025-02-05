@@ -1,39 +1,61 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{
+  atomic::{AtomicBool, Ordering},
+  Arc,
+};
 
-use crossbeam::queue::SegQueue;
+use crossbeam::{atomic::AtomicCell, channel::Sender};
+use once_cell::sync::OnceCell;
 
-use crate::{enter::Enter, task::Task};
+use crate::task::Task;
 
+static CONTEXT: Context = Context::new();
 pub struct Context {
-  _enter: Enter,
-  task_queue: SegQueue<Arc<Task>>,
+  current_task_id: AtomicCell<usize>,
+  current_reactor_id: AtomicCell<usize>,
+  has_entered: AtomicBool,
+  sender: OnceCell<Sender<Arc<Task>>>,
 }
 
 static_assertions::assert_impl_all!(Context: Send);
 
-static CONTEXT: Mutex<Context> = Mutex::new(Context::new());
-
 impl Context {
   const fn new() -> Context {
-    Context { _enter: Enter::NotEntered, task_queue: SegQueue::new() }
+    Context {
+      has_entered: AtomicBool::new(false),
+      sender: OnceCell::new(),
+      current_task_id: AtomicCell::new(0),
+      current_reactor_id: AtomicCell::new(0),
+    }
   }
 
-  pub fn push_task(&mut self, task: Arc<Task>) {
-    self.task_queue.push(task)
+  /// Returns the previous value
+  pub fn task_id_inc(&self) -> usize {
+    self.current_task_id.fetch_add(1)
   }
 
-  pub fn pop_task(&mut self) -> Option<Arc<Task>> {
-    self.task_queue.pop()
+  pub fn mio_token_id_inc(&self) -> usize {
+    self.current_reactor_id.fetch_add(1)
+  }
+
+  pub fn push_task(&self, task: Arc<Task>) {
+    self.sender.get().unwrap().send(task).unwrap();
   }
 }
 
-pub fn get_context_mut() -> MutexGuard<'static, Context> {
-  let mut _lock = CONTEXT.lock().unwrap();
-  _lock
+pub fn get_context() -> &'static Context {
+  &CONTEXT
 }
 
-pub fn enter() -> ContextDropper {
-  get_context_mut()._enter = Enter::Entered;
+pub fn runtime_enter(sender: Sender<Arc<Task>>) -> ContextDropper {
+  if CONTEXT.has_entered.load(Ordering::Relaxed) {
+    panic!("crate 'liten' user error: can't nest 'liten::runtime::Runtime'");
+  }
+
+  CONTEXT.has_entered.store(true, Ordering::Relaxed);
+  let ctx = get_context();
+  ctx.sender.set(sender).unwrap();
+  ctx.has_entered.store(true, Ordering::Relaxed);
+
   ContextDropper
 }
 
@@ -41,6 +63,6 @@ pub struct ContextDropper;
 
 impl Drop for ContextDropper {
   fn drop(&mut self) {
-    get_context_mut()._enter = Enter::NotEntered;
+    get_context().has_entered.store(false, Ordering::Relaxed);
   }
 }

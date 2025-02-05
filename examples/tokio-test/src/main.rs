@@ -1,7 +1,6 @@
 use std::{
   error::Error,
   future::Future,
-  io::Read,
   pin::Pin,
   sync::{
     atomic::{AtomicBool, Ordering},
@@ -11,8 +10,7 @@ use std::{
   thread,
   time::{Duration, Instant},
 };
-
-use liten::{net::TcpListener, task};
+use tokio::task;
 
 pub struct Sleep {
   deadline: Instant,
@@ -41,7 +39,7 @@ impl Future for Sleep {
     if !self.waker_registered.swap(true, Ordering::SeqCst) {
       let waker = cx.waker().clone();
       let deadline = self.deadline;
-      task::spawn(async move {
+      thread::spawn(move || {
         let now = Instant::now();
         if deadline > now {
           thread::sleep(deadline - now);
@@ -54,29 +52,21 @@ impl Future for Sleep {
   }
 }
 
-#[liten::main]
+#[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-  let tcp = TcpListener::bind("0.0.0.0:9000").unwrap();
-  loop {
-    let (mut stream, _) = tcp.accept().await.unwrap();
+  task::spawn(async move {
+    async {}.await;
+    println!("1st handler");
+    async {}.await;
 
-    task::spawn(async move {
-      let mut vec = Vec::default();
-      stream.read_to_end(&mut vec).unwrap();
-      println!("{vec:?}");
-    });
-  }
-  //task::spawn(async move {
-  //  println!("nice2");
-  //});
-  //task::spawn(async move {
-  //  async {}.await;
-  //  println!("nice");
-  //  async {}.await;
-  //});
-  //let handle_2 = task::spawn(async move { "from the await" });
-  //
-  //println!("2st handler {}", handle_2.await);
+    async {}.await;
+    "1st nice"
+  });
+  let handle_2 = task::spawn(async move { "from the await" });
 
-  //println!("3: sync print");
+  println!("2st handler {}", handle_2.await.unwrap());
+
+  println!("3: sync print");
+
+  Ok(())
 }

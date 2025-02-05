@@ -4,27 +4,35 @@ use std::{
   sync::{Arc, Mutex},
 };
 
-use futures_task::ArcWake;
+use oneshot::Sender;
 
 use crate::context;
 
 pub struct Task {
+  id: usize,
   pub future: Mutex<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
 static_assertions::assert_impl_all!(Task: Send);
 
-impl ArcWake for Task {
-  fn wake_by_ref(arc_self: &std::sync::Arc<Self>) {
-    context::get_context_mut().push_task(arc_self.clone())
-  }
-}
-
 impl Task {
-  fn new<F>(future: F) -> Task
+  fn new<F>(future: F, sender: Sender<F::Output>) -> Task
   where
-    F: Future<Output = ()> + Send + 'static,
+    F: Future + Send + 'static,
+    F::Output: Send,
   {
-    Self { future: Mutex::new(Box::pin(future)) }
+    let context = context::get_context();
+    let id = context.task_id_inc();
+
+    let future = Box::pin(async move {
+      if sender.send(future.await).is_err() {
+        // Ignore, task handler has been dropped in this case.
+      }
+    });
+    Self { id, future: Mutex::new(Box::pin(future)) }
+  }
+
+  pub fn id(&self) -> usize {
+    self.id
   }
 }
 
@@ -34,16 +42,8 @@ where
   F::Output: Send,
 {
   let (write, read) = oneshot::channel::<F::Output>();
-
-  let fut = Box::pin(async move {
-    let task_return = fut.await;
-    if write.send(task_return).is_err() {
-      // Ignore, task handler has been dropped in this case.
-    }
-  });
-
-  let task = Task::new(fut);
-  context::get_context_mut().push_task(Arc::new(task));
+  let task = Task::new(fut, write);
+  context::get_context().push_task(Arc::new(task));
 
   TaskHandle(read)
 }
@@ -60,7 +60,7 @@ where
     Box::pin(async move {
       match self.0.await {
         Ok(value) => value,
-        Err(err) => unreachable!(), // I think?
+        Err(_) => unreachable!(), // I think?
       }
     })
   }
