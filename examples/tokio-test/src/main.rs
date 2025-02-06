@@ -54,11 +54,11 @@ impl Future for Sleep {
   }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
   let mut tcp = TcpStream::connect("localhost:9000").unwrap();
 
   tcp.write(b"teting").unwrap();
+  tcp.flush().unwrap();
   Ok(())
   //task::spawn(async move {
   //  async {}.await;

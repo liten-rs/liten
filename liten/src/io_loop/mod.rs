@@ -5,15 +5,14 @@ pub use registration::IoRegistration;
 use std::{
   collections::{hash_map::Entry, HashMap},
   io,
-  sync::{Arc, LazyLock, Mutex, OnceLock},
+  sync::{LazyLock, Mutex},
   task::{Context, Poll, Waker},
   thread,
 };
 
-use mio::{event::Source, Interest, Token};
+use mio::{Interest, Token};
 
-use crate::context;
-
+#[derive(Debug)]
 pub struct IOEventLoop {
   registry: mio::Registry,
   statuses: Mutex<HashMap<Token, Status>>,
@@ -26,7 +25,7 @@ enum Status {
 
 impl std::fmt::Debug for Status {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.write_str("Status::");
+    f.write_str("Status::")?;
 
     match self {
       Status::Happened => f.write_str("Happened"),
@@ -91,9 +90,16 @@ impl IOEventLoop {
   ///
   /// If token doesn't exist in the registry:
   ///   Token gets inserted with its waker.
-  /// If it does:
-  ///   If Status::Happened: Gets removed and polls ready
-  ///   if Status::Waker(waker): inserts with waker.
+  ///
+  /// # Outputs:
+  /// ## Waker from cx hasn't been registered before:
+  /// Registeres it and returns [Poll::Pending]
+  ///
+  /// ## Future waker has been registered:
+  ///
+  /// If event hasn't happened yet: return [Poll::Pending]
+  ///
+  /// If event has happened: remove entry and return [Poll::Ready]
   pub fn poll(&self, token: Token, cx: &mut Context) -> Poll<io::Result<()>> {
     let mut guard = self.statuses.lock().unwrap();
 
@@ -113,6 +119,7 @@ impl IOEventLoop {
           }
           Status::Happened => {
             occupied.remove();
+
             Poll::Ready(Ok(()))
           }
         }

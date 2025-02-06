@@ -1,15 +1,8 @@
-use std::io;
-
+use super::IOEventLoop;
+use crate::context;
 use mio::{event::Source, Interest, Token};
 
-use crate::context;
-
-use super::IOEventLoop;
-
-pub struct IoRegistration<S>
-where
-  S: Source,
-{
+pub struct IoRegistration<S: Source> {
   source: S,
   token: Token,
 }
@@ -20,7 +13,7 @@ where
 {
   pub fn new(mut source: S, interest: Interest) -> IoRegistration<S> {
     let token = Token(context::get_context().task_id_inc());
-    IOEventLoop::get().register(&mut source, token.clone(), Interest::READABLE);
+    IOEventLoop::get().register(&mut source, token.clone(), interest);
     Self { source, token }
   }
 
@@ -33,32 +26,32 @@ where
   }
 }
 
-impl<S> Source for IoRegistration<S>
-where
-  S: Source,
-{
-  fn register(
-    &mut self,
-    registry: &mio::Registry,
-    token: Token,
-    interests: Interest,
-  ) -> io::Result<()> {
-    self.source.register(registry, token, interests)
-  }
-
-  fn reregister(
-    &mut self,
-    registry: &mio::Registry,
-    token: Token,
-    interests: Interest,
-  ) -> io::Result<()> {
-    self.reregister(registry, token, interests)
-  }
-
-  fn deregister(&mut self, registry: &mio::Registry) -> io::Result<()> {
-    self.deregister(registry)
-  }
-}
+//impl<S> Source for IoRegistration<S>
+//where
+//  S: Source,
+//{
+//  fn register(
+//    &mut self,
+//    registry: &mio::Registry,
+//    token: Token,
+//    interests: Interest,
+//  ) -> io::Result<()> {
+//    self.source.register(registry, token, interests)
+//  }
+//
+//  fn reregister(
+//    &mut self,
+//    registry: &mio::Registry,
+//    token: Token,
+//    interests: Interest,
+//  ) -> io::Result<()> {
+//    self.source.reregister(registry, token, interests)
+//  }
+//
+//  fn deregister(&mut self, registry: &mio::Registry) -> io::Result<()> {
+//    self.source.deregister(registry)
+//  }
+//}
 
 impl<S> Drop for IoRegistration<S>
 where

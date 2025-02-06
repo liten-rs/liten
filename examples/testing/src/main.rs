@@ -60,10 +60,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
   loop {
     println!("waiting");
     let (mut stream, _) = tcp.accept().await.unwrap();
-    //liten::task::spawn(async move {
-    let mut vec = Vec::default();
-    stream.read_to_end(&mut vec).await.unwrap();
-    println!("data received: {:?}", String::from_utf8(vec).unwrap());
-    //});
+    liten::task::spawn(async move {
+      let mut vec = Vec::default();
+      stream.read_to_end(&mut vec).await.unwrap();
+      println!("data received: {:?}", String::from_utf8(vec).unwrap());
+    });
   }
 }
