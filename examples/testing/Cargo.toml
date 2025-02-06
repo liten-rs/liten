@@ -1,0 +1,8 @@
+[package]
+name = "testing"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+futures-util = { version = "0.3.31", features = ["io"] }
+liten.path = "../../liten"

@@ -1,6 +1,8 @@
 use std::{
   error::Error,
   future::Future,
+  io::Write,
+  net::TcpStream,
   pin::Pin,
   sync::{
     atomic::{AtomicBool, Ordering},
@@ -54,19 +56,23 @@ impl Future for Sleep {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-  task::spawn(async move {
-    async {}.await;
-    println!("1st handler");
-    async {}.await;
+  let mut tcp = TcpStream::connect("localhost:9000").unwrap();
 
-    async {}.await;
-    "1st nice"
-  });
-  let handle_2 = task::spawn(async move { "from the await" });
-
-  println!("2st handler {}", handle_2.await.unwrap());
-
-  println!("3: sync print");
-
+  tcp.write(b"teting").unwrap();
   Ok(())
+  //task::spawn(async move {
+  //  async {}.await;
+  //  println!("1st handler");
+  //  async {}.await;
+  //
+  //  async {}.await;
+  //  "1st nice"
+  //});
+  //let handle_2 = task::spawn(async move { "from the await" });
+  //
+  //println!("2st handler {}", handle_2.await.unwrap());
+  //
+  //println!("3: sync print");
+  //
+  //Ok(())
 }

@@ -12,6 +12,7 @@ pub struct Task {
   id: usize,
   pub future: Mutex<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
+#[cfg(test)]
 static_assertions::assert_impl_all!(Task: Send);
 
 impl Task {

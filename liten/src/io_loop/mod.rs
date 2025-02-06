@@ -1,12 +1,18 @@
+mod registration;
+
+pub use registration::IoRegistration;
+
 use std::{
   collections::{hash_map::Entry, HashMap},
   io,
-  sync::{LazyLock, Mutex, OnceLock},
+  sync::{Arc, LazyLock, Mutex, OnceLock},
   task::{Context, Poll, Waker},
   thread,
 };
 
-use mio::{Interest, Token};
+use mio::{event::Source, Interest, Token};
+
+use crate::context;
 
 pub struct IOEventLoop {
   registry: mio::Registry,
@@ -72,8 +78,9 @@ impl IOEventLoop {
       for event in &events {
         let mut guard = reactor.statuses.lock().unwrap();
 
-        let previous = guard.insert(event.token(), Status::Happened);
-        if let Some(Status::Waker(waker)) = previous {
+        if let Some(Status::Waker(waker)) =
+          guard.insert(event.token(), Status::Happened)
+        {
           waker.wake()
         }
       }

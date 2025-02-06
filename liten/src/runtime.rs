@@ -21,31 +21,29 @@ impl Wake for LitenWaker {
 
 pub struct Runtime {
   task_queue: TaskQueue,
-  task_sender: Option<Sender<Arc<Task>>>,
 }
 
 impl Runtime {
   pub fn new() -> Self {
-    Runtime { task_queue: TaskQueue::new(), task_sender: None }
+    Runtime { task_queue: TaskQueue::new() }
   }
 
-  fn sender(&self) -> Sender<Arc<Task>> {
-    self.task_sender.clone().expect("internal 'liten' error: maintainer used Runtime.sender before setting it.")
-  }
+  //fn sender(&self) -> Sender<Arc<Task>> {
+  //  self.task_sender.clone().expect("internal 'liten' error: maintainer used Runtime.sender before setting it.")
+  //}
 
   pub fn block_on<F, Res>(&mut self, fut: F) -> Res
   where
     F: Future<Output = Res>,
   {
     let (sender, task_receiver) = channel::unbounded();
-    self.task_sender = Some(sender);
 
-    let _entered = context::runtime_enter(self.sender());
+    let _entered = context::runtime_enter(sender.clone());
 
     let mut main_fut = Box::pin(fut);
 
-    let (sender, receiver) = channel::unbounded();
-    let waker = Arc::new(RuntimeWaker::new(sender)).into();
+    let (runtime_sender, runtime_receiver) = channel::unbounded();
+    let waker = Arc::new(RuntimeWaker::new(runtime_sender)).into();
     let mut main_fut_context = StdContext::from_waker(&waker);
 
     let mut pinned = std::pin::pin!(main_fut);
@@ -58,31 +56,25 @@ impl Runtime {
       // Fill the newest tasks onto the task queue.
       self.task_queue.take_from_iter(task_receiver.try_iter());
 
-      if receiver.try_recv().is_ok() {
+      if runtime_receiver.try_recv().is_ok() {
         if let Poll::Ready(value) = pinned.as_mut().poll(&mut main_fut_context)
         {
           return value;
         };
       }
 
-      loop {
-        // Sort out the tasks.
-        if let Some(task) = self.task_queue.pop() {
-          let waker =
-            Arc::new(LitenWaker { task: task.clone(), sender: self.sender() })
-              .into();
-          let mut context = StdContext::from_waker(&waker);
+      // Sort out the tasks.
+      if let Some(task) = self.task_queue.pop() {
+        let waker =
+          Arc::new(LitenWaker { task: task.clone(), sender: sender.clone() })
+            .into();
+        let mut context = StdContext::from_waker(&waker);
 
-          let task_to_send = task.clone();
-          let mut task_lock = task.future.lock().unwrap();
-          if task_lock.as_mut().poll(&mut context) == Poll::Pending {
-            self.sender().send(task_to_send).unwrap();
-          };
-
-          if self.task_queue.is_empty() {
-            break;
-          }
-        }
+        let task_to_send = task.clone();
+        let mut task_lock = task.future.lock().unwrap();
+        if task_lock.as_mut().poll(&mut context) == Poll::Pending {
+          sender.send(task_to_send).unwrap();
+        };
       }
     }
   }

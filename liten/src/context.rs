@@ -1,10 +1,9 @@
 use std::sync::{
   atomic::{AtomicBool, Ordering},
-  Arc,
+  Arc, OnceLock,
 };
 
 use crossbeam::{atomic::AtomicCell, channel::Sender};
-use once_cell::sync::OnceCell;
 
 use crate::task::Task;
 
@@ -13,16 +12,17 @@ pub struct Context {
   current_task_id: AtomicCell<usize>,
   current_reactor_id: AtomicCell<usize>,
   has_entered: AtomicBool,
-  sender: OnceCell<Sender<Arc<Task>>>,
+  sender: OnceLock<Sender<Arc<Task>>>,
 }
 
+#[cfg(test)]
 static_assertions::assert_impl_all!(Context: Send);
 
 impl Context {
   const fn new() -> Context {
     Context {
       has_entered: AtomicBool::new(false),
-      sender: OnceCell::new(),
+      sender: OnceLock::new(),
       current_task_id: AtomicCell::new(0),
       current_reactor_id: AtomicCell::new(0),
     }

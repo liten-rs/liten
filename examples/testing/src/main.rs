@@ -1,7 +1,6 @@
 use std::{
   error::Error,
   future::Future,
-  io::Read,
   pin::Pin,
   sync::{
     atomic::{AtomicBool, Ordering},
@@ -12,6 +11,7 @@ use std::{
   time::{Duration, Instant},
 };
 
+use futures_util::AsyncReadExt;
 use liten::{net::TcpListener, task};
 
 pub struct Sleep {
@@ -58,25 +58,12 @@ impl Future for Sleep {
 async fn main() -> Result<(), Box<dyn Error>> {
   let tcp = TcpListener::bind("0.0.0.0:9000").unwrap();
   loop {
+    println!("waiting");
     let (mut stream, _) = tcp.accept().await.unwrap();
-
-    task::spawn(async move {
-      let mut vec = Vec::default();
-      stream.read_to_end(&mut vec).unwrap();
-      println!("{vec:?}");
-    });
+    //liten::task::spawn(async move {
+    let mut vec = Vec::default();
+    stream.read_to_end(&mut vec).await.unwrap();
+    println!("data received: {:?}", String::from_utf8(vec).unwrap());
+    //});
   }
-  //task::spawn(async move {
-  //  println!("nice2");
-  //});
-  //task::spawn(async move {
-  //  async {}.await;
-  //  println!("nice");
-  //  async {}.await;
-  //});
-  //let handle_2 = task::spawn(async move { "from the await" });
-  //
-  //println!("2st handler {}", handle_2.await);
-
-  //println!("3: sync print");
 }
