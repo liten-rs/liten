@@ -1,40 +1,42 @@
 use std::sync::{
-  atomic::{AtomicBool, Ordering},
-  Arc, OnceLock,
+  atomic::{AtomicBool, AtomicUsize, Ordering},
+  Arc, LazyLock, OnceLock,
 };
 
-use crossbeam::{atomic::AtomicCell, channel::Sender};
+use crate::{io_loop::IOEventLoop, task::Task};
+use crossbeam::channel::Sender;
 
-use crate::task::Task;
+static CONTEXT: LazyLock<Context> = LazyLock::new(|| Context {
+  has_entered: AtomicBool::new(false),
+  sender: OnceLock::new(),
+  current_task_id: AtomicUsize::new(0),
+  current_reactor_id: AtomicUsize::new(0),
+  io: IOEventLoop::init(),
+});
 
-static CONTEXT: Context = Context::new();
 pub struct Context {
-  current_task_id: AtomicCell<usize>,
-  current_reactor_id: AtomicCell<usize>,
+  current_task_id: AtomicUsize,
+  current_reactor_id: AtomicUsize,
   has_entered: AtomicBool,
   sender: OnceLock<Sender<Arc<Task>>>,
+  io: IOEventLoop,
 }
 
 #[cfg(test)]
 static_assertions::assert_impl_all!(Context: Send);
 
 impl Context {
-  const fn new() -> Context {
-    Context {
-      has_entered: AtomicBool::new(false),
-      sender: OnceLock::new(),
-      current_task_id: AtomicCell::new(0),
-      current_reactor_id: AtomicCell::new(0),
-    }
+  pub fn io(&self) -> &IOEventLoop {
+    &self.io
   }
 
   /// Returns the previous value
   pub fn task_id_inc(&self) -> usize {
-    self.current_task_id.fetch_add(1)
+    self.current_task_id.fetch_add(1, Ordering::SeqCst)
   }
 
-  pub fn mio_token_id_inc(&self) -> usize {
-    self.current_reactor_id.fetch_add(1)
+  pub fn next_registration_token(&self) -> mio::Token {
+    mio::Token(self.current_reactor_id.fetch_add(1, Ordering::SeqCst))
   }
 
   pub fn push_task(&self, task: Arc<Task>) {

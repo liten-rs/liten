@@ -13,6 +13,12 @@ pub struct LitenWaker {
   sender: Sender<Arc<Task>>,
 }
 
+impl LitenWaker {
+  fn new(task: Arc<Task>, sender: Sender<Arc<Task>>) -> Self {
+    Self { task, sender }
+  }
+}
+
 impl Wake for LitenWaker {
   fn wake(self: Arc<Self>) {
     self.sender.send(self.task.clone()).unwrap();
@@ -27,10 +33,6 @@ impl Runtime {
   pub fn new() -> Self {
     Runtime { task_queue: TaskQueue::new() }
   }
-
-  //fn sender(&self) -> Sender<Arc<Task>> {
-  //  self.task_sender.clone().expect("internal 'liten' error: maintainer used Runtime.sender before setting it.")
-  //}
 
   pub fn block_on<F, Res>(&mut self, fut: F) -> Res
   where
@@ -47,7 +49,6 @@ impl Runtime {
     let mut main_fut_context = StdContext::from_waker(&waker);
 
     let mut pinned = std::pin::pin!(main_fut);
-
     // Starts the poll so that the waker gets a change to send from the receiver.
     if let Poll::Ready(value) = pinned.as_mut().poll(&mut main_fut_context) {
       return value;
@@ -66,12 +67,11 @@ impl Runtime {
       // Sort out the tasks.
       if let Some(task) = self.task_queue.pop() {
         let waker =
-          Arc::new(LitenWaker { task: task.clone(), sender: sender.clone() })
-            .into();
+          Arc::new(LitenWaker::new(task.clone(), sender.clone())).into();
         let mut context = StdContext::from_waker(&waker);
 
         let task_to_send = task.clone();
-        let mut task_lock = task.future.lock().unwrap();
+        let mut task_lock = task.future.borrow_mut();
         if task_lock.as_mut().poll(&mut context) == Poll::Pending {
           sender.send(task_to_send).unwrap();
         };

@@ -20,8 +20,4 @@ impl TaskQueue {
   pub fn pop(&self) -> Option<Arc<Task>> {
     self.0.pop()
   }
-
-  pub fn is_empty(&self) -> bool {
-    self.0.is_empty()
-  }
 }

@@ -1,69 +1,28 @@
-use std::{
-  error::Error,
-  future::Future,
-  pin::Pin,
-  sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-  },
-  task::{Context, Poll},
-  thread,
-  time::{Duration, Instant},
-};
+use std::{error::Error, io, time::Duration};
 
-use futures_util::AsyncReadExt;
+use futures_util::{AsyncReadExt, AsyncWriteExt};
 use liten::{net::TcpListener, task};
-
-pub struct Sleep {
-  deadline: Instant,
-  // Ensure we only spawn one sleeper thread.
-  waker_registered: Arc<AtomicBool>,
-}
-
-impl Sleep {
-  pub fn new(duration: Duration) -> Self {
-    Self {
-      deadline: Instant::now() + duration,
-      waker_registered: Arc::new(AtomicBool::new(false)),
-    }
-  }
-}
-
-impl Future for Sleep {
-  type Output = ();
-
-  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-    if Instant::now() >= self.deadline {
-      return Poll::Ready(());
-    }
-
-    // Spawn a thread to sleep and wake the task if we haven't already.
-    if !self.waker_registered.swap(true, Ordering::SeqCst) {
-      let waker = cx.waker().clone();
-      let deadline = self.deadline;
-      task::spawn(async move {
-        let now = Instant::now();
-        if deadline > now {
-          thread::sleep(deadline - now);
-        }
-        waker.wake();
-      });
-    }
-
-    Poll::Pending
-  }
-}
+use tracing::Level;
 
 #[liten::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-  let tcp = TcpListener::bind("0.0.0.0:9000").unwrap();
+  tracing_subscriber::fmt().with_max_level(Level::TRACE).init();
+  let tcp = TcpListener::bind("localhost:9000")?;
   loop {
-    println!("waiting");
     let (mut stream, _) = tcp.accept().await.unwrap();
-    liten::task::spawn(async move {
-      let mut vec = Vec::default();
-      stream.read_to_end(&mut vec).await.unwrap();
-      println!("data received: {:?}", String::from_utf8(vec).unwrap());
+    task::spawn(async move {
+      let thing = {
+        let mut vec = Vec::default();
+        stream.read_to_end(&mut vec).await.unwrap();
+        tracing::info!("data received: {}", String::from_utf8(vec).unwrap());
+        stream.write_all(b"nice").await.unwrap();
+        stream.write_all(b"nice").await.unwrap();
+        stream.flush().await.unwrap();
+        stream.close().await.unwrap();
+        Ok::<(), io::Error>(())
+      };
+      println!("nice event{:#?}", &thing);
+      thing
     });
   }
 }

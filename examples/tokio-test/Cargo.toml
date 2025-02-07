@@ -4,4 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tokio = { version = "1.43.0", features = ["rt", "rt-multi-thread", "macros"] }
+tokio = { version = "1.43.0", features = ["rt", "rt-multi-thread", "macros", "net", "io-util"] }
+liten.path = "../../liten"
+futures-util = { version = "0.3.31", features = ["io"] }
+tracing-subscriber = "0.3.19"
+tracing = "0.1.41"

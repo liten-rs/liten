@@ -9,8 +9,11 @@ liten-macros.path = "../liten-macros"
 crossbeam = "0.8.4"
 oneshot = "0.1.9"
 mio = { version = "1.0.3", features = ["net", "os-poll", "os-ext"] }
-futures-io = "0.3.31"
-futures-core = "0.3.31"
+futures-io = "*"
+futures-core = "*"
+libc = "0.2.169"
+tracing = "0.1.41"
+tracing-futures = "0.2.5"
 
 [dev-dependencies]
 static_assertions = "1.1.0"

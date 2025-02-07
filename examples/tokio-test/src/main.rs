@@ -1,78 +1,49 @@
-use std::{
-  error::Error,
-  future::Future,
-  io::Write,
-  net::TcpStream,
-  pin::Pin,
-  sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-  },
-  task::{Context, Poll},
-  thread,
-  time::{Duration, Instant},
-};
-use tokio::task;
+use futures_util::{AsyncReadExt, AsyncWriteExt};
+use liten::{net::TcpStream, sync::Mutex, task};
+use std::{error::Error, sync::Arc};
+use tracing::Level;
 
-pub struct Sleep {
-  deadline: Instant,
-  // Ensure we only spawn one sleeper thread.
-  waker_registered: Arc<AtomicBool>,
-}
+#[liten::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+  tracing_subscriber::fmt().with_max_level(Level::TRACE).init();
+  let mut stream = TcpStream::connect("localhost:9000")?.await?;
 
-impl Sleep {
-  pub fn new(duration: Duration) -> Self {
-    Self {
-      deadline: Instant::now() + duration,
-      waker_registered: Arc::new(AtomicBool::new(false)),
-    }
-  }
-}
+  println!("have stream");
 
-impl Future for Sleep {
-  type Output = ();
+  stream.write_all(b"teting").await?;
+  println!("wrote");
+  stream.flush().await?;
+  stream.close().await?;
+  println!("flushed");
+  let mut vec = Vec::default();
+  stream.read_to_end(&mut vec).await?;
+  println!("read {:#?}", vec);
+  let data1 = Arc::new(Mutex::new(0));
+  let data2 = Arc::clone(&data1);
+  let data3 = Arc::clone(&data1);
+  let data4 = Arc::clone(&data1);
+  let data5 = Arc::clone(&data1);
 
-  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-    if Instant::now() >= self.deadline {
-      return Poll::Ready(());
-    }
+  task::spawn(async move {
+    let mut lock = data4.lock().await;
+    *lock += 1;
+  })
+  .await;
+  task::spawn(async move {
+    let mut lock = data3.lock().await;
+    *lock += 1;
+  });
+  task::spawn(async move {
+    let mut lock = data2.lock().await;
+    *lock += 1;
+  })
+  .await;
+  task::spawn(async move {
+    let mut lock = data1.lock().await;
+    *lock += 1;
+  });
 
-    // Spawn a thread to sleep and wake the task if we haven't already.
-    if !self.waker_registered.swap(true, Ordering::SeqCst) {
-      let waker = cx.waker().clone();
-      let deadline = self.deadline;
-      thread::spawn(move || {
-        let now = Instant::now();
-        if deadline > now {
-          thread::sleep(deadline - now);
-        }
-        waker.wake();
-      });
-    }
+  println!("nice {:#?}", *data5.lock().await);
 
-    Poll::Pending
-  }
-}
-
-fn main() -> Result<(), Box<dyn Error>> {
-  let mut tcp = TcpStream::connect("localhost:9000").unwrap();
-
-  tcp.write(b"teting").unwrap();
-  tcp.flush().unwrap();
   Ok(())
-  //task::spawn(async move {
-  //  async {}.await;
-  //  println!("1st handler");
-  //  async {}.await;
-  //
-  //  async {}.await;
-  //  "1st nice"
-  //});
-  //let handle_2 = task::spawn(async move { "from the await" });
-  //
-  //println!("2st handler {}", handle_2.await.unwrap());
-  //
-  //println!("3: sync print");
-  //
-  //Ok(())
 }

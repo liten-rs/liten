@@ -1,8 +1,11 @@
 use std::{
+  cell::RefCell,
   future::{Future, IntoFuture},
   pin::Pin,
   sync::{Arc, Mutex},
 };
+
+use tracing_futures::Instrument;
 
 use oneshot::Sender;
 
@@ -10,10 +13,13 @@ use crate::context;
 
 pub struct Task {
   id: usize,
-  pub future: Mutex<Pin<Box<dyn Future<Output = ()> + Send>>>,
+  pub future: RefCell<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
+
+unsafe impl Sync for Task {}
+
 #[cfg(test)]
-static_assertions::assert_impl_all!(Task: Send);
+static_assertions::assert_impl_all!(Task: Send, Sync);
 
 impl Task {
   fn new<F>(future: F, sender: Sender<F::Output>) -> Task
@@ -21,15 +27,15 @@ impl Task {
     F: Future + Send + 'static,
     F::Output: Send,
   {
-    let context = context::get_context();
-    let id = context.task_id_inc();
-
+    let id = context::get_context().task_id_inc();
     let future = Box::pin(async move {
-      if sender.send(future.await).is_err() {
+      let fut =
+        future.instrument(tracing::trace_span!("liten task_id: ", %id)).await;
+      if sender.send(fut).is_err() {
         // Ignore, task handler has been dropped in this case.
       }
     });
-    Self { id, future: Mutex::new(Box::pin(future)) }
+    Self { id, future: RefCell::new(future) }
   }
 
   pub fn id(&self) -> usize {
