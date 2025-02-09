@@ -5,47 +5,57 @@ pub use registration::IoRegistration;
 use std::{
   collections::{hash_map::Entry, HashMap},
   io,
-  sync::{Arc, LazyLock, Mutex},
+  sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc, LazyLock, Mutex,
+  },
   task::{Context, Poll, Waker},
   thread,
 };
 
-use mio::{Interest, Token};
+use mio::{Events, Interest, Token};
 
 use crate::context;
 
-#[derive(Debug)]
-pub struct IOEventLoop {
-  registry: mio::Registry,
-  statuses: Mutex<HashMap<Token, Waker>>,
+pub struct TokenGenerator(AtomicUsize);
+
+pub impl TokenGenerator {
+  pub fn new_wakeup() -> TokenGenerator {
+    TokenGenerator(AtomicUsize(0))
+  }
+  pub fn new() -> TokenGenerator {
+    tracing::trace!("this should only happen once io_loop_mod");
+    TokenGenerator(AtomicUsize(1)) // 0 is specialcase
+  }
+  pub fn next_token(&self) -> Token {
+    Token(self.0.fetch_add(1, Ordering::Acquire))
+  }
 }
 
-static IO_EVENT_LOOP_STARTED: LazyLock<Arc<Mutex<bool>>> =
-  LazyLock::new(|| Arc::new(Mutex::new(false)));
+/// IO-Driver
+#[derive(Debug)]
+pub struct Driver {
+  poll: mio::Poll,
+}
 
-impl IOEventLoop {
-  pub(crate) fn init() -> IOEventLoop {
-    let mut lock = IO_EVENT_LOOP_STARTED.lock().unwrap();
-    if *lock {
-      // This is such a bad developer error so this shouldn't happen.
-      panic!("internal 'liten' error: started io-event loop more times than 1.")
-    }
+/// Reference to the IO driver
+#[derive(Debug)]
+pub struct Handle {
+  registry: mio::Registry,
+  wakers: Mutex<HashMap<Token, Waker>>,
+  token_generator: TokenGenerator,
+}
 
-    // Only gets run once. on first access
-    let poll = mio::Poll::new().unwrap();
-    let event_loop = IOEventLoop {
-      registry: poll.registry().try_clone().unwrap(),
-      statuses: Mutex::new(HashMap::new()),
-    };
-
-    thread::Builder::new()
-      .name("liten-io".to_owned())
-      .spawn(|| IOEventLoop::run(poll))
-      .unwrap();
-
-    *lock = true;
-
-    event_loop
+impl Handle {
+  pub fn next_token(&self) -> Token {
+    self.token_generator.next_token()
+  }
+  pub fn from_driver_ref(driver: &Driver) -> io::Result<Self> {
+    Ok(Self {
+      registry: driver.poll.registry().try_clone()?,
+      wakers: HashMap::default(),
+      token_generator: TokenGenerator::new(),
+    })
   }
   pub fn register<S: mio::event::Source>(
     &self,
@@ -63,49 +73,71 @@ impl IOEventLoop {
     self.registry.deregister(source)
   }
 
-  fn run(mut poll: mio::Poll) {
-    let reactor = context::get_context().io();
-    let mut events = mio::Events::with_capacity(1024);
-    loop {
-      poll.poll(&mut events, None).unwrap();
-
-      for event in &events {
-        let mut guard = reactor.statuses.lock().unwrap();
-
-        if let Some(waker) = guard.remove(&event.token()) {
-          waker.wake()
-        }
-      }
-    }
-  }
-
-  /// Polls on specified token
+  /// Registers a waker for io-bound futures that are pending.
   ///
   /// If token doesn't exist in the registry:
   ///   Token gets inserted with its waker.
-  ///
-  /// # Outputs:
-  /// ## Waker from cx hasn't been registered before:
-  /// Registeres it and returns [Poll::Pending]
-  ///
-  /// ## Future waker has been registered:
-  ///
-  /// If event hasn't happened yet: return [Poll::Pending]
-  ///
-  /// If event has happened: remove entry and return [Poll::Ready]
-  pub fn poll(&self, token: Token, cx: &mut Context) -> Poll<()> {
-    let mut guard = self.statuses.lock().unwrap();
+  pub fn poll(&self, token: Token, cx: &mut Context) {
+    let mut guard = self.wakers.lock().unwrap();
 
     match guard.entry(token) {
       Entry::Vacant(vacant) => {
         vacant.insert(cx.waker().clone());
-        Poll::Pending
       }
       Entry::Occupied(mut occupied) => {
         if !occupied.get().will_wake(cx.waker()) {
           occupied.insert(cx.waker().clone());
         }
-        Poll::Pending
+      }
+    }
+  }
+}
+
+impl Driver {
+  pub fn new() -> (Driver, Handle) {
+    let driver = Driver { poll: mio::Poll::new().unwrap() };
+
+    (driver, Handle::from_driver_ref(&driver))
+  }
+  //pub(crate) fn init() -> IODriver {
+  //  if context::has_init() {
+  //    // This is such a bad developer error so this shouldn't happen.
+  //    panic!(
+  //      "internal 'liten' error: started io-event loop more times than 1."
+  //    );
+  //  }
+  //
+  //  // Only gets run once. on first access
+  //  let poll = mio::Poll::new().unwrap();
+  //  let event_loop = IODriver {
+  //    registry: poll.registry().try_clone().unwrap(),
+  //    statuses: Mutex::new(HashMap::new()),
+  //    token_generator: TokenGenerator::new(),
+  //  };
+  //
+  //  thread::Builder::new()
+  //    .name("liten-io".to_owned())
+  //    .spawn(|| IODriver::run(poll))
+  //    .unwrap();
+  //
+  //  event_loop
+  //}
+
+  fn turn(&mut self, handle: &Handle) {
+    // FIXME: If it runs on another thread will this fuck up?
+    let mut events = Events::with_capacity(1024);
+    //let reactor = ctx.io();
+    self.poll.poll(&mut events, None).unwrap();
+
+    for event in &events {
+      match event.token().0 {
+        0 => {} // Wakeup-call
+        _ => {
+          let mut guard = handle.wakers.lock().unwrap();
+          if let Some(waker) = guard.remove(&event.token()) {
+            waker.wake()
+          }
+        }
       }
     }
   }

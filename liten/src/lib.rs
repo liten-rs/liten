@@ -3,7 +3,6 @@ mod context;
 mod io_loop;
 pub mod net;
 pub mod runtime;
-mod scheduler;
 pub mod sync;
 pub mod task;
 mod taskqueue;

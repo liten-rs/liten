@@ -31,91 +31,77 @@ impl TcpStream {
     let addrs = addr.to_socket_addrs()?;
     for addr in addrs {
       let mut mio_stream = mionet::TcpStream::connect(addr)?;
-
-      let registration =
-        IoRegistration::new(Interest::READABLE | Interest::WRITABLE);
-
-      registration.register(&mut mio_stream)?;
-
-      return Ok(Connect::inherit_stream_and_registration(
-        mio_stream,
-        registration,
-      ));
+      return Ok(Connect::inherit_stream(mio_stream));
     }
 
     Err(io::Error::new(io::ErrorKind::InvalidInput, "Address not valid"))
   }
 
+  pub fn shutdown(&self, how: stdnet::Shutdown) -> io::Result<()> {
+    self.inner.shutdown(how)
+  }
+
   pub(crate) fn from_mio(mio: mionet::TcpStream) -> Self {
-    let registration =
-      IoRegistration::new(Interest::READABLE | Interest::WRITABLE);
-    Self::inherit_mio_registration(mio, registration)
+    Self::inherit_mio_stream(mio)
   }
 
   /// This function assumes the TcpStream input has been registered as an event.
-  pub(crate) fn inherit_mio_registration(
-    mio: mionet::TcpStream,
-    registration: IoRegistration,
-  ) -> TcpStream {
+  pub(crate) fn inherit_mio_stream(mut mio: mionet::TcpStream) -> TcpStream {
+    let registration =
+      IoRegistration::new(Interest::READABLE | Interest::WRITABLE);
+    registration.register(&mut mio);
     TcpStream { inner: mio, registration }
   }
 }
 
-impl Write for TcpStream {
+impl io::Write for TcpStream {
   fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-    self.inner.write(buf)
+    loop {
+      match self.inner.write(buf) {
+        Ok(value) => return Ok(value),
+        Err(err) if err.kind() == ErrorKind::WouldBlock => continue,
+        Err(err) => return Err(err),
+      }
+    }
   }
 
   fn flush(&mut self) -> io::Result<()> {
-    self.inner.flush()
+    loop {
+      match self.inner.flush() {
+        Ok(value) => return Ok(value),
+        Err(err) if err.kind() == ErrorKind::WouldBlock => continue,
+        Err(err) => return Err(err),
+      }
+    }
   }
 }
 
-impl AsyncWrite for TcpStream {
-  fn poll_write(
+impl futures_io::AsyncRead for TcpStream {
+  fn poll_read(
     mut self: Pin<&mut Self>,
-    _cx: &mut Context<'_>,
-    buf: &[u8],
+    cx: &mut Context<'_>,
+    buf: &mut [u8],
   ) -> Poll<io::Result<usize>> {
-    match self.inner.write(buf) {
+    match self.inner.read(buf) {
       Ok(value) => Poll::Ready(Ok(value)),
-      Err(err) if err.kind() == ErrorKind::WouldBlock => {
-        let _ =
-          context::get_context().io().poll(self.registration.token(), _cx);
+      Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+        self.registration.register_io_waker(cx);
+
         Poll::Pending
       }
       Err(err) => Poll::Ready(Err(err)),
     }
   }
-
-  fn poll_flush(
-    mut self: Pin<&mut Self>,
-    _cx: &mut Context<'_>,
-  ) -> Poll<io::Result<()>> {
-    Poll::Ready(self.flush())
-  }
-  fn poll_close(
-    self: Pin<&mut Self>,
-    _cx: &mut Context<'_>,
-  ) -> Poll<io::Result<()>> {
-    Poll::Ready(self.inner.shutdown(stdnet::Shutdown::Write))
-  }
 }
 
-impl AsyncRead for TcpStream {
-  fn poll_read(
-    mut self: Pin<&mut Self>,
-    _cx: &mut Context<'_>,
-    buf: &mut [u8],
-  ) -> Poll<io::Result<usize>> {
-    match self.inner.read(buf) {
-      Ok(value) => Poll::Ready(Ok(value)),
-      Err(err) if err.kind() == ErrorKind::WouldBlock => {
-        let _ =
-          context::get_context().io().poll(self.registration.token(), _cx);
-        Poll::Pending
+impl std::io::Read for TcpStream {
+  fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    loop {
+      match self.inner.read(buf) {
+        Ok(value) => return Ok(value),
+        Err(err) if err.kind() == ErrorKind::WouldBlock => continue,
+        Err(err) => return Err(err),
       }
-      Err(err) => Poll::Ready(Err(err)),
     }
   }
 }

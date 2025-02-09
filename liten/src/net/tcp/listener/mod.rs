@@ -17,7 +17,15 @@ use super::TcpStream;
 
 pub struct TcpListener {
   registration: IoRegistration,
+
+  // This is just for passing down to the struct Accept.
   listener: mionet::TcpListener,
+}
+
+impl Drop for TcpListener {
+  fn drop(&mut self) {
+    let _ = self.registration.deregister(&mut self.listener);
+  }
 }
 
 impl TcpListener {
@@ -30,21 +38,20 @@ impl TcpListener {
 
     let mut listener = mionet::TcpListener::from_std(tcp);
 
+    // This is only readable because this IoRegistration is only used for listening for incoming
+    // connections. TcpStream read and write operations are all blocking.
+    //
+    // This is because some trange bugs happen when trying for async io.
     let registration = IoRegistration::new(Interest::READABLE);
     let _ = registration.register(&mut listener);
     Ok(TcpListener { registration, listener })
   }
 
   pub fn accept(&self) -> Accept<'_> {
-    Accept::new(&self.listener, self.registration)
+    Accept::new(&self.listener, &self.registration)
   }
 }
 
-impl Drop for TcpListener {
-  fn drop(&mut self) {
-    let _ = self.registration.deregister(&mut self.listener);
-  }
-}
 impl futures_core::Stream for TcpListener {
   type Item = io::Result<(TcpStream, SocketAddr)>;
 
@@ -52,15 +59,10 @@ impl futures_core::Stream for TcpListener {
     self: Pin<&mut Self>,
     cx: &mut Context<'_>,
   ) -> Poll<Option<Self::Item>> {
-    match self.listener.accept() {
-      Ok((stream, addr)) => {
-        Poll::Ready(Some(Ok((TcpStream::from_mio(stream), addr))))
-      }
-      Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
-        let _ = context::get_context().io().poll(self.registration.token(), cx);
-        Poll::Pending
-      }
-      Err(err) => Poll::Ready(Some(Err(err))),
+    let fut = std::pin::pin!(self.accept());
+    match std::future::Future::poll(fut, cx) {
+      Poll::Ready(value) => Poll::Ready(Some(value)),
+      Poll::Pending => Poll::Pending,
     }
   }
 }

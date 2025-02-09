@@ -65,7 +65,7 @@ impl<G> Deref for MutexGuard<'_, G> {
 
 impl<G> DerefMut for MutexGuard<'_, G> {
   fn deref_mut(&mut self) -> &mut Self::Target {
-    unsafe { self.mutex.data.get().as_mut() }.unwrap()
+    unsafe { &mut *self.mutex.data.get() }
   }
 }
 

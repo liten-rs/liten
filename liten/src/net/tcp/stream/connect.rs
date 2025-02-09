@@ -5,7 +5,7 @@ use std::{
   task::{Context, Poll},
 };
 
-use mio::net as mionet;
+use mio::{net as mionet, Interest};
 
 use crate::{context, io_loop::IoRegistration};
 
@@ -19,11 +19,22 @@ pub struct Connect {
 
 impl Connect {
   /// Registration and it's management is passed on
-  pub(crate) fn inherit_stream_and_registration(
-    stream: mionet::TcpStream,
-    registration: IoRegistration,
-  ) -> Self {
+  pub(crate) fn inherit_stream(mut stream: mionet::TcpStream) -> Self {
+    let registration = IoRegistration::new(Interest::READABLE);
+    registration.register(&mut stream).expect("internal 'liten' error: failed to register liten::net::tcp::stream::Connect's IoRegistration");
     Self { socket: Some(stream), registration }
+  }
+}
+
+impl Drop for Connect {
+  fn drop(&mut self) {
+    match self.socket {
+      Some(ref mut v) => {
+        // Ignore error
+        let _ = self.registration.deregister(v);
+      }
+      None => {} // Future was dropped without polling
+    }
   }
 }
 
@@ -41,16 +52,17 @@ impl Future for Connect {
 
         match socket.peer_addr() {
           Ok(_) => {
-            let stream =
-              TcpStream::inherit_mio_registration(socket, self.registration);
+            let stream = TcpStream::inherit_mio_stream(socket);
             Poll::Ready(Ok(stream))
           }
           Err(err)
             if err.kind() == io::ErrorKind::NotConnected
-              || err.raw_os_error() == Some(libc::EINPROGRESS) =>
+              || err.raw_os_error()
+                == Some(115 /* = libc::EINPROGRESS */) =>
           {
-            let _ =
-              context::get_context().io().poll(self.registration.token(), _cx);
+            let _ = context::with_context(|ctx| {
+              ctx.io().poll(self.registration.token(), _cx)
+            });
             self.socket = Some(socket);
 
             Poll::Pending

@@ -1,4 +1,7 @@
-use std::io;
+use std::{
+  io,
+  task::{Context, Waker},
+};
 
 use crate::context;
 use mio::{event::Source, Interest, Token};
@@ -11,19 +14,25 @@ pub struct IoRegistration {
 
 impl IoRegistration {
   pub fn new(interest: Interest) -> IoRegistration {
-    let token = context::get_context().next_registration_token();
+    let token = context::with_context(|ctx| ctx.next_registration_token());
     IoRegistration { token, interest }
   }
 
   pub fn register(&self, source: &mut impl Source) -> io::Result<()> {
-    context::get_context().io().register(source, self.token, self.interest)
+    context::with_context(|ctx| {
+      ctx.io().register(source, self.token, self.interest)
+    })
   }
 
   pub fn deregister(&self, source: &mut impl Source) -> io::Result<()> {
-    context::get_context().io().deregister(source)
+    context::with_context(|ctx| ctx.io().deregister(source))
   }
 
   pub fn token(&self) -> Token {
     self.token
+  }
+
+  pub fn register_io_waker(&self, waker: &mut Context) {
+    context::with_context(|ctx| ctx.io().poll(self.token(), waker));
   }
 }
