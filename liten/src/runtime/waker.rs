@@ -1,9 +1,6 @@
-use std::{
-  sync::Arc,
-  task::{RawWaker, RawWakerVTable, Wake},
-};
+use std::{sync::Arc, task::Wake, thread::Thread};
 
-use crate::task::{Task, TaskId};
+use crate::task::TaskId;
 
 pub struct LitenWaker {
   task_id: TaskId,
@@ -26,18 +23,17 @@ impl Wake for LitenWaker {
 }
 
 // Waker implementation to notify the runtime
-pub struct RuntimeWaker {
-  sender: crossbeam::channel::Sender<()>,
-}
+pub struct RuntimeWaker(Thread);
 
 impl RuntimeWaker {
-  pub fn new(sender: crossbeam::channel::Sender<()>) -> Self {
-    Self { sender }
+  pub fn new(thread: Thread) -> Self {
+    Self(thread)
   }
 }
 
 impl Wake for RuntimeWaker {
   fn wake(self: Arc<Self>) {
-    self.sender.send(()).unwrap();
+    println!("main unsleepy");
+    self.0.unpark();
   }
 }

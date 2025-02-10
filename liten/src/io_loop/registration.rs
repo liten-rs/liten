@@ -14,18 +14,18 @@ pub struct IoRegistration {
 
 impl IoRegistration {
   pub fn new(interest: Interest) -> IoRegistration {
-    let token = context::with_context(|ctx| ctx.next_registration_token());
+    let token = context::with_context(|ctx| ctx.handle().io().next_token());
     IoRegistration { token, interest }
   }
 
   pub fn register(&self, source: &mut impl Source) -> io::Result<()> {
     context::with_context(|ctx| {
-      ctx.io().register(source, self.token, self.interest)
+      ctx.handle().io().register(source, self.token, self.interest)
     })
   }
 
   pub fn deregister(&self, source: &mut impl Source) -> io::Result<()> {
-    context::with_context(|ctx| ctx.io().deregister(source))
+    context::with_context(|ctx| ctx.handle().io().deregister(source))
   }
 
   pub fn token(&self) -> Token {
@@ -33,6 +33,6 @@ impl IoRegistration {
   }
 
   pub fn register_io_waker(&self, waker: &mut Context) {
-    context::with_context(|ctx| ctx.io().poll(self.token(), waker));
+    context::with_context(|ctx| ctx.handle().io().poll(self.token(), waker));
   }
 }

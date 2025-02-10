@@ -8,9 +8,6 @@ use std::{
 
 use crate::runtime::scheduler;
 
-use crate::{io_loop as io, task::Task};
-use crossbeam::channel::Sender;
-
 std::thread_local! {
   static HAS_CONTEXT_INIT: AtomicU8 = AtomicU8::new(0);
 
@@ -26,7 +23,7 @@ std::thread_local! {
 pub struct Context {
   current_task_id: AtomicUsize,
   has_entered: AtomicBool,
-  handle: OnceLock<scheduler::Handle>,
+  handle: OnceLock<Arc<scheduler::Handle>>,
 }
 
 #[cfg(test)]
@@ -56,9 +53,9 @@ where
   CONTEXT.with(func)
 }
 
-pub fn runtime_enter<F, R>(handle: &scheduler::Handle, f: F)
+pub fn runtime_enter<F, R>(handle: Arc<scheduler::Handle>, f: F) -> R
 where
-  F: FnOnce(&LazyCell<Context>),
+  F: FnOnce(&LazyCell<Context>) -> R,
 {
   with_context(|ctx| {
     if ctx.has_entered.load(Ordering::Relaxed) {
@@ -66,14 +63,17 @@ where
     }
 
     ctx.has_entered.store(true, Ordering::Relaxed);
-    ctx.handle.set(handle).unwrap();
+    if let Err(_) = ctx.handle.set(handle) {
+      panic!("whaat");
+    };
     ctx.has_entered.store(true, Ordering::Relaxed);
 
-    f(ctx);
+    let return_type = f(ctx);
 
     ctx.has_entered.store(false, Ordering::Relaxed);
-    let _ = ctx.handle.take();
-  });
+    //let _ = ctx.handle.take();
+    return_type
+  })
 }
 
 pub struct ContextDropper;

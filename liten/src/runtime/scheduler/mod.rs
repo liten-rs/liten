@@ -1,43 +1,46 @@
 pub mod worker;
 
 use std::{
+  cell::LazyCell,
   collections::HashMap,
+  future::Future,
   sync::Arc,
   task::{Context as StdContext, Poll},
+  thread,
+  time::Duration,
 };
 
-use super::super::io_loop as io;
+use super::{super::io_loop as io, waker::RuntimeWaker};
 
 use crate::{
-  context,
-  task::{ArcTask, Task, TaskId},
-  taskqueue::TaskQueue,
+  context::{self, Context},
+  task::ArcTask,
 };
-
-use crossbeam::{
-  channel::{Receiver, Sender},
-  deque::{Injector, Steal},
-};
-
-use super::waker::LitenWaker;
 
 #[derive(Debug)]
 pub struct Scheduler;
-/// The main "hot" queue. Tasks that are expected to make progress are here.
-//task_queue: Arc<Injector<ArcTask>>,
-//cold_task_queue: HashMap<TaskId, ArcTask>,
-//push_to_hot_receiver: Receiver<ArcTask>,
-//
-//cold_to_hot_receiver: Receiver<TaskId>,
-//cold_to_hot_sender: Sender<TaskId>,
 
 pub struct Handle {
   pub io: io::Handle,
-  pub shared: worker::Shared,
+  pub shared: Arc<worker::Shared>,
 }
 
 impl Handle {
-  pub fn state(&self) -> worker::Shared {
+  pub fn new(io: io::Handle, state: Arc<worker::Shared>) -> Handle {
+    Handle { io, shared: state }
+  }
+
+  pub fn push_task(&self, task: ArcTask) {
+    self.shared.injector.push(task);
+  }
+}
+
+pub struct Driver {
+  pub io: io::Driver,
+}
+
+impl Handle {
+  pub fn state(&self) -> &worker::Shared {
     &self.shared
   }
 }
@@ -49,8 +52,25 @@ impl Handle {
 }
 
 impl Scheduler {
-  pub fn block_on(&self, handle: &Handle) {
-    context::runtime_enter(handle)
+  pub fn block_on<F, R>(&self, f: F) -> R
+  where
+    F: Future<Output = R>,
+  {
+    let runtime_waker = Arc::new(RuntimeWaker::new(thread::current())).into();
+    let mut context = StdContext::from_waker(&runtime_waker);
+    let mut pinned = std::pin::pin!(f);
+
+    loop {
+      match pinned.as_mut().poll(&mut context) {
+        Poll::Ready(value) => return value,
+        Poll::Pending => {
+          println!("main sleepy");
+          thread::park()
+        }
+      };
+    }
+
+    //todo!()
   }
   //pub fn from_receiver(receiver: Receiver<Arc<Task>>) -> Self {
   //  let (cth_sender, cth_reader) = crossbeam::channel::unbounded();

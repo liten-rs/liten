@@ -1,6 +1,14 @@
-use std::{cell::RefCell, future::Future, pin::Pin};
+use std::{
+  future::Future,
+  pin::Pin,
+  sync::Mutex,
+  task::{Context, Poll},
+};
 
-use crate::{context, sync::oneshot::Sender};
+use crate::{
+  context::{self},
+  sync::oneshot::Sender,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct TaskId(pub usize);
@@ -13,7 +21,7 @@ impl TaskId {
 
 pub struct Task {
   id: TaskId,
-  pub future: RefCell<Pin<Box<dyn Future<Output = ()> + Send>>>,
+  pub future: Mutex<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
 
 #[cfg(test)]
@@ -40,10 +48,15 @@ impl Task {
         // Ignore, task handler has been dropped in this case.
       }
     });
-    Self { id, future: RefCell::new(future) }
+    Self { id, future: Mutex::new(future) }
   }
 
   pub fn id(&self) -> TaskId {
     self.id
+  }
+
+  pub fn poll(&self, cx: &mut Context) -> Poll<()> {
+    let mut future_lock = self.future.lock().unwrap();
+    future_lock.as_mut().poll(cx)
   }
 }

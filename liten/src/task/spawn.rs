@@ -1,4 +1,7 @@
-use std::future::{Future, IntoFuture};
+use std::{
+  future::{Future, IntoFuture},
+  pin::Pin,
+};
 
 use crate::sync::oneshot;
 

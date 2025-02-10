@@ -1,4 +1,3 @@
-mod spawn;
 mod task;
 pub use task::*;
 mod yield_now;

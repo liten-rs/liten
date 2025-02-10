@@ -1,67 +1,75 @@
 pub(crate) mod scheduler;
 mod waker;
 
-use std::{
-  future::Future,
-  sync::Arc,
-  task::{Context as StdContext, Poll, Wake},
+use std::{future::Future, sync::Arc};
+
+use scheduler::{
+  worker::{Shared, WorkersBuilder},
+  Scheduler,
 };
 
-use crossbeam::channel::{self, Sender};
-use scheduler::Scheduler;
-use waker::{LitenWaker, RuntimeWaker};
-
-use crate::{
-  context::{self, ContextDropper},
-  io_loop,
-  task::Task,
-  taskqueue::TaskQueue,
-};
+use crate::{context, io_loop};
 
 pub struct Runtime {
   scheduler: Scheduler,
-
   handle: Arc<scheduler::Handle>,
+  driver: scheduler::Driver,
 }
 
 impl Runtime {
   pub fn new() -> Self {
-    let (driver, handle) = io_loop::Driver::new();
-    let handle = Arc::new(scheduler::Handle {
-      io: handle,
-      shared: scheduler::worker::Shared {
-        inject: crossbeam::deque::Injector::new(),
-        remotes: Box::new([]),
-      },
-    });
-    Runtime { scheduler: Scheduler, handle }
+    let (io_driver, io_handle) = io_loop::Driver::new().unwrap();
+    let shared = Shared::new(2);
+    let handle = scheduler::Handle::new(io_handle, shared.clone());
+    Runtime {
+      scheduler: Scheduler,
+      driver: scheduler::Driver { io: io_driver },
+      handle: Arc::new(handle),
+    }
   }
 
   pub fn block_on<F, Res>(&mut self, fut: F) -> Res
   where
     F: Future<Output = Res>,
   {
-    // TODO: remove everything and implement better shit.
-    let (runtime_sender, runtime_receiver) = channel::unbounded();
-    let waker = Arc::new(RuntimeWaker::new(runtime_sender)).into();
-    let mut main_fut_context = StdContext::from_waker(&waker);
+    let workers = WorkersBuilder::from(self.handle.clone());
 
-    let main_fut = Box::pin(fut);
+    context::runtime_enter(self.handle.clone(), |_| {
+      workers.launch();
+      self.scheduler.block_on(fut)
+    })
 
-    let mut pinned = std::pin::pin!(main_fut);
-    // Starts the poll so that the waker gets a change to send from the receiver.
-    if let Poll::Ready(value) = pinned.as_mut().poll(&mut main_fut_context) {
-      return value;
-    };
-    loop {
-      if runtime_receiver.try_recv().is_ok() {
-        if let Poll::Ready(value) = pinned.as_mut().poll(&mut main_fut_context)
-        {
-          return value;
-        };
-      }
-      // Fill the newest tasks onto the task queue.
-      self.scheduler.tick();
-    }
+    //self.scheduler.block_on(handle, move |cx| {
+    //
+    //})
+    //self.scheduler.block_on(.handle, |ctx| loop {
+    //  let context: std::task::Context;
+    //  if let Poll::Ready(output) = main_fut.as_mut().poll(&mut context) {
+    //    return output;
+    //  }
+    //})
+    //self.scheduler.block_on(self.handle, |ctx| loop {})
+    //// TODO: remove everything and implement better shit.
+    //let (runtime_sender, runtime_receiver) = channel::unbounded();
+    //let waker = Arc::new(RuntimeWaker::new(runtime_sender)).into();
+    //let mut main_fut_context = StdContext::from_waker(&waker);
+    //
+    //let main_fut = Box::pin(fut);
+    //
+    //let mut pinned = std::pin::pin!(main_fut);
+    //// Starts the poll so that the waker gets a change to send from the receiver.
+    //if let Poll::Ready(value) = pinned.as_mut().poll(&mut main_fut_context) {
+    //  return value;
+    //};
+    //loop {
+    //  if runtime_receiver.try_recv().is_ok() {
+    //    if let Poll::Ready(value) = pinned.as_mut().poll(&mut main_fut_context)
+    //    {
+    //      return value;
+    //    };
+    //  }
+    //  // Fill the newest tasks onto the task queue.
+    //  self.scheduler.tick();
+    //}
   }
 }

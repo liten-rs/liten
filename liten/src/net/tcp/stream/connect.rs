@@ -61,7 +61,7 @@ impl Future for Connect {
                 == Some(115 /* = libc::EINPROGRESS */) =>
           {
             let _ = context::with_context(|ctx| {
-              ctx.io().poll(self.registration.token(), _cx)
+              ctx.handle().io().poll(self.registration.token(), _cx)
             });
             self.socket = Some(socket);
 

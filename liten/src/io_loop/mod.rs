@@ -15,17 +15,16 @@ use std::{
 
 use mio::{Events, Interest, Token};
 
-use crate::context;
-
+#[derive(Debug)]
 pub struct TokenGenerator(AtomicUsize);
 
-pub impl TokenGenerator {
+impl TokenGenerator {
   pub fn new_wakeup() -> TokenGenerator {
-    TokenGenerator(AtomicUsize(0))
+    TokenGenerator(AtomicUsize::new(0))
   }
   pub fn new() -> TokenGenerator {
     tracing::trace!("this should only happen once io_loop_mod");
-    TokenGenerator(AtomicUsize(1)) // 0 is specialcase
+    TokenGenerator(AtomicUsize::new(1)) // 0 is specialcase
   }
   pub fn next_token(&self) -> Token {
     Token(self.0.fetch_add(1, Ordering::Acquire))
@@ -53,7 +52,7 @@ impl Handle {
   pub fn from_driver_ref(driver: &Driver) -> io::Result<Self> {
     Ok(Self {
       registry: driver.poll.registry().try_clone()?,
-      wakers: HashMap::default(),
+      wakers: Mutex::new(HashMap::new()),
       token_generator: TokenGenerator::new(),
     })
   }
@@ -94,10 +93,11 @@ impl Handle {
 }
 
 impl Driver {
-  pub fn new() -> (Driver, Handle) {
+  pub fn new() -> io::Result<(Driver, Handle)> {
     let driver = Driver { poll: mio::Poll::new().unwrap() };
+    let handle = Handle::from_driver_ref(&driver)?;
 
-    (driver, Handle::from_driver_ref(&driver))
+    Ok((driver, handle))
   }
   //pub(crate) fn init() -> IODriver {
   //  if context::has_init() {
