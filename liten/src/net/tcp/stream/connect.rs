@@ -7,20 +7,20 @@ use std::{
 
 use mio::{net as mionet, Interest};
 
-use crate::{context, io_loop::IoRegistration};
+use crate::{context, events::EventRegistration};
 
 use super::TcpStream;
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct Connect {
   socket: Option<mionet::TcpStream>,
-  registration: IoRegistration,
+  registration: EventRegistration,
 }
 
 impl Connect {
   /// Registration and it's management is passed on
   pub(crate) fn inherit_stream(mut stream: mionet::TcpStream) -> Self {
-    let registration = IoRegistration::new(Interest::READABLE);
+    let registration = EventRegistration::new(Interest::READABLE);
     registration.register(&mut stream).expect("internal 'liten' error: failed to register liten::net::tcp::stream::Connect's IoRegistration");
     Self { socket: Some(stream), registration }
   }

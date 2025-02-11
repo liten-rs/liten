@@ -1,26 +1,43 @@
-use std::{
-  io,
-  task::{Context, Waker},
-};
+use std::{io, task::Context};
 
 use crate::context;
 use mio::{event::Source, Interest, Token};
 
 #[derive(Clone, Copy)]
-pub struct IoRegistration {
+pub struct EventRegistration {
   token: Token,
   interest: Interest,
 }
 
-impl IoRegistration {
-  pub fn new(interest: Interest) -> IoRegistration {
+impl EventRegistration {
+  pub fn new(interest: Interest) -> EventRegistration {
     let token = context::with_context(|ctx| ctx.handle().io().next_token());
-    IoRegistration { token, interest }
+    EventRegistration { token, interest }
+  }
+
+  pub fn is_read(&self) -> bool {
+    self.interest.is_readable()
+  }
+
+  pub fn is_write(&self) -> bool {
+    self.interest.is_writable()
   }
 
   pub fn register(&self, source: &mut impl Source) -> io::Result<()> {
     context::with_context(|ctx| {
       ctx.handle().io().register(source, self.token, self.interest)
+    })
+  }
+
+  pub fn reregister(
+    &mut self,
+    source: &mut impl Source,
+    interest: Interest,
+  ) -> io::Result<()> {
+    context::with_context(|ctx| {
+      ctx.handle().io().reregister(source, self.token, interest)?;
+      self.interest = interest;
+      Ok(())
     })
   }
 

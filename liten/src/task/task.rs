@@ -15,7 +15,7 @@ pub struct TaskId(pub usize);
 
 impl TaskId {
   pub fn new() -> Self {
-    Self(context::with_context(|ctx| ctx.task_id_inc()))
+    Self(context::with_context(|ctx| ctx.handle().task_id_inc()))
   }
 }
 

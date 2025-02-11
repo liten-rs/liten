@@ -1,13 +1,22 @@
-use std::{
-  error::Error,
-  sync::{Arc, Mutex},
-};
-use tracing::Level;
+use std::{error::Error, time::Duration};
+
+use liten::task;
 
 #[liten::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-  let sub = tracing_subscriber::fmt().with_max_level(Level::TRACE).finish();
+  let sub =
+    tracing_subscriber::fmt().with_max_level(tracing::Level::TRACE).finish();
   tracing::subscriber::set_global_default(sub)?;
+
+  for thing in 0..400 {
+    task::spawn(async move {
+      std::thread::sleep(Duration::from_millis(400 - thing));
+    });
+  }
+
+  std::thread::sleep(Duration::from_secs(2));
+
+  //.await?;
   //let mut stream = TcpStream::connect("localhost:9000")?.await?;
   //
   //stream.write_all(b"teting\0")?;
@@ -23,25 +32,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
   //liten::task::spawn(async move {
   //  std::thread::sleep(Duration::from_millis(500));
   //  send.send("nice").unwrap();
-  //  println!("done")
   //})
   //.await;
   //
   //let value = read.await.unwrap();
   //
-  //println!("nice value {}", value);
-  let data1 = Arc::new(Mutex::new(0));
-  let data2 = Arc::clone(&data1);
-  let data3 = Arc::clone(&data1);
-  let data4 = Arc::clone(&data1);
-  let data5 = Arc::clone(&data1);
-  println!("nice");
-
-  //task::spawn(async move {
-  let mut lock = data4.lock().unwrap();
-  *lock += 1;
-  println!("nice");
-  drop(lock);
+  //let data1 = Arc::new(Mutex::new(0));
+  //let data2 = Arc::clone(&data1);
+  //let data3 = Arc::clone(&data1);
+  //let data4 = Arc::clone(&data1);
+  //let data5 = Arc::clone(&data1);
+  //
+  ////task::spawn(async move {
+  //let mut lock = data4.lock().unwrap();
+  //*lock += 1;
+  //drop(lock);
   //})
   //.await;
   //task::spawn(async move {
@@ -59,10 +64,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
   //  *lock += 1;
   //})
   //.await;
-
-  println!("nice");
-  println!("nice {:#?}", *data5.lock().unwrap());
-  println!("nice");
-
+  //
   Ok(())
 }

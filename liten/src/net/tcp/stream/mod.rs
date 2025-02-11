@@ -1,19 +1,17 @@
 mod connect;
 pub use connect::*;
 
-use crate::io_loop::IoRegistration;
+use crate::events::EventRegistration;
 
 use mio::{net as mionet, Interest};
 use std::{
-  io::{self, ErrorKind, Read},
+  io::{self, ErrorKind},
   net::{self as stdnet, ToSocketAddrs},
-  pin::Pin,
-  task::{Context, Poll},
 };
 
 pub struct TcpStream {
   inner: mionet::TcpStream,
-  registration: IoRegistration,
+  registration: EventRegistration,
 }
 
 impl Drop for TcpStream {
@@ -36,19 +34,44 @@ impl TcpStream {
     Err(io::Error::new(io::ErrorKind::InvalidInput, "Address not valid"))
   }
 
-  pub fn shutdown(&self, how: stdnet::Shutdown) -> io::Result<()> {
-    self.inner.shutdown(how)
+  // Partially to maintain compatibility with std.
+  pub fn shutdown(&mut self, how: stdnet::Shutdown) -> io::Result<()> {
+    match how {
+      stdnet::Shutdown::Read => self.shutdown_read(),
+      stdnet::Shutdown::Write => self.shutdown_write(),
+      stdnet::Shutdown::Both => {
+        self.shutdown_read()?;
+        self.shutdown_write()?;
+
+        Ok(())
+      }
+    }
   }
 
-  pub(crate) fn from_mio(mio: mionet::TcpStream) -> Self {
-    Self::inherit_mio_stream(mio)
+  pub fn shutdown_read(&mut self) -> io::Result<()> {
+    if self.registration.is_write() {
+      self.registration.reregister(&mut self.inner, Interest::WRITABLE)?;
+    } else {
+      self.registration.deregister(&mut self.inner)?;
+    };
+
+    self.inner.shutdown(stdnet::Shutdown::Read)
+  }
+
+  pub fn shutdown_write(&mut self) -> io::Result<()> {
+    if self.registration.is_read() {
+      self.registration.reregister(&mut self.inner, Interest::READABLE)?;
+    } else {
+      self.registration.deregister(&mut self.inner)?;
+    };
+    self.inner.shutdown(stdnet::Shutdown::Write)
   }
 
   /// This function assumes the TcpStream input has been registered as an event.
   pub(crate) fn inherit_mio_stream(mut mio: mionet::TcpStream) -> TcpStream {
     let registration =
-      IoRegistration::new(Interest::READABLE | Interest::WRITABLE);
-    registration.register(&mut mio);
+      EventRegistration::new(Interest::READABLE | Interest::WRITABLE);
+    registration.register(&mut mio).expect("Couldn't register TcpStream");
     TcpStream { inner: mio, registration }
   }
 }
@@ -71,23 +94,6 @@ impl io::Write for TcpStream {
         Err(err) if err.kind() == ErrorKind::WouldBlock => continue,
         Err(err) => return Err(err),
       }
-    }
-  }
-}
-
-impl futures_io::AsyncRead for TcpStream {
-  fn poll_read(
-    mut self: Pin<&mut Self>,
-    cx: &mut Context<'_>,
-    buf: &mut [u8],
-  ) -> Poll<io::Result<usize>> {
-    match self.inner.read(buf) {
-      Ok(value) => Poll::Ready(Ok(value)),
-      Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
-        self.registration.register_io_waker(cx);
-        Poll::Pending
-      }
-      Err(err) => Poll::Ready(Err(err)),
     }
   }
 }

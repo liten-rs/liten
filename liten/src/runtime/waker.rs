@@ -1,22 +1,19 @@
 use std::{sync::Arc, task::Wake, thread::Thread};
 
-use crate::task::TaskId;
+use crate::{sync::mpsc, task::TaskId};
 
-pub struct LitenWaker {
+pub struct TaskWaker {
   task_id: TaskId,
-  sender: crossbeam::channel::Sender<TaskId>,
+  sender: mpsc::Sender<TaskId>,
 }
 
-impl LitenWaker {
-  pub(crate) fn new(
-    task: TaskId,
-    sender: crossbeam::channel::Sender<TaskId>,
-  ) -> Self {
+impl TaskWaker {
+  pub(crate) fn new(task: TaskId, sender: mpsc::Sender<TaskId>) -> Self {
     Self { task_id: task, sender }
   }
 }
 
-impl Wake for LitenWaker {
+impl Wake for TaskWaker {
   fn wake(self: Arc<Self>) {
     self.sender.send(self.task_id).unwrap();
   }

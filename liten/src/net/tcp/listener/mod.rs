@@ -11,12 +11,12 @@ pub use accept::*;
 use mio::{net as mionet, Interest};
 use std::net as stdnet;
 
-use crate::{context, io_loop::IoRegistration};
+use crate::events::EventRegistration;
 
 use super::TcpStream;
 
 pub struct TcpListener {
-  registration: IoRegistration,
+  registration: EventRegistration,
 
   // This is just for passing down to the struct Accept.
   listener: mionet::TcpListener,
@@ -42,7 +42,7 @@ impl TcpListener {
     // connections. TcpStream read and write operations are all blocking.
     //
     // This is because some trange bugs happen when trying for async io.
-    let registration = IoRegistration::new(Interest::READABLE);
+    let registration = EventRegistration::new(Interest::READABLE);
     let _ = registration.register(&mut listener);
     Ok(TcpListener { registration, listener })
   }

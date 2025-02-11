@@ -64,7 +64,6 @@
 //
 //impl Worker {
 //  fn fetch_task(&self) -> Option<ArcTask> {
-//    println!("fetchign tasks {}", self.worker_id);
 //    match self.local_queue.pop() {
 //      Some(value) => Some(value),
 //      // Fill local queue from the global tasks
@@ -103,7 +102,6 @@
 //    let _guard = span.enter();
 //
 //    let (sender, receiver) = crossbeam::channel::unbounded();
-//    println!("bootstrapping");
 //    loop {
 //      for now_active_task_id in receiver.try_iter() {
 //        let task = self

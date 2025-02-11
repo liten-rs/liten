@@ -1,41 +1,33 @@
 mod registration;
 
-pub use registration::IoRegistration;
+pub use registration::EventRegistration;
 
 use std::{
   collections::{hash_map::Entry, HashMap},
   io,
   sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
-    Arc, LazyLock, Mutex,
+    atomic::{AtomicUsize, Ordering},
+    Mutex,
   },
-  task::{Context, Poll, Waker},
-  thread,
+  task::{Context, Waker},
 };
 
 use mio::{Events, Interest, Token};
 
-use crate::sync::oneshot;
+struct TokenState(AtomicUsize);
 
-#[derive(Debug)]
-pub struct TokenGenerator(AtomicUsize);
+const WAKEUP_TOKEN: Token = Token(0);
 
-impl TokenGenerator {
-  pub fn new_wakeup() -> TokenGenerator {
-    TokenGenerator(AtomicUsize::new(0))
-  }
-  pub fn new() -> TokenGenerator {
-    tracing::trace!("this should only happen once io_loop_mod");
-    TokenGenerator(AtomicUsize::new(1)) // 0 is specialcase
+impl TokenState {
+  pub fn new() -> TokenState {
+    TokenState(AtomicUsize::new(1)) // 0 is specialcase
   }
   pub fn next_token(&self) -> Token {
+    debug_assert!(
+      self.0.load(Ordering::Relaxed) != 0,
+      "can't call next_token on wakeup token"
+    );
     Token(self.0.fetch_add(1, Ordering::Acquire))
-  }
-}
-
-impl Into<Token> for TokenGenerator {
-  fn into(self) -> Token {
-    Token(self.0.load(Ordering::Relaxed))
   }
 }
 
@@ -49,32 +41,45 @@ pub struct Driver {
 pub struct Handle {
   registry: mio::Registry,
   wakers: Mutex<HashMap<Token, Waker>>,
-  token_generator: TokenGenerator,
+
+  token_state: TokenState,
 }
 
 impl Handle {
   pub fn next_token(&self) -> Token {
-    self.token_generator.next_token()
+    self.token_state.next_token()
+  }
+  pub fn mio_waker(&self) -> mio::Waker {
+    mio::Waker::new(&self.registry, WAKEUP_TOKEN).unwrap()
   }
   pub fn from_driver_ref(driver: &Driver) -> io::Result<Self> {
     Ok(Self {
       registry: driver.poll.registry().try_clone()?,
       wakers: Mutex::new(HashMap::new()),
-      token_generator: TokenGenerator::new(),
+      token_state: TokenState::new(),
     })
   }
-  pub fn register<S: mio::event::Source>(
+  pub fn register(
     &self,
-    source: &mut S,
+    source: &mut dyn mio::event::Source,
     token: Token,
     interest: Interest,
   ) -> io::Result<()> {
     self.registry.register(source, token, interest)
   }
 
-  pub fn deregister<S: mio::event::Source>(
+  pub fn reregister(
     &self,
-    source: &mut S,
+    source: &mut dyn mio::event::Source,
+    token: Token,
+    interest: Interest,
+  ) -> io::Result<()> {
+    self.registry.reregister(source, token, interest)
+  }
+
+  pub fn deregister(
+    &self,
+    source: &mut dyn mio::event::Source,
   ) -> io::Result<()> {
     self.registry.deregister(source)
   }
@@ -107,38 +112,15 @@ impl Driver {
 
     Ok((driver, handle))
   }
-  //pub(crate) fn init() -> IODriver {
-  //  if context::has_init() {
-  //    // This is such a bad developer error so this shouldn't happen.
-  //    panic!(
-  //      "internal 'liten' error: started io-event loop more times than 1."
-  //    );
-  //  }
-  //
-  //  // Only gets run once. on first access
-  //  let poll = mio::Poll::new().unwrap();
-  //  let event_loop = IODriver {
-  //    registry: poll.registry().try_clone().unwrap(),
-  //    statuses: Mutex::new(HashMap::new()),
-  //    token_generator: TokenGenerator::new(),
-  //  };
-  //
-  //  thread::Builder::new()
-  //    .name("liten-io".to_owned())
-  //    .spawn(|| IODriver::run(poll))
-  //    .unwrap();
-  //
-  //  event_loop
-  //}
 
   pub fn turn(&mut self, handle: &Handle) -> bool {
-    // FIXME: If it runs on another thread will this fuck up?
+    // FIXME: This doesn't quit.
     let mut events = Events::with_capacity(1024);
     self.poll.poll(&mut events, None).unwrap();
 
     for event in &events {
-      match event.token().0 {
-        0 => return true, // Wakeup-call
+      match event.token() {
+        WAKEUP_TOKEN => return true, // Wakeup-call
         _ => {
           let mut guard = handle.wakers.lock().unwrap();
           if let Some(waker) = guard.remove(&event.token()) {

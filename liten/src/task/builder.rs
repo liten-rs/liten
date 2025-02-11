@@ -25,7 +25,9 @@ impl Builder {
     let (write, read) = oneshot::channel();
 
     let task = Arc::new(Task::new(self.id, fut, write));
-    context::with_context(|ctx| ctx.handle().state().push_task(task));
+    context::with_context(|ctx| {
+      ctx.handle().state().push_task(task);
+    });
 
     TaskHandle(read)
   }

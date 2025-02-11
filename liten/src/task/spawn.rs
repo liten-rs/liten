@@ -2,6 +2,7 @@ use std::{
   future::{Future, IntoFuture},
   pin::Pin,
 };
+use thiserror::Error;
 
 use crate::sync::oneshot;
 
@@ -17,13 +18,21 @@ where
 
 pub struct TaskHandle<Out>(pub(super) oneshot::Receiver<Out>);
 
+#[derive(Error, Debug)]
+pub enum TaskHandleError {
+  #[error("task panicked")]
+  BodyPanicked,
+}
+
 impl<Out> IntoFuture for TaskHandle<Out>
 where
   Out: 'static,
 {
-  type Output = Out;
+  type Output = Result<Out, TaskHandleError>;
   type IntoFuture = Pin<Box<dyn Future<Output = Self::Output>>>;
   fn into_future(self) -> Self::IntoFuture {
-    Box::pin(async move { self.0.await.unwrap() })
+    Box::pin(
+      async move { self.0.await.map_err(|_| TaskHandleError::BodyPanicked) },
+    )
   }
 }

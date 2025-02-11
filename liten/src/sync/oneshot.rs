@@ -2,17 +2,14 @@ use std::{
   cell::UnsafeCell,
   error::Error,
   fmt::Display,
-  future::{Future, IntoFuture},
+  future::Future,
   mem::MaybeUninit,
   pin::Pin,
-  sync::{
-    atomic::{AtomicU8, Ordering},
-    Arc, Mutex,
-  },
+  sync::Arc,
   task::{Context, Poll, Waker},
 };
 
-use crossbeam::atomic::AtomicCell;
+use crossbeam_utils::atomic::AtomicCell;
 
 bitflags::bitflags! {
   #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -213,12 +210,6 @@ impl<V> Receiver<V> {
       return Err(SenderDroppedError);
     }
 
-    // This doesn't fail.
-    let _ = self.channel.state.fetch_update(|mut previous| {
-      previous.insert(ChannelState::WAKER_REGISTERED);
-      Some(previous)
-    });
-
     Ok(None)
   }
 }
@@ -227,36 +218,29 @@ impl<V> Future for Receiver<V> {
   type Output = Result<V, SenderDroppedError>;
 
   fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-    let state = self.channel.state.load();
+    match self.try_recv() {
+      Ok(value) => match value {
+        Some(value) => Poll::Ready(Ok(value)),
+        None => {
+          self.channel.write_waker(cx.waker().clone());
+          let _ = self.channel.state.fetch_update(|mut previous| {
+            previous.insert(ChannelState::WAKER_REGISTERED);
+            Some(previous)
+          });
 
-    if state.contains(ChannelState::SENDER_SENT) {
-      // SAFETY: If ChannelState::SENDER_SENT it's guarranteed for self.channel.value to be
-      // initialised.
-      return Poll::Ready(Ok(self.channel.read_value_unchecked()));
+          Poll::Pending
+        }
+      },
+      Err(err) => Poll::Ready(Err(err)),
     }
-
-    if state.contains(ChannelState::SENDER_DROPPED) {
-      return Poll::Ready(Err(SenderDroppedError));
-    }
-    self.channel.write_waker(cx.waker().clone());
-
-    // This doesn't fail.
-    let _ = self.channel.state.fetch_update(|mut previous| {
-      previous.insert(ChannelState::WAKER_REGISTERED);
-      Some(previous)
-    });
-
-    Poll::Pending
   }
 }
 
-#[test]
-fn simple() {
-  crate::runtime::Runtime::new().block_on(async move {
-    let (sender, receiver) = channel();
+#[crate::internal_test]
+async fn simple() {
+  let (sender, receiver) = channel();
 
-    sender.send(());
+  let _ = sender.send(2);
 
-    assert!(receiver.await.unwrap() == ());
-  })
+  assert!(receiver.await.unwrap() == 2);
 }

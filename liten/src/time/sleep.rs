@@ -11,10 +11,8 @@ pub async fn sleep(duration: Duration) {
   receiver.await.unwrap(); // in this scenario: oneshot errors if panics
 }
 
-#[test]
-fn testing() {
-  crate::runtime::Runtime::new().block_on(async move {
-    sleep(Duration::from_millis(200)).await;
-    sleep(Duration::from_millis(0)).await;
-  })
+#[crate::internal_test]
+async fn no_testing() {
+  sleep(Duration::from_millis(10)).await;
+  sleep(Duration::from_millis(0)).await;
 }

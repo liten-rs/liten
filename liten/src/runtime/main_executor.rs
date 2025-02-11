@@ -19,12 +19,10 @@ impl GlobalExecutor {
     let mut pinned = std::pin::pin!(f);
 
     loop {
-      println!("main fut");
       match pinned.as_mut().poll(&mut context) {
         Poll::Ready(value) => return value,
         Poll::Pending => thread::park(),
       };
-      println!("main fut");
     }
   }
 }

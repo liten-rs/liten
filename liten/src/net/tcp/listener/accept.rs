@@ -8,7 +8,7 @@ use std::{
 
 use mio::net as mionet;
 
-use crate::{context, io_loop::IoRegistration, net::TcpStream};
+use crate::{events::EventRegistration, net::TcpStream};
 
 #[must_use = "futures do nothing unless you `.await` or poll them"]
 pub struct Accept<'a> {
@@ -16,13 +16,13 @@ pub struct Accept<'a> {
 
   // We don't drop this after accepts lifetime because it's a reference and it's TcpListeners job
   // to drop this.
-  registration: &'a IoRegistration,
+  registration: &'a EventRegistration,
 }
 
 impl<'a> Accept<'a> {
   pub(crate) fn new(
     listener: &'a mionet::TcpListener,
-    registration: &'a IoRegistration,
+    registration: &'a EventRegistration,
   ) -> Accept<'a> {
     Self { inner: listener, registration }
   }
@@ -31,7 +31,6 @@ impl<'a> Accept<'a> {
 impl Future for Accept<'_> {
   type Output = io::Result<(TcpStream, SocketAddr)>;
   fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-    println!("nice");
     match self.inner.accept() {
       Ok((stream, addr)) => {
         Poll::Ready(Ok((TcpStream::inherit_mio_stream(stream), addr)))

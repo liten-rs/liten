@@ -4,21 +4,25 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-liten-macros.path = "../liten-macros"
-
-crossbeam = "0.8.4"
+liten-macros = { version = "0.1.0", path = "../liten-macros" }
 mio = { version = "1.0.3", features = ["net", "os-poll", "os-ext"] }
-futures-io = "*"
-futures-core = {version = "*", features = ["portable-atomic"] }
+
+futures-io = "0.3"
+futures-core = {version = "0.3", features = ["portable-atomic"] }
+futures-task = "0.3"
+
 tracing = "0.1.41"
-tracing-futures = "0.2.5"
-futures-task = "0.3.31"
+
 bitflags = "2.8.0"
 thiserror = "2.0.11"
-dhat = "0.3.3"
+
+crossbeam-deque = "0.8.6"
+crossbeam-utils = "0.8.21"
 
 [dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"]}
 static_assertions = "1.1.0"
 
-[target.'cfg(loom)'.dependencies]
-loom = "0.7.2"
+[[bench]]
+name = "channel"
+harness = false
