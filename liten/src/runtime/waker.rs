@@ -33,7 +33,6 @@ impl RuntimeWaker {
 
 impl Wake for RuntimeWaker {
   fn wake(self: Arc<Self>) {
-    println!("main unsleepy");
     self.0.unpark();
   }
 }

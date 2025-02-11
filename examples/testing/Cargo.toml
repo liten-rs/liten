@@ -10,3 +10,4 @@ futures-util = { version = "0.3.31", features = ["io"] }
 liten.path = "../../liten"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
+dhat = "0.3.3"

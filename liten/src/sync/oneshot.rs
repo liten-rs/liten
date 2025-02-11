@@ -45,7 +45,6 @@ impl<V> Drop for Receiver<V> {
 
 impl<V> Drop for Sender<V> {
   fn drop(&mut self) {
-    let prev_value = self.channel.state.load();
     // This doesn't fail
     let value = self
       .channel
@@ -197,6 +196,30 @@ impl<V> Sender<V> {
     self.channel.write_value(value);
 
     Ok(())
+  }
+}
+
+impl<V> Receiver<V> {
+  pub fn try_recv(&self) -> Result<Option<V>, SenderDroppedError> {
+    let state = self.channel.state.load();
+
+    if state.contains(ChannelState::SENDER_SENT) {
+      // SAFETY: If ChannelState::SENDER_SENT it's guarranteed for self.channel.value to be
+      // initialised.
+      return Ok(Some(self.channel.read_value_unchecked()));
+    }
+
+    if state.contains(ChannelState::SENDER_DROPPED) {
+      return Err(SenderDroppedError);
+    }
+
+    // This doesn't fail.
+    let _ = self.channel.state.fetch_update(|mut previous| {
+      previous.insert(ChannelState::WAKER_REGISTERED);
+      Some(previous)
+    });
+
+    Ok(None)
   }
 }
 

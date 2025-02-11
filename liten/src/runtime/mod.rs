@@ -1,19 +1,28 @@
+mod main_executor;
 pub(crate) mod scheduler;
 mod waker;
 
-use std::{future::Future, sync::Arc};
+use std::{
+  future::Future,
+  sync::{Arc, Mutex},
+  task::{Context, RawWaker, RawWakerVTable, Waker},
+};
 
+use main_executor::GlobalExecutor;
 use scheduler::{
   worker::{Shared, WorkersBuilder},
   Scheduler,
 };
 
-use crate::{context, io_loop};
+use crate::{
+  context,
+  io_loop::{self, TokenGenerator},
+};
 
 pub struct Runtime {
   scheduler: Scheduler,
   handle: Arc<scheduler::Handle>,
-  driver: scheduler::Driver,
+  driver: Arc<Mutex<scheduler::Driver>>,
 }
 
 impl Runtime {
@@ -23,12 +32,12 @@ impl Runtime {
     let handle = scheduler::Handle::new(io_handle, shared.clone());
     Runtime {
       scheduler: Scheduler,
-      driver: scheduler::Driver { io: io_driver },
+      driver: Arc::new(Mutex::new(scheduler::Driver { io: io_driver })),
       handle: Arc::new(handle),
     }
   }
 
-  pub fn block_on<F, Res>(&mut self, fut: F) -> Res
+  pub fn block_on<F, Res>(self, fut: F) -> Res
   where
     F: Future<Output = Res>,
   {
@@ -36,40 +45,45 @@ impl Runtime {
 
     context::runtime_enter(self.handle.clone(), |_| {
       workers.launch();
-      self.scheduler.block_on(fut)
-    })
 
-    //self.scheduler.block_on(handle, move |cx| {
-    //
-    //})
-    //self.scheduler.block_on(.handle, |ctx| loop {
-    //  let context: std::task::Context;
-    //  if let Poll::Ready(output) = main_fut.as_mut().poll(&mut context) {
-    //    return output;
-    //  }
-    //})
-    //self.scheduler.block_on(self.handle, |ctx| loop {})
-    //// TODO: remove everything and implement better shit.
-    //let (runtime_sender, runtime_receiver) = channel::unbounded();
-    //let waker = Arc::new(RuntimeWaker::new(runtime_sender)).into();
-    //let mut main_fut_context = StdContext::from_waker(&waker);
-    //
-    //let main_fut = Box::pin(fut);
-    //
-    //let mut pinned = std::pin::pin!(main_fut);
-    //// Starts the poll so that the waker gets a change to send from the receiver.
-    //if let Poll::Ready(value) = pinned.as_mut().poll(&mut main_fut_context) {
-    //  return value;
-    //};
-    //loop {
-    //  if runtime_receiver.try_recv().is_ok() {
-    //    if let Poll::Ready(value) = pinned.as_mut().poll(&mut main_fut_context)
-    //    {
-    //      return value;
-    //    };
-    //  }
-    //  // Fill the newest tasks onto the task queue.
-    //  self.scheduler.tick();
-    //}
+      let nice = self.driver.clone();
+      let handle = self.handle.clone();
+      let handle = std::thread::spawn(move || loop {
+        let mut lock = nice.lock().unwrap();
+        if lock.io.turn(handle.io()) {
+          println!("whaat");
+          break;
+        }
+      });
+      let return_type = GlobalExecutor::block_on(fut);
+
+      let waker = noop_waker();
+
+      // Todo setup exist token register.
+      self.handle.io().poll(
+        TokenGenerator::new_wakeup().into(),
+        &mut Context::from_waker(&waker),
+      );
+      handle.join().unwrap();
+
+      return_type
+    })
   }
+}
+
+unsafe fn noop(_data: *const ()) {}
+
+const NOOP_WAKER_VTABLE: RawWakerVTable =
+  RawWakerVTable::new(noop_clone, noop, noop, noop);
+unsafe fn noop_clone(_data: *const ()) -> RawWaker {
+  noop_raw_waker()
+}
+use core::ptr::null;
+pub fn noop_waker() -> Waker {
+  // FIXME: Since 1.46.0 we can use transmute in consts, allowing this function to be const.
+  unsafe { Waker::from_raw(noop_raw_waker()) }
+}
+
+const fn noop_raw_waker() -> RawWaker {
+  RawWaker::new(null(), &NOOP_WAKER_VTABLE)
 }

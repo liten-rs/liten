@@ -15,6 +15,8 @@ use std::{
 
 use mio::{Events, Interest, Token};
 
+use crate::sync::oneshot;
+
 #[derive(Debug)]
 pub struct TokenGenerator(AtomicUsize);
 
@@ -31,6 +33,12 @@ impl TokenGenerator {
   }
 }
 
+impl Into<Token> for TokenGenerator {
+  fn into(self) -> Token {
+    Token(self.0.load(Ordering::Relaxed))
+  }
+}
+
 /// IO-Driver
 #[derive(Debug)]
 pub struct Driver {
@@ -38,7 +46,6 @@ pub struct Driver {
 }
 
 /// Reference to the IO driver
-#[derive(Debug)]
 pub struct Handle {
   registry: mio::Registry,
   wakers: Mutex<HashMap<Token, Waker>>,
@@ -95,6 +102,7 @@ impl Handle {
 impl Driver {
   pub fn new() -> io::Result<(Driver, Handle)> {
     let driver = Driver { poll: mio::Poll::new().unwrap() };
+
     let handle = Handle::from_driver_ref(&driver)?;
 
     Ok((driver, handle))
@@ -123,15 +131,14 @@ impl Driver {
   //  event_loop
   //}
 
-  fn turn(&mut self, handle: &Handle) {
+  pub fn turn(&mut self, handle: &Handle) -> bool {
     // FIXME: If it runs on another thread will this fuck up?
     let mut events = Events::with_capacity(1024);
-    //let reactor = ctx.io();
     self.poll.poll(&mut events, None).unwrap();
 
     for event in &events {
       match event.token().0 {
-        0 => {} // Wakeup-call
+        0 => return true, // Wakeup-call
         _ => {
           let mut guard = handle.wakers.lock().unwrap();
           if let Some(waker) = guard.remove(&event.token()) {
@@ -140,5 +147,6 @@ impl Driver {
         }
       }
     }
+    false
   }
 }

@@ -1,3 +1,5 @@
+mod worker_parker;
+
 use std::{
   collections::HashMap,
   sync::Arc,
@@ -5,7 +7,10 @@ use std::{
   thread::{Builder, JoinHandle},
 };
 
-use crossbeam::deque::{Injector, Steal, Stealer, Worker as WorkerQueue};
+use crossbeam::{
+  atomic::AtomicCell,
+  deque::{Injector, Steal, Stealer, Worker as WorkerQueue},
+};
 
 use crate::{
   runtime::waker::LitenWaker,
@@ -20,11 +25,16 @@ pub struct Shared {
 }
 
 impl Shared {
-  pub fn from(remotes: Box<[Remote]>) -> Shared {
-    Shared { remotes, injector: Injector::new() }
-  }
   pub fn push_task(&self, task: ArcTask) {
     self.injector.push(task);
+
+    for remote in self.remotes.iter() {
+      remote.unpark();
+    }
+  }
+
+  pub fn current_remote(&self, index: usize) -> &Remote {
+    &self.remotes[index]
   }
 
   pub fn new(num: u8) -> Arc<Shared> {
@@ -53,19 +63,38 @@ pub struct Worker {
   handle: Arc<Handle>,
   local_queue: WorkerQueue<ArcTask>,
   cold_queue: HashMap<TaskId, ArcTask>,
+  worker_id: usize,
 }
 
 impl Worker {
   fn fetch_task(&self) -> Option<ArcTask> {
+    println!("fetchign tasks {}", self.worker_id);
     match self.local_queue.pop() {
       Some(value) => Some(value),
-      // Task local queue is empty. Then we need to fill it from the global tasks
-      None => loop {
+      // Fill local queue from the global tasks
+      None => 'outer: loop {
         match self.steal_from_global_queue() {
           Steal::Retry => continue,
-          Steal::Empty => return None,
-          Steal::Success(_) => {
+          Steal::Success(_ /* = () */) => {
             return Some(self.local_queue.pop().expect("what the fuck"))
+          }
+          Steal::Empty => {
+            let iter = self.handle.shared.remotes.iter().enumerate();
+            for (index, remote) in iter {
+              if index == self.worker_id {
+                continue 'outer;
+              }
+              'inner: loop {
+                println!("nice");
+                match remote.stealer.steal_batch(&self.local_queue) {
+                  Steal::Retry => continue 'inner,
+                  Steal::Empty => return None,
+                  Steal::Success(_) => {
+                    return Some(self.local_queue.pop().expect(""));
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -79,10 +108,9 @@ impl Worker {
     let _guard = span.enter();
 
     let (sender, receiver) = crossbeam::channel::unbounded();
-    let thread = std::thread::current();
     println!("bootstrapping");
-    tracing::error!(parent: &span, thread_id = thread.name().unwrap(), "bootstrapping");
     loop {
+      println!("nice");
       for now_active_task_id in receiver.try_iter() {
         let task = self
           .cold_queue
@@ -92,17 +120,11 @@ impl Worker {
         self.local_queue.push(task);
       }
 
-      let task = match self.fetch_task() {
-        Some(task) => {
-          println!("yay found task");
-          task
-        }
-        None => {
-          println!("no tasks to run wtf");
-          continue;
-        }
+      let Some(task) = self.fetch_task() else {
+        println!("parking {}", self.worker_id);
+        self.handle.shared.current_remote(self.worker_id).park();
+        continue;
       };
-
       let id = task.id();
       let liten_waker = Arc::new(LitenWaker::new(id, sender.clone())).into();
       let mut context = std::task::Context::from_waker(&liten_waker);
@@ -116,9 +138,29 @@ impl Worker {
       };
 
       if Poll::Pending == poll_result {
-        let old_value = self.cold_queue.insert(task.id(), task);
+        let old_value = self.cold_queue.insert(id, task);
         assert!(old_value.is_none(), "logic error of inserted cold_queue task");
       }
+      //  match self.fetch_task() {
+      //Some(task) => task,
+      //None => {
+      //  self.handle.shared.io_polling_worker.fetch_update(
+      //    |value| match value {
+      //      Some(index) => {
+      //        debug_assert!(
+      //          index == self.worker_id,
+      //          "Deep logic error, this thread should be sleeping"
+      //        );
+      //
+      //        self.handle.shared.current_remote(index).park();
+      //      }
+      //      None => {}
+      //    },
+      //  );
+      //  std::thread::park();
+      //  continue;
+      //}
+      //};
     }
   }
 }
@@ -126,10 +168,19 @@ impl Worker {
 // One remote worker.
 pub struct Remote {
   stealer: Stealer<ArcTask>,
+  parker: worker_parker::WorkerParker,
 }
 impl Remote {
   pub fn from_stealer(stealer: Stealer<ArcTask>) -> Self {
-    Remote { stealer }
+    Remote { stealer, parker: worker_parker::WorkerParker::new() }
+  }
+
+  pub fn park(&self) {
+    self.parker.park();
+  }
+
+  pub fn unpark(&self) {
+    self.parker.unpark();
   }
 }
 
@@ -159,22 +210,14 @@ impl Workers {
 
 impl WorkersBuilder {
   pub fn from(handle: Arc<Handle>) -> Workers {
-    let worker: Vec<(WorkerQueue<ArcTask>, Stealer<ArcTask>)> =
-      (0..handle.shared.remotes.len())
-        .map(|_| {
-          let worker_queue = WorkerQueue::new_fifo();
-          let stealer = worker_queue.stealer();
-          (worker_queue, stealer)
-        })
-        .collect();
-
     Workers(
-      worker
+      (0..handle.shared.remotes.len())
         .into_iter()
-        .map(|(worker, _)| Worker {
+        .map(|index| Worker {
           handle: handle.clone(),
-          local_queue: worker,
+          local_queue: WorkerQueue::new_fifo(),
           cold_queue: HashMap::new(),
+          worker_id: index,
         })
         .collect(),
     )
