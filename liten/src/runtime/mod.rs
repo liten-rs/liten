@@ -2,10 +2,8 @@ mod main_executor;
 pub(crate) mod scheduler;
 mod waker;
 
-use scheduler::{worker::Shared, Scheduler};
-use std::{future::Future, sync::Arc};
-
-use crate::events;
+use scheduler::Scheduler;
+use std::future::Future;
 
 pub struct Runtime {
   scheduler: Scheduler,
@@ -20,13 +18,22 @@ impl Runtime {
   where
     F: Future<Output = Res>,
   {
-    let (io_driver, io_handle) = events::Driver::new().unwrap();
-
-    let driver = scheduler::Driver { io: io_driver };
-    let handle = Arc::new(scheduler::Handle::new(io_handle));
-    let (workers, shared, shutdown) = Shared::new_parts(8, handle.clone());
-
-    handle.set_handle(shared);
-    self.scheduler.block_on(handle, driver, workers, shutdown, fut)
+    //let (io_driver, io_handle) = events::Driver::new().unwrap();
+    //
+    //let driver = scheduler::Driver { io: io_driver };
+    //let handle = Arc::new(scheduler::Handle::new(io_handle));
+    //
+    //let cpus = std::thread::available_parallelism().unwrap();
+    //
+    //let workers = Workers::new(cpus, handle.clone());
+    //
+    //// TODO: Create workers
+    //
+    ////let (workers, shared, shutdown) = Shared::new_parts(cpus, handle.clone());
+    //
+    //let shared = Shared::from_workers(&workers);
+    //
+    //handle.set_handle(shared);
+    self.scheduler.block_on(fut)
   }
 }

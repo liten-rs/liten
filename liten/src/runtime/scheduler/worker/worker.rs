@@ -5,7 +5,10 @@ use crossbeam_utils::sync::Parker;
 
 use crate::{
   runtime::{scheduler::Handle, waker::TaskWaker},
-  sync::{mpsc, oneshot::Receiver},
+  sync::{
+    mpsc,
+    oneshot::{self, Receiver},
+  },
   task::{ArcTask, TaskId},
 };
 
@@ -54,7 +57,7 @@ impl WorkerBuilder {
 pub struct Worker {
   worker_id: usize,
   handle: Arc<Handle>,
-  parker: crossbeam_utils::sync::Parker,
+  parker: Parker,
 
   local_queue: WorkerQueue<ArcTask>,
   cold_queue: HashMap<TaskId, ArcTask>,
@@ -63,9 +66,35 @@ pub struct Worker {
 }
 
 impl Worker {
+  pub fn new(id: usize, handle: Arc<Handle>) -> Worker {
+    let (sender, receiver) = oneshot::channel();
+    drop(sender);
+    Worker {
+      worker_id: id,
+      handle,
+      parker: Parker::new(),
+      receiver,
+      cold_queue: HashMap::new(),
+      local_queue: WorkerQueue::new_fifo(),
+    }
+  }
+
   pub fn id(&self) -> usize {
     self.worker_id
   }
+
+  pub fn parker(&self) -> &Parker {
+    &self.parker
+  }
+
+  pub fn stealer(&self) -> crossbeam_deque::Stealer<ArcTask> {
+    self.local_queue.stealer()
+  }
+
+  pub fn get_shutdown_sender(&self) -> oneshot::Sender<()> {
+    self.receiver.try_get_sender().unwrap()
+  }
+
   fn fetch_task(&self) -> Option<ArcTask> {
     if let Some(task) = self.local_queue.pop() {
       return Some(task);

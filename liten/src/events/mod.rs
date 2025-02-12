@@ -40,6 +40,8 @@ pub struct Driver {
 /// Reference to the IO driver
 pub struct Handle {
   registry: mio::Registry,
+  // Using a stdMutex because events::Handle is not in a async context and doesn't fit a async
+  // model.
   wakers: Mutex<HashMap<Token, Waker>>,
 
   token_state: TokenState,

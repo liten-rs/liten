@@ -1,103 +1,119 @@
 use std::{
-  cell::{RefCell, UnsafeCell},
-  collections::VecDeque,
-  future::Future,
+  cell::UnsafeCell,
+  error::Error,
+  fmt::Display,
   ops::{Deref, DerefMut},
-  sync::atomic::{AtomicUsize, Ordering},
-  task::{Context, Poll, Waker},
+  panic::{RefUnwindSafe, UnwindSafe},
+  sync::atomic::AtomicBool,
 };
 
+use super::{AcquireLock, Semaphore};
+
+pub struct Mutex<T> {
+  inner: UnsafeCell<T>,
+  poisoned: AtomicBool,
+  guard: Semaphore,
+}
+unsafe impl<T: Send> Send for Mutex<T> {}
+unsafe impl<T: Send> Sync for Mutex<T> {}
+impl<T> UnwindSafe for Mutex<T> {}
+impl<T> RefUnwindSafe for Mutex<T> {}
+
 #[derive(Debug)]
-pub struct Mutex<D: ?Sized> {
-  current_ticket: AtomicUsize,
-  /// Increments each time a task attempts to acquire the lock.
-  ticket_counter: AtomicUsize,
-  // Why Box? Right now a quickfix
-  data: Box<UnsafeCell<D>>,
-  wakers: RefCell<VecDeque<Waker>>,
-}
+#[cfg_attr(test, derive(PartialEq))]
+pub struct AcquireLockError;
 
-unsafe impl<T> Send for Mutex<T> where T: Send {}
-unsafe impl<T> Sync for Mutex<T> where T: Send {}
-unsafe impl<T> Sync for MutexGuard<'_, T> where T: Send + Sync {}
+impl Error for AcquireLockError {}
 
-pub struct MutexGuard<'a, D> {
-  mutex: &'a Mutex<D>,
-}
-impl<'a, D> MutexGuard<'a, D> {
-  fn new(mutex: &'a Mutex<D>) -> Self {
-    MutexGuard { mutex }
+impl Display for AcquireLockError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "AcquireLockError: Failed to acquire lock")
   }
 }
 
-pub struct MutexGuardFuture<'a, D> {
-  mutex: &'a Mutex<D>,
-  ticket: usize,
-}
+pub struct PoisonError;
 
-impl<'a, D> MutexGuardFuture<'a, D> {
-  fn new(mutex: &'a Mutex<D>) -> Self {
-    let ticket = mutex.ticket_counter.fetch_add(1, Ordering::SeqCst);
-    MutexGuardFuture { mutex, ticket }
-  }
-}
-
-impl<D> Mutex<D> {
-  pub fn new(value: D) -> Mutex<D> {
+impl<T> Mutex<T> {
+  pub fn new(value: T) -> Self {
     Self {
-      ticket_counter: AtomicUsize::new(0),
-      current_ticket: AtomicUsize::new(0),
-      data: Box::new(UnsafeCell::new(value)),
-      wakers: RefCell::new(VecDeque::new()),
+      inner: UnsafeCell::new(value),
+      guard: Semaphore::with_size(1.try_into().unwrap()),
+      poisoned: AtomicBool::new(false),
     }
   }
-  pub fn lock<'a>(&'a self) -> MutexGuardFuture<'a, D> {
-    MutexGuardFuture::new(self)
+
+  pub fn poison(&self) {
+    self.poisoned.store(true, std::sync::atomic::Ordering::Relaxed);
+  }
+
+  pub async fn lock(&self) -> Result<MutexGuard<'_, T>, PoisonError> {
+    if self.poisoned.load(std::sync::atomic::Ordering::Relaxed) {
+      return Err(PoisonError);
+    }
+    let guard = self.guard.acquire().await;
+    Ok(MutexGuard(self, guard))
+  }
+
+  pub fn try_lock(&self) -> Result<MutexGuard<'_, T>, AcquireLockError> {
+    let guard = self.guard.try_acquire().map_err(|_| AcquireLockError);
+    guard.map(|guard| MutexGuard(self, guard))
   }
 }
 
-impl<G> Deref for MutexGuard<'_, G> {
-  type Target = G;
+pub struct MutexGuard<'a, T>(&'a Mutex<T>, AcquireLock<'a>);
+
+impl<T> Deref for MutexGuard<'_, T> {
+  type Target = T;
   fn deref(&self) -> &Self::Target {
-    unsafe { self.mutex.data.get().as_ref() }.unwrap()
+    unsafe { &*self.0.inner.get() }
   }
 }
 
-impl<G> DerefMut for MutexGuard<'_, G> {
+impl<T> DerefMut for MutexGuard<'_, T> {
   fn deref_mut(&mut self) -> &mut Self::Target {
-    unsafe { &mut *self.mutex.data.get() }
+    unsafe { &mut *self.0.inner.get() }
   }
 }
 
-impl<S> Drop for MutexGuard<'_, S> {
+impl<T> MutexGuard<'_, T> {
+  pub fn release(self) {
+    self.1.release();
+  }
+}
+
+impl<T> Drop for MutexGuard<'_, T> {
   fn drop(&mut self) {
-    self.mutex.ticket_counter.fetch_sub(1, Ordering::SeqCst);
-    if let Some(waker) = self.mutex.wakers.borrow_mut().pop_front() {
-      waker.wake();
+    if std::thread::panicking() {
+      self.0.poison();
     }
+    self.1.release();
   }
 }
 
-impl<'a, D> Future for MutexGuardFuture<'a, D> {
-  type Output = MutexGuard<'a, D>;
-  fn poll(
-    self: std::pin::Pin<&mut Self>,
-    cx: &mut Context<'_>,
-  ) -> Poll<Self::Output> {
-    let this = self.get_mut();
+#[test]
+fn lock() {
+  let mutex = Mutex::new(0);
 
-    // Check if the current ticket matches the task's ticket
-    if this.mutex.current_ticket.load(Ordering::SeqCst) == this.ticket {
-      // If the ticket matches, the task acquires the lock
-      Poll::Ready(MutexGuard::new(this.mutex))
-    } else {
-      // Register the waker and wait for the lock
-      let mut wakers = this.mutex.wakers.borrow_mut();
-      // Avoid registering waker if it's already there
-      if !wakers.iter().any(|w| w.will_wake(cx.waker())) {
-        wakers.push_back(cx.waker().clone());
-      }
-      Poll::Pending
-    }
-  }
+  let lock = mutex.try_lock();
+  assert!(lock.is_ok());
+
+  let mut value = lock.unwrap();
+
+  *value += 1;
+  assert_eq!(*value, 1);
+
+  assert!(mutex.try_lock().is_err_and(|err| err == AcquireLockError));
+
+  value.release();
+
+  let value = mutex.try_lock();
+
+  assert!(value.is_ok());
+
+  let mut value = value.unwrap();
+
+  assert!(*value == 1);
+
+  *value += 1;
+  assert!(*value == 2);
 }

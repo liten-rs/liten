@@ -197,6 +197,14 @@ impl<V> Sender<V> {
 }
 
 impl<V> Receiver<V> {
+  pub fn try_get_sender(&self) -> Result<Sender<V>, ()> {
+    if !self.channel.state.load().contains(ChannelState::SENDER_DROPPED) {
+      // There is another receiver alive. This function cannot move forward.
+      return Err(());
+    };
+
+    Ok(Sender { channel: self.channel.clone() })
+  }
   pub fn try_recv(&self) -> Result<Option<V>, SenderDroppedError> {
     let state = self.channel.state.load();
 

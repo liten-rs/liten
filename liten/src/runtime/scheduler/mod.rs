@@ -1,4 +1,5 @@
 pub mod worker;
+use crate::runtime::scheduler::worker::shared::Shared;
 
 use std::{
   future::Future,
@@ -20,24 +21,34 @@ pub struct Scheduler;
 impl Scheduler {
   pub fn block_on<F, Res>(
     self,
-    handle: Arc<Handle>,
-    mut driver: Driver,
-    workers: Vec<Worker>,
-    mut shutdown: ShutdownWorkers,
+    //handle: Arc<Handle>,
+    //mut driver: Driver,
+    //workers: Vec<Worker>,
+    //mut shutdown: ShutdownWorkers,
     fut: F,
   ) -> Res
   where
     F: Future<Output = Res>,
   {
+    let (io_driver, io_handle) = events::Driver::new().unwrap();
+
+    let mut driver = Driver { io: io_driver };
+    let handle = Arc::new(Handle::new(io_handle));
+
+    let cpus = std::thread::available_parallelism().unwrap();
+
+    let workers = Workers::new(cpus, handle.clone());
+
+    let shared = Shared::from_workers(&workers);
+    handle.set_handle(shared);
+
+    let mut shutdown = workers.as_shutdown_workers();
+
+    let handles = workers.launch(handle.clone());
+    shutdown.fill_handle(handles);
+
     let span = tracing::trace_span!("liten runtime");
     let _span = span.enter();
-
-    let workers = Workers::from(workers);
-    for (index, handle) in
-      workers.launch(handle.clone()).into_iter().enumerate()
-    {
-      shutdown.set_handle(index, handle)
-    }
 
     // DONT TOUCH: mio waker must be defined before driver.io.turn(...)
     let mio_waker = handle.io().mio_waker();
@@ -52,6 +63,7 @@ impl Scheduler {
 
     let return_type =
       context::runtime_enter(handle, move |_| GlobalExecutor::block_on(fut));
+
     shutdown.shutdown();
 
     mio_waker.wake().expect("noo :(");
@@ -63,7 +75,7 @@ impl Scheduler {
 
 pub struct Handle {
   pub io: events::Handle,
-  pub shared: OnceLock<Arc<worker::Shared>>,
+  pub shared: OnceLock<Arc<Shared>>,
 
   current_task_id: AtomicUsize,
   has_exited: AtomicBool,
@@ -92,7 +104,7 @@ impl Handle {
     }
   }
 
-  pub fn set_handle(&self, shared: Arc<worker::Shared>) {
+  pub fn set_handle(&self, shared: Arc<Shared>) {
     if self.shared.set(shared).is_err() {
       panic!("what the fuuuuck");
     }
@@ -104,7 +116,7 @@ pub struct Driver {
 }
 
 impl Handle {
-  pub fn state(&self) -> &worker::Shared {
+  pub fn state(&self) -> &Shared {
     &self.shared.get().expect("state not set")
   }
 }

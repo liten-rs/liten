@@ -1,20 +1,20 @@
-use std::{error::Error, time::Duration};
+use std::error::Error;
+//
+//use liten::task;
 
-use liten::task;
-
-#[liten::main]
+#[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-  let sub =
-    tracing_subscriber::fmt().with_max_level(tracing::Level::TRACE).finish();
-  tracing::subscriber::set_global_default(sub)?;
-
-  for thing in 0..400 {
-    task::spawn(async move {
-      std::thread::sleep(Duration::from_millis(400 - thing));
-    });
-  }
-
-  std::thread::sleep(Duration::from_secs(2));
+  //let sub =
+  //  tracing_subscriber::fmt().with_max_level(tracing::Level::TRACE).finish();
+  //tracing::subscriber::set_global_default(sub)?;
+  //
+  //for thing in 0..400 {
+  //  task::spawn(async move {
+  //    std::thread::sleep(Duration::from_millis(400 - thing));
+  //  });
+  //}
+  //
+  //std::thread::sleep(Duration::from_secs(2));
 
   //.await?;
   //let mut stream = TcpStream::connect("localhost:9000")?.await?;

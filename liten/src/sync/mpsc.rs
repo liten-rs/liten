@@ -3,13 +3,15 @@ use std::{
   future::Future,
   sync::{
     atomic::{AtomicU16, Ordering},
-    Arc, Mutex, RwLock,
+    Arc, RwLock,
   },
   task::{Poll, Waker},
 };
 
 use crossbeam_utils::atomic::AtomicCell;
 use futures_core::{FusedFuture, Stream};
+
+use super::Mutex;
 
 pub fn unbounded<T>() -> (Sender<T>, Receiver<T>) {
   let channel = Arc::new(UnboundedChannel::default());
@@ -149,7 +151,7 @@ impl<T> Receiver<T> {
       return Err(RecvError::Disconnected);
     }
 
-    let mut lock = self.channel.list.lock().unwrap();
+    let mut lock = self.channel.list.try_lock().unwrap();
     match lock.pop_front() {
       Some(t) => Ok(t),
       None => Err(RecvError::Empty),
@@ -196,7 +198,7 @@ impl<T> Sender<T> {
       return Err(ReceiverDroppedError);
     }
 
-    let mut lock = self.channel.list.lock().unwrap();
+    let mut lock = self.channel.list.try_lock().unwrap();
     lock.push_back(t);
 
     let lock = self.channel.waker.read().unwrap();

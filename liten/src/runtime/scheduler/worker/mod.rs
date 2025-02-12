@@ -1,13 +1,13 @@
-pub mod worker;
-
 use std::{
+  num::NonZero,
+  ops::Deref,
   sync::{Arc, OnceLock},
   thread::{Builder, JoinHandle},
 };
 
-use crossbeam_deque::{Injector, Stealer, Worker as WorkerQueue};
+use crossbeam_deque::Stealer;
 use crossbeam_utils::sync::Unparker;
-use worker::{Worker, WorkerBuilder};
+use worker::Worker;
 
 use crate::{
   context,
@@ -17,72 +17,8 @@ use crate::{
 
 use super::Handle;
 
-pub struct Shared {
-  pub remotes: Box<[Remote]>,
-  pub injector: Injector<ArcTask>,
-}
-
-impl Shared {
-  pub fn push_task(&self, task: ArcTask) {
-    self.injector.push(task);
-
-    for remote in self.remotes.iter() {
-      remote.unpark();
-    }
-  }
-
-  pub fn new_parts(
-    num: u8,
-    handle: Arc<Handle>,
-  ) -> (Vec<Worker>, Arc<Shared>, ShutdownWorkers) {
-    let num_iter = 0..num as usize;
-
-    let workers_remotes: Vec<(Worker, Remote, Sender<()>)> = num_iter
-      .map(|worker_id| {
-        let worker_queue = WorkerQueue::new_fifo();
-        let stealer = worker_queue.stealer();
-        let parker = crossbeam_utils::sync::Parker::new();
-        let unparker = parker.unparker().clone();
-
-        let (sender, receiver) = oneshot::channel();
-
-        let worker = WorkerBuilder::with_id(worker_id)
-          .parker(parker)
-          .handle(handle.clone())
-          .queue(worker_queue)
-          .build(receiver);
-        (worker, Remote::from_stealer(stealer, unparker), sender)
-      })
-      .collect();
-
-    let remotes: Vec<Remote> =
-      workers_remotes.iter().map(|(_, remote, _)| remote.clone()).collect();
-
-    let shutdown = ShutdownWorkers(
-      workers_remotes
-        .iter()
-        .map(|(worker, remote, sender)| WorkerShutdown {
-          worker_id: worker.id(),
-          signal_sender: sender.clone(),
-          unparker: remote.unparker.clone(),
-          handle: OnceLock::new(),
-        })
-        .collect(),
-    );
-
-    let workers: Vec<Worker> =
-      workers_remotes.into_iter().map(|(worker, _, _)| worker).collect();
-
-    (
-      workers,
-      Arc::new(Shared {
-        remotes: remotes.into_boxed_slice(),
-        injector: Injector::new(),
-      }),
-      shutdown,
-    )
-  }
-}
+pub mod shared;
+pub mod worker;
 
 pub struct WorkerShutdown {
   worker_id: usize,
@@ -94,8 +30,30 @@ pub struct WorkerShutdown {
 pub struct ShutdownWorkers(Vec<WorkerShutdown>);
 
 impl ShutdownWorkers {
-  pub fn set_handle(&mut self, index: usize, handle: JoinHandle<()>) {
-    self.0[index].handle.set(handle).unwrap();
+  pub fn before_starting_workers<'a>(
+    workers: impl Iterator<Item = &'a Worker>,
+  ) -> Self {
+    ShutdownWorkers(
+      workers
+        .map(|x| WorkerShutdown {
+          worker_id: x.id(),
+          signal_sender: x.get_shutdown_sender(),
+          unparker: x.parker().unparker().clone(),
+          handle: OnceLock::new(),
+        })
+        .collect(),
+    )
+  }
+
+  pub fn fill_handle(&mut self, handle: Vec<JoinHandle<()>>) {
+    assert!(
+      self.0.len() == handle.len(),
+      "joinhandle len is not equal to workers"
+    );
+
+    for (index, handle) in handle.into_iter().enumerate() {
+      self.0[index].handle.set(handle).unwrap();
+    }
   }
   pub fn shutdown(self) {
     for WorkerShutdown { signal_sender, unparker, handle, worker_id } in self.0
@@ -133,15 +91,15 @@ impl Remote {
   }
 }
 
-//impl LaunchWorkers {
-//  pub fn join(self) {
-//    for handle in self.0 {
-//      handle.join().unwrap();
-//    }
-//  }
-//}
-
 pub struct Workers(Vec<Worker>);
+
+impl Deref for Workers {
+  type Target = [Worker];
+
+  fn deref(&self) -> &Self::Target {
+    self.0.as_slice()
+  }
+}
 
 impl From<Vec<Worker>> for Workers {
   fn from(workers: Vec<Worker>) -> Self {
@@ -150,6 +108,19 @@ impl From<Vec<Worker>> for Workers {
 }
 
 impl Workers {
+  pub fn new(quantity: NonZero<usize>, handle: Arc<Handle>) -> Self {
+    let worker_vec: Vec<Worker> = (0..quantity.into())
+      .into_iter()
+      .map(|worker_id| Worker::new(worker_id, handle.clone()))
+      .collect();
+
+    Workers(worker_vec)
+  }
+
+  pub fn as_shutdown_workers(&self) -> ShutdownWorkers {
+    ShutdownWorkers::before_starting_workers(self.0.iter())
+  }
+
   pub fn launch(self, handle: Arc<Handle>) -> Vec<JoinHandle<()>> {
     tracing::trace!(len = self.0.len(), "launching threads");
     let join_handles: Vec<JoinHandle<()>> = self
@@ -170,20 +141,3 @@ impl Workers {
     join_handles
   }
 }
-
-//impl WorkersBuilder {
-//  pub fn from(how_many: u8, handle: Arc<Handle>) -> Workers {
-//    // Don't touch the Handle.shared
-//    Workers(
-//      (0..how_many as usize)
-//        .into_iter()
-//        .map(|index| {
-//          WorkerBuilder::with_id(index)
-//            .handle(handle.clone())
-//            .parker(Parker::new())
-//            .build()
-//        })
-//        .collect(),
-//    )
-//  }
-//}

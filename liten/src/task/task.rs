@@ -1,13 +1,12 @@
 use std::{
   future::Future,
   pin::Pin,
-  sync::Mutex,
   task::{Context, Poll},
 };
 
 use crate::{
   context::{self},
-  sync::oneshot::Sender,
+  sync::{oneshot::Sender, Mutex},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -56,7 +55,11 @@ impl Task {
   }
 
   pub fn poll(&self, cx: &mut Context) -> Poll<()> {
-    let mut future_lock = self.future.lock().unwrap();
+    let lock = match std::pin::pin!(self.future.lock()).poll(cx) {
+      Poll::Ready(lock) => lock,
+      Poll::Pending => return Poll::Pending,
+    };
+    let mut future_lock = lock;
     future_lock.as_mut().poll(cx)
   }
 }
