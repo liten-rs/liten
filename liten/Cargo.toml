@@ -11,7 +11,7 @@ http1 = ["dep:http", "dep:bytes"]
 liten-macros = { version = "0.1.0", path = "../liten-macros" }
 mio = { version = "1.0.3", features = ["net", "os-poll", "os-ext"] }
 
-futures-core = {version = "0.3", features = ["portable-atomic"] }
+futures-core = "0.3"
 futures-task = "0.3"
 
 tracing = "0.1.41"
@@ -21,6 +21,7 @@ thiserror = "2.0.11"
 
 crossbeam-deque = "0.8.6"
 crossbeam-utils = "0.8.21"
+
 http = { version = "1.2.0", optional = true }
 bytes = { version = "1.10.0", optional = true }
 

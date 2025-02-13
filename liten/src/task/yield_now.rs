@@ -6,7 +6,7 @@ mod private {
 
   #[derive(Default)]
   pub struct YieldNow {
-    is_ready: bool,
+    is_ready: u8,
   }
 
   impl Future for YieldNow {
@@ -16,11 +16,11 @@ mod private {
       mut self: std::pin::Pin<&mut Self>,
       cx: &mut Context<'_>,
     ) -> Poll<Self::Output> {
-      if self.is_ready {
+      if self.is_ready == 3 {
         return Poll::Ready(());
       }
 
-      self.is_ready = true;
+      self.is_ready += 1;
 
       cx.waker().wake_by_ref();
 

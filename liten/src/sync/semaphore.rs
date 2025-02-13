@@ -13,7 +13,7 @@ use std::{
 
 pub struct Semaphore {
   count: AtomicUsize,
-  // This will not block basically anything.
+  // This is not a bottleneck
   waiters: StdMutex<VecDeque<Waker>>,
 }
 

@@ -9,7 +9,7 @@ use std::{
   },
 };
 
-use worker::{worker::Worker, ShutdownWorkers, Workers};
+use worker::Workers;
 
 use crate::context;
 
@@ -19,21 +19,14 @@ use super::{super::events, main_executor::GlobalExecutor};
 pub struct Scheduler;
 
 impl Scheduler {
-  pub fn block_on<F, Res>(
-    self,
-    //handle: Arc<Handle>,
-    //mut driver: Driver,
-    //workers: Vec<Worker>,
-    //mut shutdown: ShutdownWorkers,
-    fut: F,
-  ) -> Res
+  pub fn block_on<F, Res>(self, fut: F) -> Res
   where
     F: Future<Output = Res>,
   {
     let (io_driver, io_handle) = events::Driver::new().unwrap();
 
     let mut driver = Driver { io: io_driver };
-    let handle = Arc::new(Handle::new(io_handle));
+    let handle = Arc::new(Handle::without_shared(io_handle));
 
     let cpus = std::thread::available_parallelism().unwrap();
 
@@ -50,7 +43,7 @@ impl Scheduler {
     let span = tracing::trace_span!("liten runtime");
     let _span = span.enter();
 
-    // DONT TOUCH: mio waker must be defined before driver.io.turn(...)
+    // NOTE: Has to be over the mio join handle.
     let mio_waker = handle.io().mio_waker();
 
     let thread_handle = handle.clone();
@@ -82,7 +75,7 @@ pub struct Handle {
 }
 
 impl Handle {
-  pub fn new(io: events::Handle) -> Handle {
+  pub fn without_shared(io: events::Handle) -> Handle {
     Handle {
       io,
       shared: OnceLock::new(),

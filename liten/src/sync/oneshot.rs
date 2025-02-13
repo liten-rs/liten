@@ -12,6 +12,7 @@ use std::{
 use crossbeam_utils::atomic::AtomicCell;
 
 bitflags::bitflags! {
+  #[repr(transparent)]
   #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
   struct ChannelState: u8 {
       const INITIALISED = 0;

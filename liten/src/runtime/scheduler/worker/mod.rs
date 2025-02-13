@@ -9,11 +9,7 @@ use crossbeam_deque::Stealer;
 use crossbeam_utils::sync::Unparker;
 use worker::Worker;
 
-use crate::{
-  context,
-  sync::oneshot::{self, Sender},
-  task::ArcTask,
-};
+use crate::{context, sync::oneshot::Sender, task::ArcTask};
 
 use super::Handle;
 

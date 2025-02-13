@@ -1,12 +1,14 @@
 use std::{
+  cell::UnsafeCell,
   future::Future,
-  pin::Pin,
+  panic::RefUnwindSafe,
+  pin::{self as stdpin, Pin},
   task::{Context, Poll},
 };
 
 use crate::{
   context::{self},
-  sync::{oneshot::Sender, Mutex},
+  sync::oneshot::Sender,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -20,8 +22,12 @@ impl TaskId {
 
 pub struct Task {
   id: TaskId,
-  pub future: Mutex<Pin<Box<dyn Future<Output = ()> + Send>>>,
+  pub future: UnsafeCell<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
+
+impl RefUnwindSafe for Task {}
+// SAFETY: Task is only used in a single thread at any time.
+unsafe impl Sync for Task {}
 
 #[cfg(test)]
 static_assertions::assert_impl_all!(Task: Send, Sync);
@@ -47,7 +53,7 @@ impl Task {
         // Ignore, task handler has been dropped in this case.
       }
     });
-    Self { id, future: Mutex::new(future) }
+    Self { id, future: UnsafeCell::new(future) }
   }
 
   pub fn id(&self) -> TaskId {
@@ -55,11 +61,8 @@ impl Task {
   }
 
   pub fn poll(&self, cx: &mut Context) -> Poll<()> {
-    let lock = match std::pin::pin!(self.future.lock()).poll(cx) {
-      Poll::Ready(lock) => lock,
-      Poll::Pending => return Poll::Pending,
-    };
-    let mut future_lock = lock;
-    future_lock.as_mut().poll(cx)
+    let future = unsafe { &mut *self.future.get() };
+
+    stdpin::pin!(future).poll(cx)
   }
 }

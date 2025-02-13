@@ -15,6 +15,10 @@ impl EventRegistration {
     EventRegistration { token, interest }
   }
 
+  pub fn token(&self) -> Token {
+    self.token
+  }
+
   pub fn is_read(&self) -> bool {
     self.interest.is_readable()
   }
@@ -43,10 +47,6 @@ impl EventRegistration {
 
   pub fn deregister(&self, source: &mut impl Source) -> io::Result<()> {
     context::with_context(|ctx| ctx.handle().io().deregister(source))
-  }
-
-  pub fn token(&self) -> Token {
-    self.token
   }
 
   pub fn register_io_waker(&self, waker: &mut Context) {

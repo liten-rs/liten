@@ -16,7 +16,7 @@ use mio::{Events, Interest, Token};
 
 struct TokenState(AtomicUsize);
 
-const WAKEUP_TOKEN: Token = Token(0);
+const SHUTDOWN_SIGNAL_TOKEN: Token = Token(0);
 
 impl TokenState {
   pub fn new() -> TokenState {
@@ -52,7 +52,7 @@ impl Handle {
     self.token_state.next_token()
   }
   pub fn mio_waker(&self) -> mio::Waker {
-    mio::Waker::new(&self.registry, WAKEUP_TOKEN).unwrap()
+    mio::Waker::new(&self.registry, SHUTDOWN_SIGNAL_TOKEN).unwrap()
   }
   pub fn from_driver_ref(driver: &Driver) -> io::Result<Self> {
     Ok(Self {
@@ -61,7 +61,7 @@ impl Handle {
       token_state: TokenState::new(),
     })
   }
-  pub fn register(
+  pub(self) fn register(
     &self,
     source: &mut dyn mio::event::Source,
     token: Token,
@@ -70,7 +70,7 @@ impl Handle {
     self.registry.register(source, token, interest)
   }
 
-  pub fn reregister(
+  pub(self) fn reregister(
     &self,
     source: &mut dyn mio::event::Source,
     token: Token,
@@ -79,7 +79,7 @@ impl Handle {
     self.registry.reregister(source, token, interest)
   }
 
-  pub fn deregister(
+  pub(self) fn deregister(
     &self,
     source: &mut dyn mio::event::Source,
   ) -> io::Result<()> {
@@ -121,14 +121,12 @@ impl Driver {
     self.poll.poll(&mut events, None).unwrap();
 
     for event in &events {
-      match event.token() {
-        WAKEUP_TOKEN => return true, // Wakeup-call
-        _ => {
-          let mut guard = handle.wakers.lock().unwrap();
-          if let Some(waker) = guard.remove(&event.token()) {
-            waker.wake()
-          }
-        }
+      if event.token() == SHUTDOWN_SIGNAL_TOKEN {
+        return true; // Wakeup-call
+      };
+      let mut guard = handle.wakers.lock().unwrap();
+      if let Some(waker) = guard.remove(&event.token()) {
+        waker.wake()
       }
     }
     false
