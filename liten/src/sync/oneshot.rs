@@ -1,3 +1,4 @@
+use crate::sync::utils::has_flag;
 use std::{
   cell::UnsafeCell,
   error::Error,
@@ -5,27 +6,18 @@ use std::{
   future::Future,
   mem::MaybeUninit,
   pin::Pin,
-  sync::Arc,
+  sync::{
+    atomic::{AtomicU8, Ordering},
+    Arc,
+  },
   task::{Context, Poll, Waker},
 };
 
-use crossbeam_utils::atomic::AtomicCell;
-
-bitflags::bitflags! {
-  #[repr(transparent)]
-  #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-  struct ChannelState: u8 {
-      const INITIALISED = 0;
-      const RECEIVER_DROPPED = 1 << 1;
-      const SENDER_DROPPED = 1 << 2;
-      const SENDER_SENT = 1 << 3;
-      const WAKER_REGISTERED = 1 << 4;
-  }
-}
-
-// It's literally a u8
-unsafe impl Send for ChannelState {}
-unsafe impl Sync for ChannelState {}
+const INITIALISED: u8 = 0;
+const RECEIVER_DROPPED: u8 = 1 << 1;
+const SENDER_DROPPED: u8 = 1 << 2;
+const SENDER_SENT: u8 = 1 << 3;
+const WAKER_REGISTERED: u8 = 1 << 4;
 
 pub struct Receiver<V> {
   channel: Arc<Channel<V>>,
@@ -34,25 +26,17 @@ pub struct Receiver<V> {
 impl<V> Drop for Receiver<V> {
   fn drop(&mut self) {
     // This doesn't fail
-    let _ = self.channel.state.fetch_update(|mut old| {
-      old.insert(ChannelState::RECEIVER_DROPPED);
-      Some(old)
-    });
+    self.channel.state.fetch_or(RECEIVER_DROPPED, Ordering::AcqRel);
   }
 }
 
 impl<V> Drop for Sender<V> {
   fn drop(&mut self) {
     // This doesn't fail
-    let value = self
-      .channel
-      .state
-      .fetch_update(|mut old| {
-        old.insert(ChannelState::SENDER_DROPPED);
-        Some(old)
-      })
-      .unwrap();
-    if value.contains(ChannelState::WAKER_REGISTERED) {
+    let previous_value =
+      self.channel.state.fetch_or(SENDER_DROPPED, Ordering::AcqRel);
+
+    if has_flag(previous_value, WAKER_REGISTERED) {
       let unsafecell_inner =
         unsafe { self.channel.waker.get().as_ref() }.unwrap();
       let waker = unsafe { unsafecell_inner.assume_init_ref() };
@@ -78,7 +62,8 @@ static_assertions::assert_impl_all!(Sender<()>: Send);
 static_assertions::assert_impl_all!(Receiver<()>: Send);
 
 pub struct Channel<V> {
-  state: AtomicCell<ChannelState>,
+  state: AtomicU8,
+  //state: AtomicCell<ChannelState>,
   waker: UnsafeCell<MaybeUninit<Waker>>,
   value: UnsafeCell<MaybeUninit<V>>,
 }
@@ -86,7 +71,7 @@ pub struct Channel<V> {
 impl<V> Channel<V> {
   fn new() -> Self {
     Self {
-      state: AtomicCell::new(ChannelState::INITIALISED),
+      state: AtomicU8::new(INITIALISED),
       waker: UnsafeCell::new(MaybeUninit::uninit()),
       value: UnsafeCell::new(MaybeUninit::uninit()),
     }
@@ -106,8 +91,8 @@ impl<V> Channel<V> {
     unsafe { (*self.value.get()).as_ptr().read() }
   }
 
+  /// SAFETY: Caller should guarrantee waker is init'ed.
   fn wake_unchecked(&self) {
-    // SAFETY: Caller should guarrantee waker is init'ed.
     let unsafecell_inner = unsafe { self.waker.get().as_ref() }.unwrap();
     let waker = unsafe { unsafecell_inner.assume_init_ref() };
     waker.wake_by_ref();
@@ -174,23 +159,19 @@ impl Error for SenderDroppedError {
 
 impl<V> Sender<V> {
   pub fn send(self, value: V) -> Result<(), ReceiverDroppedError> {
-    let state = self.channel.state.load();
+    let state = self.channel.state.load(Ordering::Acquire);
 
-    if state.contains(ChannelState::RECEIVER_DROPPED) {
+    if has_flag(state, RECEIVER_DROPPED) {
       return Err(ReceiverDroppedError);
     }
 
-    if state.contains(ChannelState::WAKER_REGISTERED) {
+    if has_flag(state, WAKER_REGISTERED) {
       // SAFETY: A waker is initialized because of the state.
       self.channel.wake_unchecked();
     }
 
     // This doesn't fail.
-    let _ = self.channel.state.fetch_update(|mut previous| {
-      previous.insert(ChannelState::SENDER_SENT);
-      Some(previous)
-    });
-
+    self.channel.state.fetch_or(SENDER_SENT, Ordering::AcqRel);
     self.channel.write_value(value);
 
     Ok(())
@@ -199,7 +180,8 @@ impl<V> Sender<V> {
 
 impl<V> Receiver<V> {
   pub fn try_get_sender(&self) -> Result<Sender<V>, ()> {
-    if !self.channel.state.load().contains(ChannelState::SENDER_DROPPED) {
+    let value = self.channel.state.load(Ordering::Acquire);
+    if !has_flag(value, SENDER_DROPPED) {
       // There is another receiver alive. This function cannot move forward.
       return Err(());
     };
@@ -207,15 +189,15 @@ impl<V> Receiver<V> {
     Ok(Sender { channel: self.channel.clone() })
   }
   pub fn try_recv(&self) -> Result<Option<V>, SenderDroppedError> {
-    let state = self.channel.state.load();
+    let state = self.channel.state.load(Ordering::Acquire);
 
-    if state.contains(ChannelState::SENDER_SENT) {
+    if has_flag(state, SENDER_SENT) {
       // SAFETY: If ChannelState::SENDER_SENT it's guarranteed for self.channel.value to be
       // initialised.
       return Ok(Some(self.channel.read_value_unchecked()));
     }
 
-    if state.contains(ChannelState::SENDER_DROPPED) {
+    if has_flag(state, SENDER_DROPPED) {
       return Err(SenderDroppedError);
     }
 
@@ -232,10 +214,7 @@ impl<V> Future for Receiver<V> {
         Some(value) => Poll::Ready(Ok(value)),
         None => {
           self.channel.write_waker(cx.waker().clone());
-          let _ = self.channel.state.fetch_update(|mut previous| {
-            previous.insert(ChannelState::WAKER_REGISTERED);
-            Some(previous)
-          });
+          self.channel.state.fetch_or(WAKER_REGISTERED, Ordering::AcqRel);
 
           Poll::Pending
         }
@@ -247,9 +226,19 @@ impl<V> Future for Receiver<V> {
 
 #[crate::internal_test]
 async fn simple() {
+  use crate::task;
+
   let (sender, receiver) = channel();
 
-  let _ = sender.send(2);
+  let handle = task::spawn(async move {
+    let _ = sender.send(2);
+  });
 
-  assert!(receiver.await.unwrap() == 2);
+  task::spawn(async move {
+    assert!(receiver.await.unwrap() == 2);
+  })
+  .await
+  .unwrap();
+
+  handle.await.unwrap();
 }

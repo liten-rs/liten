@@ -38,6 +38,8 @@
             cargo-release
 
             just
+
+            samply
           ];
 
         };

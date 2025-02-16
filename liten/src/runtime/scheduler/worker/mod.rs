@@ -86,9 +86,6 @@ impl Remote {
     self.unparker.unpark();
   }
 }
-
-pub struct Workers(Vec<Worker>);
-
 impl Deref for Workers {
   type Target = [Worker];
 
@@ -97,15 +94,11 @@ impl Deref for Workers {
   }
 }
 
-impl From<Vec<Worker>> for Workers {
-  fn from(workers: Vec<Worker>) -> Self {
-    Workers(workers)
-  }
-}
+pub struct Workers(Vec<Worker>);
 
 impl Workers {
   pub fn new(quantity: NonZero<usize>, handle: Arc<Handle>) -> Self {
-    let worker_vec: Vec<Worker> = (0..quantity.into())
+    let worker_vec = (0..quantity.into())
       .into_iter()
       .map(|worker_id| Worker::new(worker_id, handle.clone()))
       .collect();
@@ -118,7 +111,6 @@ impl Workers {
   }
 
   pub fn launch(self, handle: Arc<Handle>) -> Vec<JoinHandle<()>> {
-    tracing::trace!(len = self.0.len(), "launching threads");
     let join_handles: Vec<JoinHandle<()>> = self
       .0
       .into_iter()

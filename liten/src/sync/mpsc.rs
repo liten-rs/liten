@@ -1,17 +1,17 @@
+use super::{utils::has_flag, Mutex};
+use futures_core::{FusedFuture, Stream};
 use std::{
   collections::VecDeque,
   future::Future,
   sync::{
-    atomic::{AtomicU16, Ordering},
+    atomic::{AtomicU16, AtomicU8, Ordering},
     Arc, RwLock,
   },
   task::{Poll, Waker},
 };
 
-use crossbeam_utils::atomic::AtomicCell;
-use futures_core::{FusedFuture, Stream};
-
-use super::Mutex;
+const INITIALISED: u8 = 0;
+const RECEIVER_DROPPED: u8 = 1 << 1;
 
 pub fn unbounded<T>() -> (Sender<T>, Receiver<T>) {
   let channel = Arc::new(UnboundedChannel::default());
@@ -23,34 +23,41 @@ pub fn unbounded_with_capacity<T>(num: usize) -> (Sender<T>, Receiver<T>) {
   (Sender::from(channel.clone()), Receiver::from(channel.clone()))
 }
 
-bitflags::bitflags! {
-  #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-  struct ChannelState: u8 {
-      const INITIALISED = 0;
-      const RECEIVER_DROPPED = 1 << 1;
-      const WAKER_REGISTERED = 1 << 2;
-  }
-}
-
-impl Default for ChannelState {
-  fn default() -> Self {
-    ChannelState::INITIALISED
-  }
-}
-
 pub struct UnboundedChannel<T> {
   // Will always be written to so RwLock doesn't make sence.
   list: Mutex<VecDeque<T>>,
-  state: AtomicCell<ChannelState>,
+  state: AtomicU8,
   num_senders: AtomicU16,
   waker: RwLock<Option<Waker>>,
+}
+
+impl<T> UnboundedChannel<T> {
+  fn state_drop_receiver(&self) {
+    self.state.fetch_or(RECEIVER_DROPPED, Ordering::AcqRel);
+  }
+
+  fn state_has_receiver_dropped(&self) -> bool {
+    has_flag(self.state.load(Ordering::Acquire), RECEIVER_DROPPED)
+  }
+
+  fn senders_has_all_dropped(&self) -> bool {
+    self.num_senders.load(Ordering::Acquire) == 0
+  }
+
+  fn senders_add_sender(&self) {
+    self.num_senders.fetch_add(1, Ordering::AcqRel);
+  }
+
+  fn senders_sub_sender(&self) {
+    self.num_senders.fetch_sub(1, Ordering::AcqRel);
+  }
 }
 
 impl<T> Default for UnboundedChannel<T> {
   fn default() -> Self {
     Self {
       list: Mutex::new(VecDeque::with_capacity(512)),
-      state: AtomicCell::new(ChannelState::INITIALISED),
+      state: AtomicU8::new(INITIALISED),
       num_senders: AtomicU16::new(0),
       waker: RwLock::new(None),
     }
@@ -84,14 +91,7 @@ impl<T> From<Arc<UnboundedChannel<T>>> for Receiver<T> {
 
 impl<T> Drop for Receiver<T> {
   fn drop(&mut self) {
-    self
-      .channel
-      .state
-      .fetch_update(|mut old| {
-        old.insert(ChannelState::RECEIVER_DROPPED);
-        Some(old)
-      })
-      .expect("whaat");
+    self.channel.state_drop_receiver();
   }
 }
 
@@ -137,7 +137,7 @@ impl<T> Future for ReceiverFuture<'_, T> {
 
 impl<T> FusedFuture for ReceiverFuture<'_, T> {
   fn is_terminated(&self) -> bool {
-    self.0.channel.state.load().contains(ChannelState::RECEIVER_DROPPED)
+    self.0.channel.state_has_receiver_dropped()
   }
 }
 
@@ -147,7 +147,7 @@ impl<T> Receiver<T> {
   }
 
   pub fn try_recv(&self) -> Result<T, RecvError> {
-    if self.channel.num_senders.load(Ordering::Relaxed) == 0 {
+    if self.channel.senders_has_all_dropped() {
       return Err(RecvError::Disconnected);
     }
 
@@ -184,7 +184,7 @@ pub struct Sender<T> {
 
 impl<T> From<Arc<UnboundedChannel<T>>> for Sender<T> {
   fn from(channel: Arc<UnboundedChannel<T>>) -> Self {
-    channel.num_senders.fetch_add(1, Ordering::Relaxed);
+    channel.senders_add_sender();
     Self { channel }
   }
 }
@@ -194,7 +194,7 @@ pub struct ReceiverDroppedError;
 
 impl<T> Sender<T> {
   pub fn send(&self, t: T) -> Result<(), ReceiverDroppedError> {
-    if self.channel.num_senders.load(Ordering::Relaxed) == 0 {
+    if self.channel.senders_has_all_dropped() {
       return Err(ReceiverDroppedError);
     }
 
@@ -213,14 +213,14 @@ impl<T> Sender<T> {
 
 impl<T> Clone for Sender<T> {
   fn clone(&self) -> Self {
-    self.channel.num_senders.fetch_add(1, Ordering::Relaxed);
+    self.channel.senders_add_sender();
     Sender { channel: self.channel.clone() }
   }
 }
 
 impl<T> Drop for Sender<T> {
   fn drop(&mut self) {
-    self.channel.num_senders.fetch_sub(1, Ordering::Relaxed);
+    self.channel.senders_sub_sender();
   }
 }
 

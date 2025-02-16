@@ -34,6 +34,9 @@ impl Runtime {
     //let shared = Shared::from_workers(&workers);
     //
     //handle.set_handle(shared);
+
+    println!("block_on");
+
     self.scheduler.block_on(fut)
   }
 }
