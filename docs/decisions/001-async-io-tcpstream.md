@@ -18,3 +18,7 @@ Some other structs in the library, for example the [TcpStream](https://docs.rs/l
 ## Decision
 [TcpStream](https://docs.rs/liten/latest/titan/net/TcpStream) will not implement  [AsyncRead](https://docs.rs/futures-io/latest/futures_io/trait.AsyncRead.html) [AsyncWrite](https://docs.rs/futures-io/latest/futures_io/trait.AsyncWrite.html) because of its limited usefullness.
 ## Consequences
+
+This means that TcpStream will loop (waste CPU cycles) until sender has sent all information and a EOL.
+
+**NOTE**: This decision has been revisited and is not valid anymore and the project will implement read/writes asynchronously.
