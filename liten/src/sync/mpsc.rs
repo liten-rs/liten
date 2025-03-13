@@ -97,7 +97,7 @@ impl<T> Drop for Receiver<T> {
 
 pub struct ReceiverIter<'a, T>(&'a Receiver<T>);
 
-impl<'a, T> Iterator for ReceiverIter<'a, T> {
+impl<T> Iterator for ReceiverIter<'_, T> {
   type Item = T;
 
   fn next(&mut self) -> Option<Self::Item> {
@@ -106,7 +106,7 @@ impl<'a, T> Iterator for ReceiverIter<'a, T> {
 }
 
 impl<T> Receiver<T> {
-  pub fn try_iter<'a>(&'a self) -> ReceiverIter<'a, T> {
+  pub fn try_iter(&self) -> ReceiverIter<'_, T> {
     ReceiverIter(self)
   }
 }

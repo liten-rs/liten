@@ -23,7 +23,7 @@ pub trait AsyncWriteExt: AsyncWrite {
   /// ```
   /// async fn flush(&mut self) -> io::Result<()>
   /// ```
-  fn flush<'a>(&'a mut self) -> Flush<'a, Self> {
+  fn flush(&mut self) -> Flush<'_, Self> {
     Flush::new(self)
   }
 }

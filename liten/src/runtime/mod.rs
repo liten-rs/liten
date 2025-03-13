@@ -9,9 +9,15 @@ pub struct Runtime {
   scheduler: Scheduler,
 }
 
+impl Default for Runtime {
+  fn default() -> Self {
+    Runtime { scheduler: Scheduler }
+  }
+}
+
 impl Runtime {
   pub fn new() -> Self {
-    Runtime { scheduler: Scheduler }
+    Self::default()
   }
 
   pub fn block_on<F, Res>(self, fut: F) -> Res

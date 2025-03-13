@@ -1,4 +1,4 @@
-use std::{future::Future, sync::Arc};
+use std::future::Future;
 
 use crate::{context, sync::oneshot};
 
@@ -9,9 +9,15 @@ pub struct Builder {
   name: Option<String>,
 }
 
+impl Default for Builder {
+  fn default() -> Self {
+    Builder { id: TaskId::new(), name: None }
+  }
+}
+
 impl Builder {
   pub fn new() -> Self {
-    Builder { id: TaskId::new(), name: None }
+    Self::default()
   }
   pub fn name(mut self, name: impl Into<String>) -> Self {
     self.name = Some(name.into());

@@ -12,47 +12,6 @@ use crate::{
   task::{Task, TaskId},
 };
 
-pub struct WorkerBuilder {
-  worker_id: usize,
-  handle: Option<Arc<Handle>>,
-  parker: Option<Parker>,
-
-  queue: Option<WorkerQueue<Task>>,
-}
-
-impl WorkerBuilder {
-  pub fn with_id(worker_id: usize) -> Self {
-    WorkerBuilder { worker_id, handle: None, parker: None, queue: None }
-  }
-
-  pub fn handle(mut self, handle: Arc<Handle>) -> Self {
-    self.handle = Some(handle);
-    self
-  }
-
-  pub fn parker(mut self, parker: Parker) -> Self {
-    self.parker = Some(parker);
-    self
-  }
-
-  pub fn queue(mut self, queue: WorkerQueue<Task>) -> Self {
-    self.queue = Some(queue);
-    self
-  }
-
-  pub fn build(self, receiver: Receiver<()>) -> Worker {
-    Worker {
-      worker_id: self.worker_id,
-      handle: self.handle.expect("handle is required"),
-      parker: self.parker.expect("parker is required"),
-
-      local_queue: self.queue.expect("queue is required"),
-      cold_queue: HashMap::new(),
-      receiver,
-    }
-  }
-}
-
 // Local worker.
 pub struct Worker {
   worker_id: usize,

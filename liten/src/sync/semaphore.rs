@@ -25,9 +25,7 @@ impl Semaphore {
     }
   }
 
-  pub fn try_acquire<'a>(
-    &'a self,
-  ) -> Result<AcquireLock<'a>, AcquireLockError> {
+  pub fn try_acquire(&self) -> Result<AcquireLock<'_>, AcquireLockError> {
     let count = self.count.load(Ordering::Acquire);
 
     if count > 0 {
@@ -38,7 +36,7 @@ impl Semaphore {
     }
   }
 
-  pub fn acquire<'a>(&'a self) -> AcquireFuture<'a> {
+  pub fn acquire(&self) -> AcquireFuture<'_> {
     AcquireFuture { semaphore: self }
   }
 }

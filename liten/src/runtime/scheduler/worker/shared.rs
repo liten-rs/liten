@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::{worker::Worker, Remote, Workers};
+use super::{worker::Worker, Remote};
 use crossbeam_deque::Injector;
 
 use crate::task::Task;
@@ -19,12 +19,9 @@ impl Shared {
     }
   }
 
-  pub fn from_workers(
-    workers: &[Worker], //num: NonZero<usize>,
-                        //handle: Arc<Handle>,
-  ) -> Arc<Shared> {
+  pub fn from_workers(workers: &[Worker]) -> Arc<Shared> {
     let remotes = workers
-      .into_iter()
+      .iter()
       .map(|worker| {
         let stealer = worker.stealer();
         let unparker = worker.parker().unparker().clone();

@@ -26,12 +26,15 @@ impl TcpStream {
   /// specified address.
   pub fn connect(addr: impl ToSocketAddrs) -> io::Result<Connect> {
     let addrs = addr.to_socket_addrs()?;
-    for addr in addrs {
-      let mio_stream = mionet::TcpStream::connect(addr)?;
-      return Ok(Connect::inherit_stream(mio_stream));
-    }
 
-    Err(io::Error::new(io::ErrorKind::InvalidInput, "Address not valid"))
+    let mut iter = addrs.into_iter();
+    let addr = iter.next().ok_or(io::Error::new(
+      io::ErrorKind::InvalidInput,
+      "Address not valid",
+    ))?;
+
+    let mio_stream = mionet::TcpStream::connect(addr)?;
+    Ok(Connect::inherit_stream(mio_stream))
   }
 
   // Partially to maintain compatibility with std.

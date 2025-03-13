@@ -1,3 +1,5 @@
+use thiserror::Error;
+
 use crate::sync::utils::has_flag;
 use std::{
   cell::UnsafeCell,
@@ -178,12 +180,16 @@ impl<V> Sender<V> {
   }
 }
 
+#[derive(Error, Debug)]
+#[error("Sender has not dropped")]
+pub struct SenderHasNotDroppedError;
+
 impl<V> Receiver<V> {
-  pub fn try_get_sender(&self) -> Result<Sender<V>, ()> {
+  pub fn try_get_sender(&self) -> Result<Sender<V>, SenderHasNotDroppedError> {
     let value = self.channel.state.load(Ordering::Acquire);
     if !has_flag(value, SENDER_DROPPED) {
       // There is another receiver alive. This function cannot move forward.
-      return Err(());
+      return Err(SenderHasNotDroppedError);
     };
 
     Ok(Sender { channel: self.channel.clone() })

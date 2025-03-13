@@ -1,4 +1,4 @@
-pub fn has_flag(byte: u8, flag: u8) -> bool {
+pub const fn has_flag(byte: u8, flag: u8) -> bool {
   (byte & flag) != 0
 }
 

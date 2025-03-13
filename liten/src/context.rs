@@ -42,7 +42,7 @@ where
       panic!("nested runtimes is not supported");
     }
 
-    if let Err(_) = ctx.handle.set(handle) {
+    if ctx.handle.set(handle).is_err() {
       panic!("whaat");
     };
     let return_type = f(ctx);

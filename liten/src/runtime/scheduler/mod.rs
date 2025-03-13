@@ -110,7 +110,7 @@ pub struct Driver {
 
 impl Handle {
   pub fn state(&self) -> &Shared {
-    &self.shared.get().expect("state not set")
+    self.shared.get().expect("state not set")
   }
 }
 

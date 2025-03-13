@@ -1,7 +1,7 @@
 use std::{
   cell::UnsafeCell,
   future::Future,
-  panic::{RefUnwindSafe, UnwindSafe},
+  panic::UnwindSafe,
   pin::{self as stdpin, Pin},
   task::{Context, Poll},
 };
@@ -14,9 +14,15 @@ use crate::{
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct TaskId(pub usize);
 
+impl Default for TaskId {
+  fn default() -> Self {
+    Self(context::with_context(|ctx| ctx.handle().task_id_inc()))
+  }
+}
+
 impl TaskId {
   pub fn new() -> Self {
-    Self(context::with_context(|ctx| ctx.handle().task_id_inc()))
+    Self::default()
   }
 }
 

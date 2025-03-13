@@ -9,15 +9,13 @@ use crossbeam_deque::Stealer;
 use crossbeam_utils::sync::Unparker;
 use worker::Worker;
 
-use crate::{
-  context,
-  sync::oneshot::Sender,
-  task::{ArcTask, Task},
-};
+use crate::{context, sync::oneshot::Sender, task::Task};
 
 use super::Handle;
 
 pub mod shared;
+
+#[allow(clippy::module_inception)]
 pub mod worker;
 
 pub struct WorkerShutdown {
@@ -103,7 +101,6 @@ pub struct Workers(Vec<Worker>);
 impl Workers {
   pub fn new(quantity: NonZero<usize>, handle: Arc<Handle>) -> Self {
     let worker_vec = (0..quantity.into())
-      .into_iter()
       .map(|worker_id| Worker::new(worker_id, handle.clone()))
       .collect();
 
