@@ -10,8 +10,8 @@ pub trait AsyncWriteExt: AsyncWrite {
   /// Writes the entire contents of a buffer into this writer asynchronously.
   ///
   /// This is entirely equivalent to this:
-  /// ```
-  /// async fn write_all(&mut self, buf: &[u8]) -> io::Result<()>
+  /// ```ignore
+  /// async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()>
   /// ```
   fn write_all<'a>(&'a mut self, buf: &'a [u8]) -> WriteAll<'a, Self> {
     WriteAll::new(self, buf)
@@ -20,8 +20,8 @@ pub trait AsyncWriteExt: AsyncWrite {
   /// Flushes the entire contents of a buffer for this writer asynchronously.
   ///
   /// This is entirely equivalent to this:
-  /// ```
-  /// async fn flush(&mut self) -> io::Result<()>
+  /// ```ignore
+  /// async fn flush(&mut self) -> std::io::Result<()>
   /// ```
   fn flush(&mut self) -> Flush<'_, Self> {
     Flush::new(self)

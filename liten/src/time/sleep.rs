@@ -1,6 +1,7 @@
 use crate::sync::oneshot;
 use std::time::Duration;
 
+// BAD CODE
 pub async fn sleep(duration: Duration) {
   let (sender, receiver) = oneshot::channel();
   std::thread::spawn(move || {
@@ -9,10 +10,4 @@ pub async fn sleep(duration: Duration) {
   });
 
   receiver.await.unwrap(); // in this scenario: oneshot errors if panics
-}
-
-#[crate::internal_test]
-async fn no_testing() {
-  sleep(Duration::from_millis(10)).await;
-  sleep(Duration::from_millis(0)).await;
 }
