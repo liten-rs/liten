@@ -35,8 +35,6 @@ impl Runtime {
     //
     //handle.set_handle(shared);
 
-    println!("block_on");
-
     self.scheduler.block_on(fut)
   }
 }
