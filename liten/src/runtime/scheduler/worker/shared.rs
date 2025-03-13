@@ -3,15 +3,15 @@ use std::sync::Arc;
 use super::{worker::Worker, Remote, Workers};
 use crossbeam_deque::Injector;
 
-use crate::task::ArcTask;
+use crate::task::Task;
 
 pub struct Shared {
   pub remotes: Box<[Remote]>,
-  pub injector: Injector<ArcTask>,
+  pub injector: Injector<Task>,
 }
 
 impl Shared {
-  pub fn push_task(&self, task: ArcTask) {
+  pub fn push_task(&self, task: Task) {
     self.injector.push(task);
 
     for remote in self.remotes.iter() {

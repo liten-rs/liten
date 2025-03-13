@@ -9,7 +9,11 @@ use crossbeam_deque::Stealer;
 use crossbeam_utils::sync::Unparker;
 use worker::Worker;
 
-use crate::{context, sync::oneshot::Sender, task::ArcTask};
+use crate::{
+  context,
+  sync::oneshot::Sender,
+  task::{ArcTask, Task},
+};
 
 use super::Handle;
 
@@ -71,12 +75,12 @@ impl ShutdownWorkers {
 // One remote worker.
 #[derive(Clone)]
 pub struct Remote {
-  stealer: Stealer<ArcTask>,
+  stealer: Stealer<Task>,
   unparker: crossbeam_utils::sync::Unparker,
 }
 impl Remote {
   pub fn from_stealer(
-    stealer: Stealer<ArcTask>,
+    stealer: Stealer<Task>,
     unparker: crossbeam_utils::sync::Unparker,
   ) -> Self {
     Remote { stealer, unparker }

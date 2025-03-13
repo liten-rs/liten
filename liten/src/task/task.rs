@@ -1,7 +1,7 @@
 use std::{
   cell::UnsafeCell,
   future::Future,
-  panic::RefUnwindSafe,
+  panic::{RefUnwindSafe, UnwindSafe},
   pin::{self as stdpin, Pin},
   task::{Context, Poll},
 };
@@ -25,21 +25,12 @@ pub struct Task {
   pub future: UnsafeCell<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
 
-impl RefUnwindSafe for Task {}
+impl UnwindSafe for Task {}
 // SAFETY: Task is only used in a single thread at any time.
 unsafe impl Sync for Task {}
 
 #[cfg(test)]
 static_assertions::assert_impl_all!(Task: Send, Sync);
-
-impl std::fmt::Debug for Task {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("Task")
-      .field("id", &self.id)
-      .field("future", &"{...}")
-      .finish()
-  }
-}
 
 impl Task {
   pub(super) fn new<F>(id: TaskId, future: F, sender: Sender<F::Output>) -> Task

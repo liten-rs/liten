@@ -9,7 +9,7 @@ use crate::{
     mpsc,
     oneshot::{self, Receiver},
   },
-  task::{ArcTask, TaskId},
+  task::{Task, TaskId},
 };
 
 pub struct WorkerBuilder {
@@ -17,7 +17,7 @@ pub struct WorkerBuilder {
   handle: Option<Arc<Handle>>,
   parker: Option<Parker>,
 
-  queue: Option<WorkerQueue<ArcTask>>,
+  queue: Option<WorkerQueue<Task>>,
 }
 
 impl WorkerBuilder {
@@ -35,7 +35,7 @@ impl WorkerBuilder {
     self
   }
 
-  pub fn queue(mut self, queue: WorkerQueue<ArcTask>) -> Self {
+  pub fn queue(mut self, queue: WorkerQueue<Task>) -> Self {
     self.queue = Some(queue);
     self
   }
@@ -59,8 +59,8 @@ pub struct Worker {
   handle: Arc<Handle>,
   parker: Parker,
 
-  local_queue: WorkerQueue<ArcTask>,
-  cold_queue: HashMap<TaskId, ArcTask>,
+  local_queue: WorkerQueue<Task>,
+  cold_queue: HashMap<TaskId, Task>,
 
   receiver: Receiver<()>,
 }
@@ -87,7 +87,7 @@ impl Worker {
     &self.parker
   }
 
-  pub fn stealer(&self) -> crossbeam_deque::Stealer<ArcTask> {
+  pub fn stealer(&self) -> crossbeam_deque::Stealer<Task> {
     self.local_queue.stealer()
   }
 
@@ -95,7 +95,7 @@ impl Worker {
     self.receiver.try_get_sender().unwrap()
   }
 
-  fn fetch_task(&self) -> Option<ArcTask> {
+  fn fetch_task(&self) -> Option<Task> {
     if let Some(task) = self.local_queue.pop() {
       return Some(task);
       // Fill local queue from the global tasks
@@ -133,7 +133,7 @@ impl Worker {
     None
   }
 
-  fn steal_from_global_queue(&self) -> Steal<ArcTask> {
+  fn steal_from_global_queue(&self) -> Steal<Task> {
     self.handle.state().injector.steal_batch_and_pop(&self.local_queue)
   }
   pub fn launch(&mut self) {
@@ -161,18 +161,21 @@ impl Worker {
       let liten_waker = Arc::new(TaskWaker::new(id, sender.clone())).into();
       let mut context = std::task::Context::from_waker(&liten_waker);
 
-      let unwind_task = task.clone();
-      let poll_result = match std::panic::catch_unwind(move || {
-        unwind_task.poll(&mut context)
-      }) {
-        Ok(value) => value,
-        Err(_) => continue,
-      };
+      let poll_result =
+        std::panic::catch_unwind(move || match task.poll(&mut context) {
+          Poll::Pending => UnwindTaskResult::Pending(task),
+          Poll::Ready(()) => UnwindTaskResult::Ok,
+        });
 
-      if Poll::Pending == poll_result {
+      if let Ok(UnwindTaskResult::Pending(task)) = poll_result {
         let old_value = self.cold_queue.insert(id, task);
         assert!(old_value.is_none(), "logic error of inserted cold_queue task");
       }
     }
   }
+}
+
+enum UnwindTaskResult {
+  Pending(Task),
+  Ok,
 }
