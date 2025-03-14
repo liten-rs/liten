@@ -9,11 +9,9 @@ use std::{
   },
 };
 
-use worker::Workers;
-
-use crate::context;
-
 use super::{super::events, main_executor::GlobalExecutor};
+use crate::context;
+use worker::Workers;
 
 #[derive(Debug)]
 pub struct Scheduler;
@@ -75,6 +73,14 @@ pub struct Handle {
 }
 
 impl Handle {
+  pub fn state(&self) -> &Shared {
+    self.shared.get().expect("state not set")
+  }
+
+  pub fn io(&self) -> &events::Handle {
+    &self.io
+  }
+
   pub fn without_shared(io: events::Handle) -> Handle {
     Handle {
       io,
@@ -106,16 +112,4 @@ impl Handle {
 
 pub struct Driver {
   pub io: events::Driver,
-}
-
-impl Handle {
-  pub fn state(&self) -> &Shared {
-    self.shared.get().expect("state not set")
-  }
-}
-
-impl Handle {
-  pub fn io(&self) -> &events::Handle {
-    &self.io
-  }
 }
