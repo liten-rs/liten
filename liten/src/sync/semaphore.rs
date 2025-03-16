@@ -63,7 +63,13 @@ impl<'a> Future for AcquireFuture<'a> {
 pub struct AcquireLock<'a>(&'a Semaphore);
 
 impl AcquireLock<'_> {
-  pub fn release(&self) {
+  pub fn release(self) {
+    drop(self);
+  }
+}
+
+impl Drop for AcquireLock<'_> {
+  fn drop(&mut self) {
     let semaphore = self.0;
     let count = semaphore.count.fetch_add(1, Ordering::Release);
 
@@ -73,12 +79,6 @@ impl AcquireLock<'_> {
         waker.wake();
       }
     }
-  }
-}
-
-impl Drop for AcquireLock<'_> {
-  fn drop(&mut self) {
-    self.release();
   }
 }
 

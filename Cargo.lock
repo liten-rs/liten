@@ -367,6 +367,7 @@ dependencies = [
  "http",
  "liten-macros",
  "mio",
+ "pin-project-lite",
  "static_assertions",
  "thiserror",
  "tracing",

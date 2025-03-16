@@ -62,12 +62,6 @@ pub enum TryLockError {
 
 pub struct MutexGuard<'a, T>(&'a Mutex<T>, semaphore::AcquireLock<'a>);
 
-impl<T> MutexGuard<'_, T> {
-  pub fn release(self) {
-    self.1.release();
-  }
-}
-
 impl<T> Deref for MutexGuard<'_, T> {
   type Target = T;
   fn deref(&self) -> &Self::Target {
@@ -86,7 +80,6 @@ impl<T> Drop for MutexGuard<'_, T> {
     if thread::panicking() {
       self.0.poison();
     }
-    self.1.release();
   }
 }
 
@@ -95,7 +88,9 @@ fn lock() {
   let mutex = Mutex::new(0);
 
   let lock = mutex.try_lock();
+  let lock2 = mutex.try_lock();
   assert!(lock.is_ok());
+  assert!(lock2.is_err());
 
   let mut value = lock.unwrap();
 
@@ -106,7 +101,7 @@ fn lock() {
     .try_lock()
     .is_err_and(|err| err == TryLockError::UnableToAcquireLock));
 
-  value.release();
+  drop(value);
 
   let value = mutex.try_lock();
 

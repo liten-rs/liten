@@ -12,8 +12,7 @@ use syn::Token;
 
 #[proc_macro_attribute]
 pub fn main(_: TokenStream, function: TokenStream) -> TokenStream {
-  let func = function.clone();
-  let testing = parse_macro_input!(func as CallerFn);
+  let testing = parse_macro_input!(function as CallerFn);
 
   MainFn(testing).into_token_stream().into()
 }
@@ -28,8 +27,7 @@ pub fn test(_: TokenStream, function: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn internal_test(_: TokenStream, function: TokenStream) -> TokenStream {
-  let func = function.clone();
-  let testing = parse_macro_input!(func as CallerFn);
+  let testing = parse_macro_input!(function as CallerFn);
 
   InternalTestFn(testing).into_token_stream().into()
 }
