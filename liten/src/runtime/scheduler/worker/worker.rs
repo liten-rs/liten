@@ -56,6 +56,7 @@ impl Worker {
 
   fn fetch_task(&self) -> Option<Task> {
     if let Some(task) = self.local_queue.pop() {
+      tracing::trace!(task_id = ?task.id(), "fetched local task");
       return Some(task);
       // Fill local queue from the global tasks
     };
@@ -104,6 +105,7 @@ impl Worker {
         break;
       }
       for now_active_task_id in receiver.try_iter() {
+        tracing::trace!(task_id = ?now_active_task_id, "moving task from cold_queue to local_queue");
         let task = self
           .cold_queue
           .remove(&now_active_task_id)
@@ -127,6 +129,7 @@ impl Worker {
         });
 
       if let Ok(UnwindTaskResult::Pending(task)) = poll_result {
+        tracing::trace!(task_id = ?task.id(), "moving to cold_queue");
         let old_value = self.cold_queue.insert(id, task);
         assert!(old_value.is_none(), "logic error of inserted cold_queue task");
       }

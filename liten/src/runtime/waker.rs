@@ -15,6 +15,7 @@ impl TaskWaker {
 
 impl Wake for TaskWaker {
   fn wake(self: Arc<Self>) {
+    tracing::trace!(task_id = ?self.task_id, "task wake called");
     self.sender.send(self.task_id).unwrap();
   }
 }
