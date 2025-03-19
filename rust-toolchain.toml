@@ -1,4 +1,4 @@
 [toolchain]
-components = ["clippy", "miri", "rust-src"]
+components = ["clippy", "miri", "rust-src", "rustfmt"]
 channel = "nightly"
 profile = "minimal"
