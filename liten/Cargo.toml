@@ -29,6 +29,7 @@ pin-project-lite = "0.2.16"
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"]}
 static_assertions = "1.1.0"
+tracing-subscriber = "0.3.19"
 
 [[bench]]
 name = "channel"

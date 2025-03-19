@@ -1,8 +1,9 @@
 mod not_sync;
 pub use not_sync::{Receiver, Sender};
+use tracing::Level;
 mod sync;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use crate::runtime::Runtime;
 
@@ -30,27 +31,45 @@ pub fn sync_channel<V>() -> (sync::SyncSender<V>, sync::SyncReceiver<V>) {
   )
 }
 
-//#[crate::internal_test]
-//async fn simple() {
-//  use crate::task;
-//
-//  let (sender, receiver) = channel();
-//
-//  let handle = task::spawn(async move {
-//    sender.send(2).unwrap();
-//  });
-//
-//  task::spawn(async move {
-//    assert!(receiver.await.unwrap() == 2);
-//  })
-//  .await
-//  .unwrap();
-//
-//  handle.await.unwrap();
-//}
+#[test]
+// https://github.com/liten-rs/liten/issues/13
+#[ignore]
+async fn simple() {
+  let sub = tracing_subscriber::FmtSubscriber::builder()
+    .with_max_level(Level::TRACE)
+    .finish();
+
+  tracing::subscriber::set_global_default(sub);
+
+  Runtime::new().block_on(async {
+    use crate::task;
+
+    let (sender, receiver) = channel();
+
+    let handle = task::spawn(async move {
+      sender.send(2).unwrap();
+    });
+
+    task::spawn(async move {
+      assert!(receiver.await.unwrap() == 2);
+    })
+    .await
+    .unwrap();
+
+    handle.await.unwrap();
+  })
+}
 
 #[test]
+// https://github.com/liten-rs/liten/issues/13
+#[ignore]
 fn sync_error_on_drop() {
+  let sub = tracing_subscriber::FmtSubscriber::builder()
+    .with_max_level(Level::TRACE)
+    .finish();
+
+  tracing::subscriber::set_global_default(sub);
+
   Runtime::new().block_on(async {
     let (sender, receiver) = sync_channel::<u8>();
     drop(sender);
@@ -65,8 +84,14 @@ fn sync_error_on_drop() {
 }
 
 #[test]
+#[tracing::instrument]
 fn sync_simultaniously() {
-  Runtime::new().block_on(async {
+  let sub = tracing_subscriber::FmtSubscriber::builder()
+    .with_max_level(Level::TRACE)
+    .finish();
+
+  tracing::subscriber::set_global_default(sub);
+  Runtime::new().block_on(async move {
     let (sender, receiver) = sync_channel::<u8>();
     let handler1 = crate::task::spawn(async {
       sender.send(0).await.unwrap();
@@ -77,7 +102,7 @@ fn sync_simultaniously() {
       assert!(result == Ok(0));
     });
 
-    handler1.await.unwrap();
     handler2.await.unwrap();
+    handler1.await.unwrap();
   });
 }
