@@ -24,7 +24,6 @@ pub fn unbounded_with_capacity<T>(num: usize) -> (Sender<T>, Receiver<T>) {
 }
 
 pub struct UnboundedChannel<T> {
-  // Will always be written to so RwLock doesn't make sence.
   list: Mutex<VecDeque<T>>,
   state: AtomicU8,
   num_senders: AtomicU16,

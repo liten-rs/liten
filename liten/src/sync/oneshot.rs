@@ -31,57 +31,57 @@ pub fn sync_channel<V>() -> (sync::SyncSender<V>, sync::SyncReceiver<V>) {
   )
 }
 
-#[test]
-// https://github.com/liten-rs/liten/issues/13
-#[ignore]
-async fn simple() {
-  let sub = tracing_subscriber::FmtSubscriber::builder()
-    .with_max_level(Level::TRACE)
-    .finish();
+//#[test]
+//// https://github.com/liten-rs/liten/issues/13
+//#[ignore]
+//fn simple() {
+//  let sub = tracing_subscriber::FmtSubscriber::builder()
+//    .with_max_level(Level::TRACE)
+//    .finish();
+//
+//  tracing::subscriber::set_global_default(sub);
+//
+//  Runtime::new().block_on(async {
+//    use crate::task;
+//
+//    let (sender, receiver) = channel();
+//
+//    let handle = task::spawn(async move {
+//      sender.send(2).unwrap();
+//    });
+//
+//    task::spawn(async move {
+//      assert!(receiver.await.unwrap() == 2);
+//    })
+//    .await
+//    .unwrap();
+//
+//    handle.await.unwrap();
+//  })
+//}
 
-  tracing::subscriber::set_global_default(sub);
-
-  Runtime::new().block_on(async {
-    use crate::task;
-
-    let (sender, receiver) = channel();
-
-    let handle = task::spawn(async move {
-      sender.send(2).unwrap();
-    });
-
-    task::spawn(async move {
-      assert!(receiver.await.unwrap() == 2);
-    })
-    .await
-    .unwrap();
-
-    handle.await.unwrap();
-  })
-}
-
-#[test]
-// https://github.com/liten-rs/liten/issues/13
-#[ignore]
-fn sync_error_on_drop() {
-  let sub = tracing_subscriber::FmtSubscriber::builder()
-    .with_max_level(Level::TRACE)
-    .finish();
-
-  tracing::subscriber::set_global_default(sub);
-
-  Runtime::new().block_on(async {
-    let (sender, receiver) = sync_channel::<u8>();
-    drop(sender);
-    assert!(receiver.await == Err(sync::SyncReceiverError::SenderDroppedError));
-
-    let (sender, receiver) = sync_channel::<u8>();
-    drop(receiver);
-    assert!(
-      sender.send(0).await == Err(sync::SyncSenderError::ReceiverDroppedError)
-    );
-  });
-}
+//#[test]
+//// https://github.com/liten-rs/liten/issues/13
+//#[ignore]
+//fn sync_error_on_drop() {
+//  let sub = tracing_subscriber::FmtSubscriber::builder()
+//    .with_max_level(Level::TRACE)
+//    .finish();
+//
+//  tracing::subscriber::set_global_default(sub);
+//
+//  Runtime::new().block_on(async {
+//    let (sender, receiver) = sync_channel::<u8>();
+//    drop(sender);
+//    assert!(receiver.await == Err(sync::SyncReceiverError::SenderDroppedError));
+//
+//    let (sender, receiver) = sync_channel::<u8>();
+//    drop(receiver);
+//    assert!(
+//      sender.send(0).await == Err(sync::SyncSenderError::ReceiverDroppedError)
+//    );
+//  });
+//}
 
 #[test]
 #[tracing::instrument]
@@ -95,11 +95,12 @@ fn sync_simultaniously() {
     let (sender, receiver) = sync_channel::<u8>();
     let handler1 = crate::task::spawn(async {
       sender.send(0).await.unwrap();
+      std::thread::sleep(Duration::from_millis(400));
     });
 
     let handler2 = crate::task::spawn(async {
       let result = receiver.await;
-      assert!(result == Ok(0));
+      assert_eq!(result, Ok(0));
     });
 
     handler2.await.unwrap();

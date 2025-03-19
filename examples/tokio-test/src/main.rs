@@ -1,9 +1,29 @@
-use std::error::Error;
+use std::{error::Error, time::Duration};
+
+use liten::sync::oneshot::sync_channel;
+use tracing::Level;
 //
 //use liten::task;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+  let sub = tracing_subscriber::FmtSubscriber::builder()
+    .with_max_level(Level::TRACE)
+    .finish();
+
+  tracing::subscriber::set_global_default(sub);
+  let (sender, receiver) = sync_channel::<u8>();
+  let handler1 = tokio::task::spawn(async {
+    sender.send(0).await.unwrap();
+  });
+
+  let handler2 = tokio::task::spawn(async {
+    let result = receiver.await;
+    assert_eq!(result, Ok(0));
+  });
+
+  handler1.await.unwrap();
+  handler2.await.unwrap();
   //let sub =
   //  tracing_subscriber::fmt().with_max_level(tracing::Level::TRACE).finish();
   //tracing::subscriber::set_global_default(sub)?;
