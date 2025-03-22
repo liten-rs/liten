@@ -22,13 +22,10 @@ pub fn channel<V>() -> (not_sync::Sender<V>, not_sync::Receiver<V>) {
   )
 }
 
-pub fn sync_channel<V>() -> (sync::SyncSender<V>, sync::SyncReceiver<V>) {
-  let channel = Arc::new(sync::SyncChannel::new());
+pub fn sync_channel<V>() -> (sync::Sender<V>, sync::Receiver<V>) {
+  let channel = Arc::new(sync::Inner::new());
 
-  (
-    sync::SyncSender::new(channel.clone()),
-    sync::SyncReceiver::new(channel.clone()),
-  )
+  (sync::Sender::new(channel.clone()), sync::Receiver::new(channel.clone()))
 }
 
 //#[test]
@@ -88,9 +85,10 @@ pub fn sync_channel<V>() -> (sync::SyncSender<V>, sync::SyncReceiver<V>) {
 fn sync_simultaniously() {
   let sub = tracing_subscriber::FmtSubscriber::builder()
     .with_max_level(Level::TRACE)
+    .without_time()
     .finish();
 
-  tracing::subscriber::set_global_default(sub);
+  let _ = tracing::subscriber::set_global_default(sub);
   Runtime::new().block_on(async move {
     let (sender, receiver) = sync_channel::<u8>();
     let handler1 = crate::task::spawn(async {
