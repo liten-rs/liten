@@ -1,6 +1,7 @@
 use std::{
   cell::UnsafeCell,
   future::Future,
+  mem,
   pin::Pin,
   ptr,
   sync::{Arc, Mutex},
@@ -9,6 +10,7 @@ use std::{
 
 use thiserror::Error;
 
+// TODO: Get rid of Arc
 pub struct Sender<V>(Arc<Inner<V>>);
 
 impl<V> Sender<V> {
@@ -16,7 +18,15 @@ impl<V> Sender<V> {
     Self(arc_inner)
   }
   pub fn send(self, value: V) -> SenderSendFuture<V> {
-    SenderSendFuture { inner: self.0, value_to_send: &value as *const V }
+    let inner = self.0.clone();
+    mem::forget(self);
+    SenderSendFuture { inner, value_to_send: &value as *const V }
+  }
+}
+
+impl<V> Drop for Sender<V> {
+  fn drop(&mut self) {
+    self.0.drop_channel()
   }
 }
 
@@ -33,11 +43,23 @@ impl<V> Future for SenderSendFuture<V> {
   }
 }
 
+impl<V> Drop for SenderSendFuture<V> {
+  fn drop(&mut self) {
+    self.inner.drop_channel()
+  }
+}
+
 pub struct Receiver<V>(Arc<Inner<V>>);
 
 impl<V> Receiver<V> {
   pub(crate) fn new(arc_inner: Arc<Inner<V>>) -> Self {
     Receiver(arc_inner)
+  }
+}
+
+impl<V> Drop for Receiver<V> {
+  fn drop(&mut self) {
+    self.0.drop_channel()
   }
 }
 
@@ -53,6 +75,7 @@ pub enum State<V> {
   Listening(Waker),
   Sent(V, Option<Waker>),
   Returned,
+  ChannelDropped,
 }
 
 pub struct Inner<V>(Mutex<UnsafeCell<State<V>>>);
@@ -77,6 +100,7 @@ impl<V> Inner<V> {
     let state = self.get_state();
 
     match unsafe { &*state } {
+      State::ChannelDropped => Poll::Ready(Err(OneshotError::ChannelDropped)),
       State::Init => {
         tracing::trace!("entering StateV2::Init");
         let new_state = State::Sent(
@@ -113,9 +137,10 @@ impl<V> Inner<V> {
     //   - 'state': is behind mutex
     let state = self.get_state();
     match unsafe { ptr::read(state) } {
+      State::ChannelDropped => Poll::Ready(Err(OneshotError::ChannelDropped)),
       State::Init => {
-        *unsafe { state.as_mut().unwrap() } =
-          State::Listening(recv_ctx.waker().clone());
+        let new_state = State::Listening(recv_ctx.waker().clone());
+        unsafe { ptr::write(state, new_state) };
 
         Poll::Pending
       }
@@ -129,6 +154,13 @@ impl<V> Inner<V> {
 
         Poll::Ready(Ok(value))
       }
+    }
+  }
+
+  fn drop_channel(&self) {
+    let state = self.get_state();
+    unsafe {
+      ptr::write(state, State::ChannelDropped);
     }
   }
 }

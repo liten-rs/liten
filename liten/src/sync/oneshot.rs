@@ -1,6 +1,6 @@
 mod not_sync;
 pub use not_sync::{Receiver, Sender};
-mod sync;
+pub mod sync;
 
 use std::sync::Arc;
 

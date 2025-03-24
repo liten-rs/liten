@@ -1,6 +1,8 @@
 use std::future::Future;
 use std::task::Context;
 
+use liten::sync::oneshot::sync::OneshotError;
+
 use futures_task::noop_waker;
 
 macro_rules! get_ready {
@@ -25,5 +27,24 @@ fn non_sync_channel() {
     let result = get_ready!(receiver);
 
     assert_eq!(result, Ok(2));
+  });
+}
+
+#[test]
+fn sync_channel_drop_handling() {
+  liten::runtime::Runtime::new().block_on(async {
+    let (sender, receiver) = liten::sync::oneshot::sync_channel::<u8>();
+    drop(sender);
+
+    let should_err = get_ready!(receiver);
+
+    assert_eq!(should_err, Err(OneshotError::ChannelDropped));
+
+    let (sender, receiver) = liten::sync::oneshot::sync_channel::<u8>();
+    drop(receiver);
+
+    let should_err = get_ready!(sender.send(0));
+
+    assert_eq!(should_err, Err(OneshotError::ChannelDropped));
   });
 }
