@@ -60,6 +60,7 @@ pub enum TryLockError {
   UnableToAcquireLock,
 }
 
+#[allow(dead_code)]
 pub struct MutexGuard<'a, T>(&'a Mutex<T>, semaphore::AcquireLock<'a>);
 
 impl<T> Deref for MutexGuard<'_, T> {
