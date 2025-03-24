@@ -1,5 +1,4 @@
 use std::{
-  cell::UnsafeCell,
   future::Future,
   mem::MaybeUninit,
   pin::Pin,
@@ -75,7 +74,7 @@ pub struct Receiver<V> {
   channel: Arc<Channel<V>>,
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum ReceiverError {
   #[error("Sender has been dropped")]
   SenderDroppedError,
