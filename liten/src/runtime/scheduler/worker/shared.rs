@@ -1,9 +1,9 @@
-use std::sync::Arc;
-
 use super::{worker::Worker, Remote};
 use crossbeam_deque::Injector;
 
 use crate::task::Task;
+
+use crate::loom::sync::Arc;
 
 pub struct Shared {
   pub remotes: Box<[Remote]>,

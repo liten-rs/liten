@@ -1,9 +1,10 @@
-use std::{collections::HashMap, sync::Arc, task::Poll};
+use std::{collections::HashMap, task::Poll};
 
 use crossbeam_deque::{Steal, Worker as WorkerQueue};
 use crossbeam_utils::sync::Parker;
 
 use crate::{
+  loom::sync::Arc,
   runtime::{scheduler::Handle, waker::TaskWaker},
   sync::{
     mpsc,
@@ -119,7 +120,8 @@ impl Worker {
         continue;
       };
       let id = task.id();
-      let liten_waker = Arc::new(TaskWaker::new(id, sender.clone())).into();
+      let liten_waker =
+        std::sync::Arc::new(TaskWaker::new(id, sender.clone())).into();
       let mut context = std::task::Context::from_waker(&liten_waker);
 
       let poll_result =

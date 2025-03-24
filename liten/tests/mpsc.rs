@@ -1,7 +1,8 @@
 use liten::sync::mpsc;
 
-#[liten::test]
-async fn iter() {
+#[cfg(not(loom))]
+#[test]
+fn iter() {
   let (sender, receiver) = mpsc::unbounded::<i32>();
 
   sender.send(1).unwrap();
@@ -17,23 +18,26 @@ async fn iter() {
   assert_eq!(vec.len(), 7);
 }
 
-#[liten::test]
-async fn mpsc() {
-  let (sender, receiver) = mpsc::unbounded::<i32>();
+#[cfg(not(loom))]
+#[test]
+fn mpsc() {
+  liten::runtime::Runtime::new().block_on(async {
+    let (sender, receiver) = mpsc::unbounded::<i32>();
 
-  sender.send(1).unwrap();
-  sender.send(1).unwrap();
-  sender.send(1).unwrap();
-  sender.send(1).unwrap();
-  sender.send(1).unwrap();
-  sender.send(1).unwrap();
-  sender.send(1).unwrap();
+    sender.send(1).unwrap();
+    sender.send(1).unwrap();
+    sender.send(1).unwrap();
+    sender.send(1).unwrap();
+    sender.send(1).unwrap();
+    sender.send(1).unwrap();
+    sender.send(1).unwrap();
 
-  let vec: i32 = receiver.recv().await.unwrap();
+    let vec: i32 = receiver.recv().await.unwrap();
 
-  assert_eq!(vec, 1);
+    assert_eq!(vec, 1);
 
-  let vec: Vec<i32> = receiver.try_iter().collect();
+    let vec: Vec<i32> = receiver.try_iter().collect();
 
-  assert_eq!(vec.len(), 6);
+    assert_eq!(vec.len(), 6);
+  })
 }

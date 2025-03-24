@@ -1,12 +1,11 @@
 pub mod worker;
 use crate::runtime::scheduler::worker::shared::Shared;
 
-use std::{
-  future::Future,
-  sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
-    Arc, OnceLock,
-  },
+use std::{future::Future, sync::OnceLock};
+
+use crate::loom::sync::{
+  atomic::{AtomicBool, AtomicUsize, Ordering},
+  Arc,
 };
 
 use super::{super::events, main_executor::GlobalExecutor};

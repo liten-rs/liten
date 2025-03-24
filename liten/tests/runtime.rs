@@ -1,3 +1,4 @@
+#[cfg(not(loom))]
 #[test]
 fn task_starts() {
   liten::runtime::Runtime::new().block_on(async {

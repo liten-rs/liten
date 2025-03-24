@@ -1,14 +1,23 @@
 use std::{
-  cell::UnsafeCell,
   future::Future,
-  mem,
+  mem::{self, ManuallyDrop},
   pin::Pin,
   ptr,
-  sync::{Arc, Mutex},
   task::{Context, Poll, Waker},
 };
 
+use crate::loom::{
+  cell::UnsafeCell,
+  sync::{Arc, Mutex},
+};
+
 use thiserror::Error;
+
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum OneshotError {
+  #[error("Channel has been dropped")]
+  ChannelDropped,
+}
 
 // TODO: Get rid of Arc
 pub struct Sender<V>(Arc<Inner<V>>);
@@ -18,13 +27,20 @@ impl<V> Sender<V> {
     Self(arc_inner)
   }
   pub fn send(self, value: V) -> SenderSendFuture<V> {
-    let inner = self.0.clone();
-    mem::forget(self);
-    SenderSendFuture { inner, value_to_send: &value as *const V }
+    let this = ManuallyDrop::new(self);
+    let inner = unsafe { Arc::from_raw(Arc::as_ptr(&this.0)) };
+
+    SenderSendFuture {
+      inner,
+      value_to_send: Box::into_raw(Box::new(Some(value))),
+    }
   }
 }
 
+// This runs if not Sender::send has been called. If it has, then SenderSendFuture::drop does the
+// job.
 impl<V> Drop for Sender<V> {
+  #[tracing::instrument(skip_all, name = "impl_drop_send")]
   fn drop(&mut self) {
     self.0.drop_channel()
   }
@@ -32,7 +48,7 @@ impl<V> Drop for Sender<V> {
 
 pub struct SenderSendFuture<V> {
   inner: Arc<Inner<V>>,
-  value_to_send: *const V,
+  value_to_send: *mut Option<V>,
 }
 unsafe impl<V: Send> Send for SenderSendFuture<V> {}
 
@@ -44,8 +60,9 @@ impl<V> Future for SenderSendFuture<V> {
 }
 
 impl<V> Drop for SenderSendFuture<V> {
+  #[tracing::instrument(skip_all, name = "impl_drop_send_fut")]
   fn drop(&mut self) {
-    self.inner.drop_channel()
+    self.inner.drop_channel();
   }
 }
 
@@ -58,8 +75,9 @@ impl<V> Receiver<V> {
 }
 
 impl<V> Drop for Receiver<V> {
+  #[tracing::instrument(skip_all, name = "impl_drop_receiver")]
   fn drop(&mut self) {
-    self.0.drop_channel()
+    self.0.drop_channel();
   }
 }
 
@@ -84,48 +102,54 @@ impl<V> Inner<V> {
   pub(super) fn new() -> Self {
     Inner(Mutex::new(UnsafeCell::new(State::Init)))
   }
-  fn get_state(&self) -> *mut State<V> {
+  // SAFETY:
+  //   - 'state': is behind mutex
+  fn with_state<R>(&self, f: impl FnOnce(*mut State<V>) -> R) -> R {
     let lock = self.0.lock().unwrap();
-    lock.get()
+    lock.with_mut(f)
   }
+
   #[tracing::instrument(skip_all, name = "send_poll")]
   fn send_poll(
     &self,
     send_ctx: &mut Context<'_>,
-    value: *const V,
+    value: *mut Option<V>,
   ) -> Poll<Result<(), OneshotError>> {
     // SAFETY:
-    //   - 'state': is behind mutex
     //   - 'value': rust guarantees that [Future::poll]'s only runs one at any time.
-    let state = self.get_state();
-
-    match unsafe { &*state } {
+    self.with_state(|state| match unsafe { &*state } {
       State::ChannelDropped => Poll::Ready(Err(OneshotError::ChannelDropped)),
       State::Init => {
-        tracing::trace!("entering StateV2::Init");
+        assert!(unsafe { &*value }.is_some());
         let new_state = State::Sent(
-          unsafe { ptr::read(value) },
+          unsafe { &mut *value }
+            .take()
+            .expect("logic error: value already taken"),
           Some(send_ctx.waker().clone()),
         );
 
         unsafe { ptr::write(state, new_state) };
         Poll::Pending
       }
-      State::Returned => Poll::Ready(Ok(())),
-      State::Sent(_, _) => {
-        panic!("logic error: value already moved, cannot operate on value")
+      State::Returned => {
+        assert!(unsafe { &*value }.is_none());
+        Poll::Ready(Ok(()))
       }
-      State::Listening(ref waker) => {
-        tracing::trace!("entering StateV2::Listening");
+      State::Sent(_, _) => {
+        panic!("internal error: value already moved, cannot operate on value")
+      }
+      State::Listening(waker) => {
+        let waker = waker.clone();
+        let value = unsafe { &mut *value }
+          .take()
+          .expect("logic error: value already taken");
+        unsafe { ptr::write(state, State::Sent(value, None)) };
 
-        let new_state = State::Sent(unsafe { std::ptr::read(value) }, None);
-        unsafe { ptr::write(state, new_state) };
-
-        waker.wake_by_ref();
+        waker.wake();
 
         return Poll::Ready(Ok(()));
       }
-    }
+    })
   }
 
   #[tracing::instrument(skip_all, name = "recv_poll")]
@@ -133,40 +157,54 @@ impl<V> Inner<V> {
     &self,
     recv_ctx: &mut Context<'_>,
   ) -> Poll<Result<V, OneshotError>> {
-    // SAFETY:
-    //   - 'state': is behind mutex
-    let state = self.get_state();
-    match unsafe { ptr::read(state) } {
-      State::ChannelDropped => Poll::Ready(Err(OneshotError::ChannelDropped)),
-      State::Init => {
-        let new_state = State::Listening(recv_ctx.waker().clone());
-        unsafe { ptr::write(state, new_state) };
+    self.with_state(|state| {
+      // Can't use ptr::read here
+      let old_state = mem::replace(
+        unsafe { &mut *state },
+        State::Listening(recv_ctx.waker().clone()),
+      );
 
-        Poll::Pending
-      }
-      State::Listening(_) => unreachable!(),
-      State::Returned => unreachable!(),
-      State::Sent(value, waker) => {
-        unsafe { ptr::write(state, State::Returned) };
-        if let Some(waker) = waker {
-          waker.wake();
+      match old_state {
+        State::ChannelDropped => Poll::Ready(Err(OneshotError::ChannelDropped)),
+        State::Init => Poll::Pending,
+        State::Listening(_) => unreachable!(),
+        State::Returned => unreachable!(),
+        State::Sent(value, waker) => {
+          unsafe { ptr::write(state, State::Returned) };
+          if let Some(waker) = waker {
+            waker.wake();
+          }
+
+          Poll::Ready(Ok(value))
         }
-
-        Poll::Ready(Ok(value))
       }
-    }
+    })
   }
 
   fn drop_channel(&self) {
-    let state = self.get_state();
-    unsafe {
-      ptr::write(state, State::ChannelDropped);
-    }
+    self.with_state(|state| {
+      match unsafe { &*state } {
+        State::ChannelDropped => {}
+        // Nothing has started.
+        State::Init => unsafe { ptr::write(state, State::ChannelDropped) },
+        // Not sure about this. Should maybe not happen
+        State::Returned => unsafe { ptr::write(state, State::ChannelDropped) },
+        State::Sent(_, waker) => match waker {
+          // Sender has sent value and waiting for receiver. hence provided the waker.
+          Some(waker) => {
+            unsafe { ptr::write(state, State::ChannelDropped) };
+            waker.wake_by_ref();
+          }
+          // Sender sent, whilst listening before.
+          // We can't destroy channel inbetween sending and receiving if both is active
+          None => {}
+        },
+        // Receiver listening without any value sent.
+        State::Listening(waker) => {
+          unsafe { ptr::write(state, State::ChannelDropped) };
+          waker.wake_by_ref();
+        }
+      };
+    })
   }
-}
-
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum OneshotError {
-  #[error("Channel has been dropped")]
-  ChannelDropped,
 }

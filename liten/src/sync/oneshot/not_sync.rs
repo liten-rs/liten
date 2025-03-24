@@ -2,11 +2,12 @@ use std::{
   future::Future,
   mem::MaybeUninit,
   pin::Pin,
-  sync::{
-    atomic::{AtomicU8, Ordering},
-    Arc, Mutex,
-  },
   task::{Context, Poll, Waker},
+};
+
+use crate::loom::sync::{
+  atomic::{AtomicU8, Ordering},
+  Arc, Mutex, MutexGuard,
 };
 
 use thiserror::Error;
@@ -43,7 +44,7 @@ impl<V> Channel<V> {
     self.state.load(Ordering::SeqCst)
   }
 
-  fn inner(&self) -> std::sync::MutexGuard<'_, InnerChannel<V>> {
+  fn inner(&self) -> MutexGuard<'_, InnerChannel<V>> {
     self.inner.lock().unwrap()
   }
 

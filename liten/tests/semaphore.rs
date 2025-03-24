@@ -25,6 +25,7 @@ macro_rules! should_pending {
   }};
 }
 
+#[cfg(not(loom))]
 #[test]
 fn max_capacity() {
   liten::runtime::Runtime::new().block_on(async {

@@ -1,11 +1,10 @@
-use std::{
-  cell::LazyCell,
-  sync::{Arc, OnceLock},
-};
+use std::{cell::LazyCell, sync::OnceLock};
+
+use crate::loom::sync::Arc;
 
 use crate::runtime::scheduler;
 
-std::thread_local! {
+crate::loom::thread_local! {
   static CONTEXT: LazyCell<Context> = LazyCell::new(|| {
     Context {
       handle: OnceLock::new(),

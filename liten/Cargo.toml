@@ -7,6 +7,9 @@ edition = "2021"
 default = ["http1"]
 http1 = ["dep:http", "dep:bytes"]
 
+[target.'cfg(loom)'.dependencies]
+loom = "0.7"
+
 [dependencies]
 liten-macros = { version = "0.1.0", path = "../liten-macros" }
 mio = { version = "1.0.3", features = ["net", "os-poll", "os-ext"] }
