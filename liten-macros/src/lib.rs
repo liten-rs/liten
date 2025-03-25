@@ -76,7 +76,7 @@ impl ToTokens for MainFn {
 
     let tokens_to_extend = quote::quote! {
         fn #ident(#(#args),*) #return_type {
-            liten::runtime::Runtime::new()
+            liten::runtime::Runtime::builder()
                 .block_on(async #block)
         }
     };

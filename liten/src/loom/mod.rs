@@ -19,18 +19,22 @@ pub(crate) mod sync {
 
   pub mod atomic {
     #[cfg(loom)]
-    pub use loom::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+    pub use loom::sync::atomic::{
+      AtomicBool, AtomicU16, AtomicU8, AtomicUsize, Ordering,
+    };
     #[cfg(not(loom))]
-    pub use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+    pub use std::sync::atomic::{
+      AtomicBool, AtomicU16, AtomicU8, AtomicUsize, Ordering,
+    };
   }
 }
 
 pub(crate) mod thread {
   #[cfg(loom)]
-  pub use loom::thread::spawn;
+  pub use loom::thread::{current, park, spawn, Builder, JoinHandle, Thread};
 
   #[cfg(not(loom))]
-  pub use std::thread::spawn;
+  pub use std::thread::{current, park, spawn, Builder, JoinHandle, Thread};
 }
 
 #[cfg(loom)]

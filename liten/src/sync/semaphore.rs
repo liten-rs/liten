@@ -4,11 +4,12 @@ use std::{
   future::Future,
   num::NonZero,
   pin::Pin,
-  sync::{
-    atomic::{AtomicUsize, Ordering},
-    Mutex as StdMutex,
-  },
   task::{Context, Poll, Waker},
+};
+
+use crate::loom::sync::{
+  atomic::{AtomicUsize, Ordering},
+  Mutex as StdMutex,
 };
 
 pub struct Semaphore {
@@ -93,6 +94,7 @@ impl Display for AcquireLockError {
 
 impl std::error::Error for AcquireLockError {}
 
+#[cfg(not(loom))]
 #[test]
 fn size_one() {
   let semaphore = Semaphore::with_size(1.try_into().unwrap());
@@ -109,6 +111,7 @@ fn size_one() {
   assert!(lock3.is_ok());
 }
 
+#[cfg(not(loom))]
 #[test]
 fn size_not_one() {
   let semaphore = Semaphore::with_size(3.try_into().unwrap());

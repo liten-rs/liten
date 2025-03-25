@@ -1,7 +1,7 @@
 #[cfg(not(loom))]
 #[test]
 fn task_starts() {
-  liten::runtime::Runtime::new().block_on(async {
+  liten::runtime::Runtime::builder().block_on(async {
     let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let handle = liten::task::spawn({
       let counter = counter.clone();

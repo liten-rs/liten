@@ -1,22 +1,24 @@
 pub mod worker;
-use crate::runtime::scheduler::worker::shared::Shared;
 
 use std::{future::Future, sync::OnceLock};
 
-use crate::loom::sync::{
-  atomic::{AtomicBool, AtomicUsize, Ordering},
-  Arc,
+use crate::{
+  context, events,
+  loom::sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc,
+  },
+  runtime::{main_executor::GlobalExecutor, scheduler::worker::shared::Shared},
 };
-
-use super::{super::events, main_executor::GlobalExecutor};
-use crate::context;
 use worker::Workers;
+
+use super::RuntimeBuilder;
 
 #[derive(Debug)]
 pub struct Scheduler;
 
 impl Scheduler {
-  pub fn block_on<F, Res>(self, fut: F) -> Res
+  pub fn block_on<F, Res>(self, fut: F, config: RuntimeBuilder) -> Res
   where
     F: Future<Output = Res>,
   {
@@ -25,12 +27,9 @@ impl Scheduler {
     let mut driver = Driver { io: io_driver };
     let handle = Arc::new(Handle::without_shared(io_handle));
 
-    let cpus = std::thread::available_parallelism().unwrap();
+    let workers = Workers::new(config.get_num_workers(), handle.clone());
 
-    let workers = Workers::new(cpus, handle.clone());
-
-    let shared = Shared::from_workers(&workers);
-    handle.set_handle(shared);
+    handle.set_handle(Shared::from_workers(&workers));
 
     let mut shutdown = workers.as_shutdown_workers();
 

@@ -3,44 +3,64 @@ pub(crate) mod scheduler;
 mod waker;
 
 use scheduler::Scheduler;
-use std::future::Future;
+use std::{future::Future, marker::PhantomData, num::NonZero};
 
-pub struct Runtime {
-  scheduler: Scheduler,
-}
+pub struct Runtime(PhantomData<()>);
 
-impl Default for Runtime {
-  fn default() -> Self {
-    Runtime { scheduler: Scheduler }
+impl Runtime {
+  pub fn builder() -> RuntimeBuilder {
+    RuntimeBuilder::default()
+  }
+
+  fn with_config<F, Res>(fut: F, config: RuntimeBuilder) -> Res
+  where
+    F: Future<Output = Res>,
+  {
+    Scheduler.block_on(fut, config)
   }
 }
 
-impl Runtime {
-  pub fn new() -> Self {
-    Self::default()
+#[derive(Default)]
+#[non_exhaustive]
+pub enum RuntimeThreads {
+  #[default]
+  Cpus,
+  Number(NonZero<usize>),
+  //Single,
+}
+
+impl RuntimeThreads {
+  pub(crate) fn get_threads(&self) -> NonZero<usize> {
+    match self {
+      RuntimeThreads::Number(num) => *num,
+      RuntimeThreads::Cpus => std::thread::available_parallelism().unwrap(),
+    }
+  }
+
+  pub(crate) fn set_threads(&mut self, value: NonZero<usize>) {
+    *self = RuntimeThreads::Number(value);
+  }
+}
+
+#[derive(Default)]
+pub struct RuntimeBuilder {
+  max_threads: RuntimeThreads,
+}
+
+impl RuntimeBuilder {
+  pub fn num_workers(mut self, num: usize) -> Self {
+    self.max_threads.set_threads(NonZero::new(num).unwrap());
+    self
+  }
+
+  pub(crate) fn get_num_workers(&self) -> NonZero<usize> {
+    self.max_threads.get_threads()
   }
 
   pub fn block_on<F, Res>(self, fut: F) -> Res
   where
     F: Future<Output = Res>,
   {
-    //let (io_driver, io_handle) = events::Driver::new().unwrap();
-    //
-    //let driver = scheduler::Driver { io: io_driver };
-    //let handle = Arc::new(scheduler::Handle::new(io_handle));
-    //
-    //let cpus = std::thread::available_parallelism().unwrap();
-    //
-    //let workers = Workers::new(cpus, handle.clone());
-    //
-    //// TODO: Create workers
-    //
-    ////let (workers, shared, shutdown) = Shared::new_parts(cpus, handle.clone());
-    //
-    //let shared = Shared::from_workers(&workers);
-    //
-    //handle.set_handle(shared);
-
-    self.scheduler.block_on(fut)
+    Runtime::with_config(fut, self)
   }
 }

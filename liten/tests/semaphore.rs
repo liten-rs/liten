@@ -1,3 +1,5 @@
+#![cfg(loom)]
+
 use std::future::Future;
 use std::num::NonZero;
 use std::task::Context;
@@ -25,10 +27,9 @@ macro_rules! should_pending {
   }};
 }
 
-#[cfg(not(loom))]
 #[test]
 fn max_capacity() {
-  liten::runtime::Runtime::new().block_on(async {
+  loom::model(|| {
     let semaphore = Semaphore::with_size(NonZero::new(2).unwrap());
 
     let lock1 = get_ready!(semaphore.acquire());
@@ -43,5 +44,5 @@ fn max_capacity() {
     get_ready!(later_get);
 
     lock2.release();
-  });
+  })
 }

@@ -1,4 +1,8 @@
-use std::{sync::Arc, task::Wake, thread::Thread};
+// loom::Arc can't be used here because of Into<Waker> for std::Arc.
+
+use std::task::Wake;
+
+use crate::loom::thread::Thread;
 
 use crate::{sync::mpsc, task::TaskId};
 
@@ -14,7 +18,7 @@ impl TaskWaker {
 }
 
 impl Wake for TaskWaker {
-  fn wake(self: Arc<Self>) {
+  fn wake(self: std::sync::Arc<Self>) {
     tracing::trace!(task_id = ?self.task_id, "task wake called");
     self.sender.send(self.task_id).unwrap();
   }
@@ -30,7 +34,7 @@ impl RuntimeWaker {
 }
 
 impl Wake for RuntimeWaker {
-  fn wake(self: Arc<Self>) {
+  fn wake(self: std::sync::Arc<Self>) {
     self.0.unpark();
   }
 }

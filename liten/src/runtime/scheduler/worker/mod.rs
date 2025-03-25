@@ -1,11 +1,9 @@
-use std::{
-  num::NonZero,
-  ops::Deref,
-  sync::OnceLock,
+use std::{num::NonZero, ops::Deref, sync::OnceLock};
+
+use crate::loom::{
+  sync::Arc,
   thread::{Builder, JoinHandle},
 };
-
-use crate::loom::sync::Arc;
 
 use crossbeam_deque::Stealer;
 use crossbeam_utils::sync::Unparker;

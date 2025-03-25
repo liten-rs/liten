@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 #[derive(Debug)]
 pub(crate) struct UnsafeCell<T>(std::cell::UnsafeCell<T>);
 

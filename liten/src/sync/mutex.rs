@@ -2,15 +2,16 @@ use std::{
   cell::UnsafeCell,
   ops::{Deref, DerefMut},
   panic::{RefUnwindSafe, UnwindSafe},
-  sync::atomic::AtomicBool,
   thread,
 };
+
+use crate::loom::sync::atomic::{AtomicBool, Ordering};
 
 use super::semaphore;
 use thiserror::Error;
 
 pub struct Mutex<T> {
-  inner: UnsafeCell<T>,
+  inner: std::cell::UnsafeCell<T>,
   poisoned: AtomicBool,
   guard: semaphore::Semaphore,
 }
@@ -32,7 +33,7 @@ impl<T> Mutex<T> {
   }
 
   pub fn poison(&self) {
-    self.poisoned.store(true, std::sync::atomic::Ordering::Relaxed);
+    self.poisoned.store(true, Ordering::Relaxed);
   }
 
   pub async fn lock(&self) -> Result<MutexGuard<'_, T>, PoisonError> {
@@ -85,33 +86,36 @@ impl<T> Drop for MutexGuard<'_, T> {
 }
 
 #[test]
+#[cfg(loom)]
 fn lock() {
-  let mutex = Mutex::new(0);
+  loom::model(|| {
+    let mutex = Mutex::new(0);
 
-  let lock = mutex.try_lock();
-  let lock2 = mutex.try_lock();
-  assert!(lock.is_ok());
-  assert!(lock2.is_err());
+    let lock = mutex.try_lock();
+    let lock2 = mutex.try_lock();
+    assert!(lock.is_ok());
+    assert!(lock2.is_err());
 
-  let mut value = lock.unwrap();
+    let mut value = lock.unwrap();
 
-  *value += 1;
-  assert_eq!(*value, 1);
+    *value += 1;
+    assert_eq!(*value, 1);
 
-  assert!(mutex
-    .try_lock()
-    .is_err_and(|err| err == TryLockError::UnableToAcquireLock));
+    assert!(mutex
+      .try_lock()
+      .is_err_and(|err| err == TryLockError::UnableToAcquireLock));
 
-  drop(value);
+    drop(value);
 
-  let value = mutex.try_lock();
+    let value = mutex.try_lock();
 
-  assert!(value.is_ok());
+    assert!(value.is_ok());
 
-  let mut value = value.unwrap();
+    let mut value = value.unwrap();
 
-  assert!(*value == 1);
+    assert!(*value == 1);
 
-  *value += 1;
-  assert!(*value == 2);
+    *value += 1;
+    assert!(*value == 2);
+  })
 }

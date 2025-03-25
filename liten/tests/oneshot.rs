@@ -1,14 +1,15 @@
+#![cfg(loom)]
 use std::future::Future;
-use std::task::Context;
 
-use liten::sync::oneshot::sync::OneshotError;
-
-use futures_task::noop_waker;
+use liten::sync::oneshot::{self, sync::OneshotError};
 
 macro_rules! get_ready {
   ($expr:expr) => {{
     let mut pinned = std::pin::pin!($expr);
-    match pinned.as_mut().poll(&mut Context::from_waker(&noop_waker())) {
+    match pinned
+      .as_mut()
+      .poll(&mut std::task::Context::from_waker(&futures_task::noop_waker()))
+    {
       std::task::Poll::Ready(value) => value,
       std::task::Poll::Pending => unreachable!("was Poll::Pending"),
     }
@@ -18,63 +19,63 @@ macro_rules! get_ready {
 macro_rules! should_pending {
   ($expr:expr) => {{
     let mut pinned = std::pin::pin!(&mut $expr);
-    match pinned.as_mut().poll(&mut Context::from_waker(&noop_waker())) {
+    match pinned
+      .as_mut()
+      .poll(&mut std::task::Context::from_waker(&futures_task::noop_waker()))
+    {
       std::task::Poll::Ready(_) => false,
       std::task::Poll::Pending => true,
     }
   }};
 }
 
-#[cfg(loom)]
+const VALUE: u8 = 2;
+
 #[test]
 fn non_sync_channel() {
   loom::model(|| {
-    let (sender, receiver) = liten::sync::oneshot::channel();
-
-    const VALUE: u8 = 2;
+    let (sender, receiver) = oneshot::channel();
 
     sender.send(VALUE).unwrap();
 
     let result = get_ready!(receiver);
 
-    assert_eq!(result, Ok(2));
+    assert_eq!(result, Ok(VALUE));
   })
 }
 
-#[cfg(loom)]
 #[test]
 fn sync_drop_handling() {
   loom::model(|| {
-    let (sender, receiver) = liten::sync::oneshot::sync_channel::<u8>();
+    let (sender, receiver) = oneshot::sync_channel::<u8>();
     drop(sender);
 
     let should_err = get_ready!(receiver);
 
     assert_eq!(should_err, Err(OneshotError::ChannelDropped));
 
-    let (sender, receiver) = liten::sync::oneshot::sync_channel::<u8>();
+    let (sender, receiver) = oneshot::sync_channel::<u8>();
     drop(receiver);
 
-    let should_err = get_ready!(sender.send(0));
+    let should_err = get_ready!(sender.send(VALUE));
 
     assert_eq!(should_err, Err(OneshotError::ChannelDropped));
   })
 }
 
-#[cfg(loom)]
 #[test]
 fn sync_happy_path() {
   loom::model(|| {
-    let (sender, mut receiver) = liten::sync::oneshot::sync_channel::<u8>();
+    let (sender, mut receiver) = oneshot::sync_channel::<u8>();
 
     assert!(should_pending!(receiver));
 
-    let mut fut = sender.send(0);
+    let mut fut = sender.send(VALUE);
 
     get_ready!(fut).unwrap();
 
     let result = get_ready!(receiver);
 
-    assert_eq!(result, Ok(0));
+    assert_eq!(result, Ok(VALUE));
   });
 }

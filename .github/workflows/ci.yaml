@@ -31,5 +31,12 @@ jobs:
 
       - name: Lint
         run: nix develop -c cargo clippy
+
       - name: Run tests
         run: nix develop -c cargo test
+
+      - name: Run loom tests
+        run: nix develop --command bash -c 'RUSTFLAGS="--cfg loom" cargo test --release'
+
+      - name: Run miri tests
+        run: nix develop -c cargo miri test

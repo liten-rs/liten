@@ -1,9 +1,9 @@
 use std::{
   future::Future,
-  sync::Arc,
   task::{Context as StdContext, Poll},
-  thread,
 };
+
+use crate::loom::{sync::Arc, thread};
 
 use super::waker::RuntimeWaker;
 
@@ -14,7 +14,8 @@ impl GlobalExecutor {
   where
     F: Future<Output = R>,
   {
-    let runtime_waker = Arc::new(RuntimeWaker::new(thread::current())).into();
+    let runtime_waker =
+      std::sync::Arc::new(RuntimeWaker::new(thread::current())).into();
     let mut context = StdContext::from_waker(&runtime_waker);
     let mut pinned = std::pin::pin!(f);
 
