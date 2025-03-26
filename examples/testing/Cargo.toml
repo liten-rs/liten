@@ -5,7 +5,6 @@ edition = "2021"
 publish = false
 
 [dependencies]
-tokio = { version = "1.43.0", features = ["rt", "rt-multi-thread", "macros", "net", "io-util"] }
 futures-util = { version = "0.3.31", features = ["io"] }
 liten.path = "../../liten"
 tracing = "0.1.41"
