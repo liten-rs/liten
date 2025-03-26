@@ -124,7 +124,7 @@ impl Driver {
       if event.token() == SHUTDOWN_SIGNAL_TOKEN {
         return true; // Wakeup-call
       };
-      let mut guard = handle.wakers.lock().unwrap();
+      let mut guard = handle.wakers.lock().expect("wakers lock poisoned");
       if let Some(waker) = guard.remove(&event.token()) {
         waker.wake()
       }

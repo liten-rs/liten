@@ -46,3 +46,48 @@ fn max_capacity() {
     lock2.release();
   })
 }
+
+#[test]
+fn size_one() {
+  loom::model(|| {
+    let semaphore = Semaphore::with_size(1.try_into().unwrap());
+
+    let lock = semaphore.try_acquire();
+    assert!(lock.is_ok());
+
+    let lock2 = semaphore.try_acquire();
+    assert!(lock2.is_err());
+
+    drop(lock);
+
+    let lock3 = semaphore.try_acquire();
+    assert!(lock3.is_ok());
+  })
+}
+
+#[test]
+fn size_not_one() {
+  loom::model(|| {
+    let semaphore = Semaphore::with_size(3.try_into().unwrap());
+
+    let lock = semaphore.try_acquire();
+    assert!(lock.is_ok());
+
+    let lock2 = semaphore.try_acquire();
+    assert!(lock2.is_ok());
+
+    let lock3 = semaphore.try_acquire();
+    assert!(lock3.is_ok());
+
+    let lock4 = semaphore.try_acquire();
+    assert!(lock4.is_err());
+
+    drop(lock3);
+
+    let lock5 = semaphore.try_acquire();
+    assert!(lock5.is_ok());
+
+    let lock6 = semaphore.try_acquire();
+    assert!(lock6.is_err());
+  })
+}

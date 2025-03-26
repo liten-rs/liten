@@ -11,16 +11,13 @@ use crate::loom::sync::Arc;
 /// If a channel is guarranteed to send one piece of data, a number of optimisations can be made.
 /// This makes oneshot channels very optimised for a async runtime.
 pub fn channel<V>() -> (not_sync::Sender<V>, not_sync::Receiver<V>) {
-  let channel = Arc::new(not_sync::Channel::new());
+  let channel = Arc::new(not_sync::Inner::new());
 
-  (
-    not_sync::Sender::new(channel.clone()),
-    not_sync::Receiver::new(channel.clone()),
-  )
+  (not_sync::Sender::new(channel.clone()), not_sync::Receiver::new(channel))
 }
 
 pub fn sync_channel<V>() -> (sync::Sender<V>, sync::Receiver<V>) {
   let channel = Arc::new(sync::Inner::new());
 
-  (sync::Sender::new(channel.clone()), sync::Receiver::new(channel.clone()))
+  (sync::Sender::new(channel.clone()), sync::Receiver::new(channel))
 }

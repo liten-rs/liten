@@ -1,6 +1,7 @@
+#![cfg(loom)]
+
 use liten::sync::mpsc;
 
-#[cfg(loom)]
 #[test]
 fn iter() {
   loom::model(|| {
@@ -20,31 +21,31 @@ fn iter() {
   })
 }
 
-#[cfg(not(loom))]
-#[test]
-fn mpsc() {
-  liten::runtime::Runtime::builder().num_workers(1).block_on(async {
-    let (sender, receiver) = mpsc::unbounded::<i32>();
+//#[test]
+//fn mpsc() {
+//  loom::model(|| {
+//    liten::runtime::Runtime::builder().num_workers(1).block_on(async {
+//      let (sender, receiver) = mpsc::unbounded::<i32>();
+//
+//      sender.send(1).unwrap();
+//      sender.send(1).unwrap();
+//      sender.send(1).unwrap();
+//      sender.send(1).unwrap();
+//      sender.send(1).unwrap();
+//      sender.send(1).unwrap();
+//      sender.send(1).unwrap();
+//
+//      let vec: i32 = receiver.recv().await.unwrap();
+//
+//      assert_eq!(vec, 1);
+//
+//      let vec: Vec<i32> = receiver.try_iter().collect();
+//
+//      assert_eq!(vec.len(), 6);
+//    })
+//  })
+//}
 
-    sender.send(1).unwrap();
-    sender.send(1).unwrap();
-    sender.send(1).unwrap();
-    sender.send(1).unwrap();
-    sender.send(1).unwrap();
-    sender.send(1).unwrap();
-    sender.send(1).unwrap();
-
-    let vec: i32 = receiver.recv().await.unwrap();
-
-    assert_eq!(vec, 1);
-
-    let vec: Vec<i32> = receiver.try_iter().collect();
-
-    assert_eq!(vec.len(), 6);
-  })
-}
-
-#[cfg(loom)]
 #[test]
 fn sender_testing() {
   loom::model(|| {

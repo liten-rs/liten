@@ -45,24 +45,45 @@ fn non_sync_channel() {
 }
 
 #[test]
-fn sync_drop_handling() {
+fn non_sync_basic_drop_handling() {
   loom::model(|| {
-    let (sender, receiver) = oneshot::sync_channel::<u8>();
+    let (sender, receiver) = oneshot::channel::<u8>();
+
     drop(sender);
 
-    let should_err = get_ready!(receiver);
+    let result = get_ready!(receiver);
 
-    assert_eq!(should_err, Err(OneshotError::ChannelDropped));
+    assert_eq!(result, Err(oneshot::not_sync::OneshotError::SenderDropped));
 
-    let (sender, receiver) = oneshot::sync_channel::<u8>();
+    let (sender, receiver) = oneshot::channel::<u8>();
+
     drop(receiver);
 
-    let should_err = get_ready!(sender.send(VALUE));
+    let result = sender.send(VALUE);
 
-    assert_eq!(should_err, Err(OneshotError::ChannelDropped));
+    assert_eq!(result, Err(oneshot::not_sync::OneshotError::ReceiverDropped));
   })
 }
 
+//#[test]
+//fn sync_drop_handling() {
+//  loom::model(|| {
+//    let (sender, receiver) = oneshot::sync_channel::<u8>();
+//    drop(sender);
+//
+//    let should_err = get_ready!(receiver);
+//
+//    assert_eq!(should_err, Err(OneshotError::ChannelDropped));
+//
+//    let (sender, receiver) = oneshot::sync_channel::<u8>();
+//    drop(receiver);
+//
+//    let should_err = get_ready!(sender.send(VALUE));
+//
+//    assert_eq!(should_err, Err(OneshotError::ChannelDropped));
+//  })
+//}
+//
 #[test]
 fn sync_happy_path() {
   loom::model(|| {

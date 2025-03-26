@@ -57,7 +57,7 @@ pub struct ContextDropper;
 impl Drop for ContextDropper {
   fn drop(&mut self) {
     with_context(|ctx| {
-      ctx.handle.get().unwrap().exit();
+      ctx.handle.get().expect("OnceLock handle get unwrapped").exit();
     });
   }
 }
