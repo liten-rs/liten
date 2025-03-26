@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (mut stream, _) = tcp.accept().await.unwrap();
 
     let mut buf = [0];
-    stream.read(&mut buf).unwrap();
+    stream.read_exact(&mut buf).unwrap();
 
     println!("data: {:?}", buf);
 
