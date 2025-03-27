@@ -46,7 +46,6 @@ struct InternalTestFn(CallerFn);
 
 impl Parse for CallerFn {
   fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-    input.parse::<Token![async]>()?;
     input.parse::<Token![fn]>()?;
     let ident = input.parse::<Ident>()?;
 
@@ -107,9 +106,14 @@ impl ToTokens for InternalTestFn {
 
     let tokens_to_extend = quote::quote! {
         #[test]
+        #[cfg_attr(not(miri), ignore)]
+        #[cfg(not(loom))]
+        fn #ident(#(#args),*) #return_type #block
+
+        #[test]
+        #[cfg(loom)]
         fn #ident(#(#args),*) #return_type {
-            crate::runtime::Runtime::new()
-                .block_on(async #block)
+            loom::model(|| #block)
         }
     };
 

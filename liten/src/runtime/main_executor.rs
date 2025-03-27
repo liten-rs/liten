@@ -3,7 +3,7 @@ use std::{
   task::{Context as StdContext, Poll},
 };
 
-use crate::loom::{sync::Arc, thread};
+use crate::loom::thread;
 
 use super::waker::RuntimeWaker;
 

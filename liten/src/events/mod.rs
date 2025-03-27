@@ -5,11 +5,12 @@ pub use registration::EventRegistration;
 use std::{
   collections::{hash_map::Entry, HashMap},
   io,
-  sync::{
-    atomic::{AtomicUsize, Ordering},
-    Mutex,
-  },
   task::{Context, Waker},
+};
+
+use crate::loom::sync::{
+  atomic::{AtomicUsize, Ordering},
+  Mutex,
 };
 
 use mio::{Events, Interest, Token};

@@ -37,7 +37,7 @@ impl<T> Mutex<T> {
   }
 
   pub async fn lock(&self) -> Result<MutexGuard<'_, T>, PoisonError> {
-    if self.poisoned.load(std::sync::atomic::Ordering::Relaxed) {
+    if self.poisoned.load(Ordering::Relaxed) {
       return Err(PoisonError);
     }
     let guard = self.guard.acquire().await;

@@ -4,9 +4,12 @@ use std::{future::Future, sync::OnceLock};
 
 use crate::{
   context, events,
-  loom::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
-    Arc,
+  loom::{
+    sync::{
+      atomic::{AtomicBool, AtomicUsize, Ordering},
+      Arc,
+    },
+    thread,
   },
   runtime::{main_executor::GlobalExecutor, scheduler::worker::shared::Shared},
 };
@@ -44,7 +47,7 @@ impl Scheduler {
 
     let thread_handle = handle.clone();
 
-    let join_handle = std::thread::spawn(move || loop {
+    let join_handle = thread::spawn(move || loop {
       if driver.io.turn(thread_handle.io()) {
         break;
       }
@@ -93,10 +96,10 @@ impl Handle {
   }
 
   pub fn has_entered(&self) -> bool {
-    !self.has_exited.load(std::sync::atomic::Ordering::SeqCst)
+    !self.has_exited.load(Ordering::SeqCst)
   }
   pub fn exit(&self) {
-    if !self.has_exited.swap(true, std::sync::atomic::Ordering::SeqCst) {
+    if !self.has_exited.swap(true, Ordering::SeqCst) {
       // This can happen if a worker is started on the main thread.
     }
   }

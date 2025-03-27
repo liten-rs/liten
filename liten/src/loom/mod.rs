@@ -17,6 +17,11 @@ pub(crate) mod sync {
   #[cfg(not(loom))]
   pub use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
+  #[cfg(loom)]
+  pub use loom::sync::mpsc;
+  #[cfg(not(loom))]
+  pub use std::sync::mpsc;
+
   pub mod atomic {
     #[cfg(loom)]
     pub use loom::sync::atomic::{
