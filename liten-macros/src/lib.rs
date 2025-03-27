@@ -46,6 +46,7 @@ struct InternalTestFn(CallerFn);
 
 impl Parse for CallerFn {
   fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    let _ = input.parse::<Token![async]>();
     input.parse::<Token![fn]>()?;
     let ident = input.parse::<Ident>()?;
 
