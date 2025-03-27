@@ -28,10 +28,8 @@ impl<V> Sender<V> {
   }
   pub fn send(self, value: V) -> SenderSendFuture<V> {
     let this = ManuallyDrop::new(self);
-    let inner = unsafe { Arc::from_raw(Arc::as_ptr(&this.0)) };
-
     SenderSendFuture {
-      inner,
+      inner: unsafe { Arc::from_raw(Arc::as_ptr(&this.0)) },
       value_to_send: Box::into_raw(Box::new(Some(value))),
     }
   }
@@ -62,6 +60,7 @@ impl<V> Future for SenderSendFuture<V> {
 impl<V> Drop for SenderSendFuture<V> {
   #[tracing::instrument(skip_all, name = "impl_drop_send_fut")]
   fn drop(&mut self) {
+    drop(unsafe { Box::from_raw(self.value_to_send) });
     self.inner.drop_channel();
   }
 }
@@ -201,8 +200,9 @@ impl<V> Inner<V> {
         },
         // Receiver listening without any value sent.
         State::Listening(waker) => {
+          let waker_cloned = waker.clone();
           unsafe { ptr::write(state, State::ChannelDropped) };
-          waker.wake_by_ref();
+          waker_cloned.wake_by_ref();
         }
       };
     })
