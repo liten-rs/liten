@@ -16,7 +16,7 @@ use crate::{
 // Local worker.
 pub struct Worker {
   worker_id: usize,
-  handle: Arc<Handle>,
+  handle: Handle,
   parker: Parker,
 
   local_queue: WorkerQueue<Task>,
@@ -26,7 +26,7 @@ pub struct Worker {
 }
 
 impl Worker {
-  pub fn new(id: usize, handle: Arc<Handle>) -> Worker {
+  pub fn new(id: usize, handle: Handle) -> Worker {
     let (sender, receiver) = oneshot::channel();
     drop(sender);
     Worker {

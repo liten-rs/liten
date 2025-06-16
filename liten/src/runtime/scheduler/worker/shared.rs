@@ -5,6 +5,7 @@ use crate::task::Task;
 
 use crate::loom::sync::Arc;
 
+#[derive(Debug)]
 pub struct Shared {
   pub remotes: Box<[Remote]>,
   pub injector: Injector<Task>,

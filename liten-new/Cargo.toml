@@ -1,0 +1,39 @@
+[package]
+name = "liten-new"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["http1"]
+http1 = ["dep:http", "dep:bytes"]
+
+[target.'cfg(loom)'.dependencies]
+loom = { version = "0.7", features = ["futures"] }
+
+[dependencies]
+liten-macros = { version = "0.1.0", path = "../liten-macros" }
+mio = { version = "1.0.3", features = ["net", "os-poll", "os-ext"] }
+
+futures-core = "0.3"
+futures-task = "0.3"
+
+tracing = "0.1.41"
+
+bitflags = "2.8.0"
+thiserror = "2.0.11"
+
+crossbeam-deque = "0.8.6"
+crossbeam-utils = "0.8.21"
+
+http = { version = "1.2.0", optional = true }
+bytes = { version = "1.10.0", optional = true }
+pin-project-lite = "0.2.16"
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"]}
+static_assertions = "1.1.0"
+tracing-subscriber = "0.3.19"
+
+[[bench]]
+name = "channel"
+harness = false
