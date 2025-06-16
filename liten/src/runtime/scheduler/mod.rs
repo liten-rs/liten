@@ -25,14 +25,17 @@ impl Scheduler {
   where
     F: Future<Output = Res>,
   {
-    let (io_driver, io_handle) = events::Driver::new().unwrap();
+    let events_driver = events::Driver::new().unwrap();
+    let events_handle = events_driver.handle().unwrap();
 
-    let mut driver = Driver { io: io_driver };
-    let handle = Arc::new(Handle::without_shared(io_handle));
+    let mut driver = Driver { io: events_driver };
+    let handle = Arc::new(Handle::without_shared(events_handle));
 
     let workers = Workers::new(config.get_num_workers(), handle.clone());
 
     handle.set_handle(Shared::from_workers(&workers));
+
+    dbg!(&handle);
 
     let mut shutdown = workers.as_shutdown_workers();
 
@@ -49,6 +52,7 @@ impl Scheduler {
 
     let join_handle = thread::spawn(move || loop {
       if driver.io.turn(thread_handle.io()) {
+        tracing::trace!("shutting down driver thread");
         break;
       }
     });
@@ -65,6 +69,7 @@ impl Scheduler {
   }
 }
 
+#[derive(Debug, Clone)]
 pub struct Handle {
   pub io: events::Handle,
   pub shared: OnceLock<Arc<Shared>>,
