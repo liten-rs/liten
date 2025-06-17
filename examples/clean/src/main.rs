@@ -10,6 +10,13 @@ fn main() -> Result<(), Box<dyn Error>> {
       tracing::info!("Very nice");
     });
     println!("program stop -----");
+  });
+
+  liten_new::runtime::Runtime::builder().block_on(async {
+    liten_new::task::spawn(async {
+      tracing::info!("Very nice");
+    });
+    println!("program stop -----");
     Ok(())
   })
 }
