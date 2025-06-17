@@ -2,7 +2,8 @@ use std::cell::RefCell;
 
 use crate::runtime::scheduler;
 
-// RefCell is used because thread_local which means only this module manages CONTEXT
+// RefCell is used because thread_local which means only this module manages CONTEXT.
+// None means runtime context is not initialised. Some(...) means context exists.
 crate::loom::thread_local! {
   static CONTEXT: RefCell<Option<Context>> = RefCell::new(None);
 }

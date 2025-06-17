@@ -124,6 +124,7 @@ pub enum State<V> {
   ReceiverDropped,
 }
 
+#[cfg(test)]
 impl<V: PartialEq> PartialEq for State<V> {
   fn eq(&self, other: &Self) -> bool {
     match self {
@@ -148,6 +149,7 @@ impl<V: PartialEq> PartialEq for State<V> {
   }
 }
 
+#[cfg(test)]
 impl<V> std::fmt::Debug for State<V> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
