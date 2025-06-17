@@ -1,67 +1,55 @@
+mod event_token;
 mod registration;
 
+use event_token::EventToken;
 pub use registration::EventRegistration;
 
 use std::{
   collections::{hash_map::Entry, HashMap},
   io,
+  sync::{Arc, Mutex},
   task::{Context, Waker},
-};
-
-use crate::loom::sync::{
-  atomic::{AtomicUsize, Ordering},
-  Mutex,
 };
 
 use mio::{Events, Interest, Token};
 
-#[derive(Debug)]
-struct TokenState(AtomicUsize);
-
-const SHUTDOWN_SIGNAL_TOKEN: Token = Token(0);
-
-impl TokenState {
-  pub fn new() -> TokenState {
-    TokenState(AtomicUsize::new(1)) // 0 is specialcase
-  }
-  pub fn next_token(&self) -> Token {
-    debug_assert!(
-      self.0.load(Ordering::Relaxed) != 0,
-      "can't call next_token on wakeup token"
-    );
-    Token(self.0.fetch_add(1, Ordering::Acquire))
-  }
-}
-
 /// IO-Driver
+// TODO: implement reference counting for Handle, so that when driver is shutting down, it only
+// allows when there is no handlers left.
 #[derive(Debug)]
 pub struct Driver {
   poll: mio::Poll,
+  /// Is only used when consumers are calling [`Self::handle()`]
+  handle_to_give: Handle,
 }
 
 impl Driver {
   pub fn new() -> io::Result<Driver> {
-    Ok(Driver { poll: mio::Poll::new()? })
+    let poll = mio::Poll::new()?;
+    let handle_to_give = Handle {
+      registry: poll.registry().try_clone()?,
+      event_token: Arc::new(EventToken::new()),
+      wakers: Arc::new(Mutex::new(HashMap::new())),
+    };
+
+    Ok(Driver { handle_to_give, poll })
   }
 
-  pub fn handle(&self) -> io::Result<Handle> {
-    Ok(Handle {
-      registry: self.poll.registry().try_clone()?,
-      wakers: Mutex::new(HashMap::new()),
-      token_state: TokenState::new(),
-    })
+  pub fn handle(&self) -> Handle {
+    self.handle_to_give.clone()
   }
 
-  pub fn turn(&mut self, handle: &Handle) -> bool {
+  pub fn turn(&mut self) -> bool {
     // FIXME: This doesn't quit.
     let mut events = Events::with_capacity(1024);
     self.poll.poll(&mut events, None).unwrap();
 
     for event in &events {
-      if event.token() == SHUTDOWN_SIGNAL_TOKEN {
+      if event.token() == EventToken::SHUTDOWN_SIGNAL_TOKEN {
         return true; // Wakeup-call
       };
-      let mut guard = handle.wakers.lock().expect("wakers lock poisoned");
+      let mut guard =
+        self.handle_to_give.wakers.lock().expect("wakers lock poisoned");
       if let Some(waker) = guard.remove(&event.token()) {
         waker.wake()
       }
@@ -70,23 +58,33 @@ impl Driver {
   }
 }
 
-/// Reference to the IO driver
+/// Distributable handle to event loop driver. Handle can register and unregister events that the
+/// driver should wake futures to.
 #[derive(Debug)]
 pub struct Handle {
   registry: mio::Registry,
-  // Using a stdMutex because events::Handle is not in a async context and doesn't fit a async
-  // model.
-  wakers: Mutex<HashMap<Token, Waker>>,
+  event_token: Arc<EventToken>,
+  wakers: Arc<Mutex<HashMap<Token, Waker>>>,
+}
 
-  token_state: TokenState,
+impl Clone for Handle {
+  fn clone(&self) -> Self {
+    Handle {
+      wakers: self.wakers.clone(),
+      event_token: self.event_token.clone(),
+      registry: self.registry.try_clone().expect(
+        "Couldn't clone mio::Registry for cloning of liten::events::Handle",
+      ),
+    }
+  }
 }
 
 impl Handle {
   pub fn next_token(&self) -> Token {
-    self.token_state.next_token()
+    self.event_token.token()
   }
-  pub fn mio_waker(&self) -> mio::Waker {
-    mio::Waker::new(&self.registry, SHUTDOWN_SIGNAL_TOKEN).unwrap()
+  pub fn shutdown_waker(&self) -> mio::Waker {
+    mio::Waker::new(&self.registry, EventToken::SHUTDOWN_SIGNAL_TOKEN).unwrap()
   }
   pub(self) fn register(
     &self,
@@ -125,8 +123,10 @@ impl Handle {
         vacant.insert(cx.waker().clone());
       }
       Entry::Occupied(mut occupied) => {
-        if !occupied.get().will_wake(cx.waker()) {
-          occupied.insert(cx.waker().clone());
+        tracing::warn!(token = ?token, "entry occupied");
+        let waker = cx.waker().clone();
+        if !occupied.get().will_wake(&waker) {
+          occupied.insert(waker);
         }
       }
     }

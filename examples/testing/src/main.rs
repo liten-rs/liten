@@ -3,13 +3,13 @@ use std::{
   io::{Read, Write},
 };
 
-use liten_new::net::TcpListener;
+use liten::net::TcpListener;
 use tracing::{subscriber, Level};
 use tracing_subscriber::fmt;
 
 fn main() -> Result<(), Box<dyn Error>> {
   subscriber::set_global_default(fmt().with_max_level(Level::TRACE).finish())?;
-  liten_new::runtime::Runtime::builder().block_on(async {
+  liten::runtime::Runtime::builder().block_on(async {
     let tcp = TcpListener::bind("localhost:9001")?;
 
     loop {

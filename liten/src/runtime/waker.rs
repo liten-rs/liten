@@ -1,5 +1,3 @@
-// loom::Arc can't be used here because of Into<Waker> for std::Arc.
-
 use std::task::Wake;
 
 use crate::loom::thread::Thread;

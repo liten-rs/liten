@@ -1,63 +1,65 @@
-use std::{cell::LazyCell, sync::OnceLock};
-
-use crate::loom::sync::Arc;
+use std::cell::RefCell;
 
 use crate::runtime::scheduler;
 
+// RefCell is used because thread_local which means only this module manages CONTEXT
 crate::loom::thread_local! {
-  static CONTEXT: LazyCell<Context> = LazyCell::new(|| {
-    Context {
-      handle: OnceLock::new(),
-    }
-  });
+  static CONTEXT: RefCell<Option<Context>> = RefCell::new(None);
 }
 
 pub struct Context {
-  handle: OnceLock<Arc<scheduler::Handle>>,
+  handle: scheduler::Handle,
 }
 
 #[cfg(test)]
 static_assertions::assert_impl_all!(Context: Send);
 
 impl Context {
-  pub fn handle(&self) -> Arc<scheduler::Handle> {
-    self.handle.get().expect("Accessed the handle before initializing").clone()
+  fn new(scheduler_handle: scheduler::Handle) -> Self {
+    Self { handle: scheduler_handle }
+  }
+
+  pub fn handle(&self) -> &scheduler::Handle {
+    &self.handle
   }
 }
 
-pub fn with_context<F, R>(func: F) -> R
+pub fn runtime_enter<F, R>(handle: scheduler::Handle, f: F) -> R
 where
-  F: FnOnce(&LazyCell<Context>) -> R,
+  F: FnOnce(&Context) -> R,
 {
-  CONTEXT.with(func)
-}
+  CONTEXT.with(|ctx| {
+    let mut _ctx = ctx.borrow_mut();
 
-pub fn runtime_enter<F, R>(handle: Arc<scheduler::Handle>, f: F) -> R
-where
-  F: FnOnce(&LazyCell<Context>) -> R,
-{
-  with_context(|ctx| {
-    if ctx.handle.get().is_some_and(|x| x.has_entered()) {
-      panic!("nested runtimes is not supported");
+    if _ctx.is_some() {
+      panic!("Nested runtimes is not supported");
     }
 
-    if ctx.handle.set(handle).is_err() {
-      panic!("whaat");
-    };
-    let return_type = f(ctx);
+    *_ctx = Some(Context::new(handle));
+    drop(_ctx);
 
-    ctx.handle.get().unwrap().exit();
+    let _ctx = ctx.borrow();
+    let return_type = f(_ctx.as_ref().unwrap());
+
+    drop(_ctx);
+
+    let mut _ctx = ctx.borrow_mut();
+    *_ctx = None;
 
     return_type
   })
 }
 
-pub struct ContextDropper;
+pub fn with_context<F, R>(func: F) -> R
+where
+  F: FnOnce(&Context) -> R,
+{
+  CONTEXT.with(|value| {
+    let _value = value.borrow();
+    let Some(value) = _value.as_ref() else {
+      panic!("with_context tried before runtime_enter");
+    };
 
-impl Drop for ContextDropper {
-  fn drop(&mut self) {
-    with_context(|ctx| {
-      ctx.handle.get().expect("OnceLock handle get unwrapped").exit();
-    });
-  }
+    func(value)
+  })
 }
