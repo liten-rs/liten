@@ -33,10 +33,7 @@ jobs:
         run: nix develop -c cargo clippy
 
       - name: Run tests
-        run: nix develop -c cargo test
-
-      - name: Run loom tests
-        run: nix develop --command bash -c 'RUSTFLAGS="--cfg loom" cargo test --release'
+        run: nix develop -c just test
 
       - name: Run miri tests
-        run: nix develop -c cargo miri test
+        run: nix develop -c just miri-test
