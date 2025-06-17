@@ -1,22 +1,17 @@
-use std::{error::Error, thread::sleep, time::Duration};
-
-use tracing::{Level, subscriber};
-use tracing_subscriber::fmt;
+use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
-  subscriber::set_global_default(fmt().with_max_level(Level::TRACE).finish())?;
   liten::runtime::Runtime::builder().block_on(async {
-    liten::task::spawn(async {
+    let handle = liten::task::spawn(async {
       tracing::info!("Very nice");
+      "yes"
     });
     println!("program stop -----");
-  });
 
-  liten::runtime::Runtime::builder().block_on(async {
-    liten::task::spawn(async {
-      tracing::info!("Very nice");
-    });
-    println!("program stop -----");
+    let reslut = handle.await;
+
+    println!("{:#?}", reslut);
+
     Ok(())
   })
 }
