@@ -1,17 +1,18 @@
-use std::sync::OnceLock;
+use std::cell::RefCell;
 
 use crate::runtime::scheduler;
 
+// RefCell is used because thread_local which means only this module manages CONTEXT
 crate::loom::thread_local! {
-  static CONTEXT: OnceLock<Context> = OnceLock::new();
+  static CONTEXT: RefCell<Option<Context>> = RefCell::new(None);
 }
 
 pub struct Context {
   handle: scheduler::Handle,
 }
 
-// #[cfg(test)]
-// static_assertions::assert_impl_all!(Context: Send);
+#[cfg(test)]
+static_assertions::assert_impl_all!(Context: Send);
 
 impl Context {
   fn new(scheduler_handle: scheduler::Handle) -> Self {
@@ -28,12 +29,22 @@ where
   F: FnOnce(&Context) -> R,
 {
   CONTEXT.with(|ctx| {
-    if let Err(_) = ctx.set(Context::new(handle)) {
+    let mut _ctx = ctx.borrow_mut();
+
+    if _ctx.is_some() {
       panic!("Nested runtimes is not supported");
     }
-    let return_type = f(ctx.get().unwrap());
 
-    // TODO: some deinitialisation
+    *_ctx = Some(Context::new(handle));
+    drop(_ctx);
+
+    let _ctx = ctx.borrow();
+    let return_type = f(_ctx.as_ref().unwrap());
+
+    drop(_ctx);
+
+    let mut _ctx = ctx.borrow_mut();
+    *_ctx = None;
 
     return_type
   })
@@ -44,40 +55,11 @@ where
   F: FnOnce(&Context) -> R,
 {
   CONTEXT.with(|value| {
-    let Some(value) = value.get() else {
+    let _value = value.borrow();
+    let Some(value) = _value.as_ref() else {
       panic!("with_context tried before runtime_enter");
     };
 
     func(value)
   })
 }
-//
-// pub fn runtime_enter<F, R>(handle: Arc<scheduler::Handle>, f: F) -> R
-// where
-//   F: FnOnce(&LazyCell<Context>) -> R,
-// {
-//   with_context(|ctx| {
-//     if ctx.handle.get().is_some_and(|x| x.has_entered()) {
-//       panic!("nested runtimes is not supported");
-//     }
-//
-//     if ctx.handle.set(handle).is_err() {
-//       panic!("whaat");
-//     };
-//     let return_type = f(ctx);
-//
-//     ctx.handle.get().unwrap().exit();
-//
-//     return_type
-//   })
-// }
-
-// pub struct ContextDropper;
-//
-// impl Drop for ContextDropper {
-//   fn drop(&mut self) {
-//     with_context(|ctx| {
-//       ctx.handle.get().expect("OnceLock handle get unwrapped").exit();
-//     });
-//   }
-// }

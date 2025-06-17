@@ -15,15 +15,13 @@ pub mod shared;
 #[allow(clippy::module_inception)]
 pub mod worker;
 
-#[derive(Debug)]
 pub struct WorkerShutdown {
   worker_id: usize,
-  pub signal_sender: Sender<()>, // pub temp
+  signal_sender: Sender<()>, // pub temp
   unparker: Unparker,
   handle: OnceLock<JoinHandle<()>>,
 }
 
-#[derive(Debug)]
 pub struct ShutdownWorkers(/* temp*/ pub Vec<WorkerShutdown>);
 
 impl ShutdownWorkers {

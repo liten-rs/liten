@@ -25,15 +25,11 @@ pub enum OneshotError {
 }
 
 // TODO: Get rid of Arc
-#[derive(Debug)]
 pub struct Sender<V>(Arc<Inner<V>>);
 
 impl<V> Sender<V> {
   pub(crate) fn new(arc_inner: Arc<Inner<V>>) -> Self {
     Self(arc_inner)
-  }
-  pub(crate) fn print_inner(&self) {
-    self.0.with_state(|state| dbg!(unsafe { &*state }));
   }
   pub fn send(self, value: V) -> Result<(), OneshotError> {
     let this = ManuallyDrop::new(self);
@@ -130,7 +126,6 @@ impl<V> std::fmt::Debug for State<V> {
   }
 }
 
-#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Inner<V>(Mutex<UnsafeCell<State<V>>>);
 
 impl<V> Inner<V> {
@@ -152,7 +147,9 @@ impl<V> Inner<V> {
       State::Init => Ok(None),
       State::ReceiverDropped => unreachable!(),
       State::SenderDropped => Err(OneshotError::SenderDropped),
-      State::Listening(_) => unreachable!(),
+      State::Listening(_) => unreachable!(
+        "If State::Listening, inner_try_recv can't be called again"
+      ),
       State::Sent(value) => {
         let _ = mem::replace(unsafe { &mut *state }, State::Init);
         Ok(Some(value))
@@ -163,7 +160,6 @@ impl<V> Inner<V> {
     self.with_state(|state| self.inner_try_recv(state))
   }
 
-  #[tracing::instrument(skip_all, name = "recv_poll")]
   fn recv_poll(
     &self,
     recv_ctx: &mut Context<'_>,
@@ -182,11 +178,27 @@ impl<V> Inner<V> {
   }
 
   fn drop_channel_sender(&self) {
-    self.with_state(|state| unsafe { ptr::write(state, State::SenderDropped) })
+    self.with_state(|state| {
+      let _ =
+        mem::replace(unsafe { state.as_mut().unwrap() }, State::SenderDropped);
+    });
   }
 
   fn drop_channel_receiver(&self) {
-    self
-      .with_state(|state| unsafe { ptr::write(state, State::ReceiverDropped) })
+    self.with_state(|state| {
+      let _ = mem::replace(
+        unsafe { state.as_mut().unwrap() },
+        State::ReceiverDropped,
+      );
+    });
   }
+}
+
+#[test]
+fn test_inner_try_recv() {
+  let inner = Inner::<u8>::new();
+
+  let testing = inner.try_recv();
+
+  panic!("{testing:?}");
 }
