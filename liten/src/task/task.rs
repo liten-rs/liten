@@ -49,6 +49,7 @@ impl Task {
       if sender.send(fut).is_err() {
         // Ignore, task handler has been dropped in this case.
       }
+      tracing::trace!(task_id = ?id, "task finished");
     });
     Self { id, future: UnsafeCell::new(future) }
   }

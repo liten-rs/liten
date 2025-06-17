@@ -1,4 +1,5 @@
 use std::{
+  fmt::Debug,
   future::Future,
   mem::{self, ManuallyDrop},
   pin::Pin,
@@ -34,21 +35,7 @@ impl<V> Sender<V> {
   pub fn send(self, value: V) -> Result<(), OneshotError> {
     let this = ManuallyDrop::new(self);
     let inner = unsafe { Arc::from_raw(Arc::as_ptr(&this.0)) };
-
-    inner.with_state(|state| match unsafe { &*state } {
-      State::Init => {
-        unsafe { ptr::write(state, State::Sent(value)) };
-        Ok(())
-      }
-      State::SenderDropped => unreachable!(),
-      State::ReceiverDropped => Err(OneshotError::ReceiverDropped),
-      State::Sent(_) => unreachable!(),
-      State::Listening(waker) => {
-        unsafe { ptr::write(state, State::Sent(value)) };
-        waker.wake_by_ref();
-        Ok(())
-      }
-    })
+    inner.send(value)
   }
 }
 
@@ -100,12 +87,92 @@ impl<V> Future for Receiver<V> {
   }
 }
 
+pub enum ValueState<V> {
+  Taken,
+  Value(V),
+}
+
+impl<V> ValueState<V> {
+  /// Extracts the value from [`self`] into a [`Option<V>`]
+  pub fn take(&mut self) -> Option<V> {
+    match mem::replace(self, ValueState::Taken) {
+      Self::Taken => None,
+      Self::Value(value) => Some(value),
+    }
+  }
+}
+
+impl<V: PartialEq> PartialEq for ValueState<V> {
+  fn eq(&self, other: &Self) -> bool {
+    match self {
+      Self::Taken => matches!(other, ValueState::Taken),
+      Self::Value(value) => {
+        if let Self::Value(value2) = other {
+          value2 == value
+        } else {
+          false
+        }
+      }
+    }
+  }
+}
+
+impl<V: Debug> Debug for ValueState<V> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match *self {
+      Self::Taken => f.write_str("ValueState::Taken"),
+      Self::Value(ref value) => {
+        f.write_fmt(format_args!("ValueState::Value({:?})", value))
+      }
+    }
+    // f.write_fmt(format_args!("ValueState {:?}", self))
+  }
+}
+
 pub enum State<V> {
   Init,
   Listening(Waker),
-  Sent(V),
+  Sent(ValueState<V>),
   SenderDropped,
   ReceiverDropped,
+}
+
+impl<V: PartialEq> PartialEq for State<V> {
+  fn eq(&self, other: &Self) -> bool {
+    match self {
+      State::Init => matches!(other, State::Init),
+      State::SenderDropped => matches!(other, State::SenderDropped),
+      State::ReceiverDropped => matches!(other, State::ReceiverDropped),
+      State::Listening(_) => {
+        if let State::Listening(_) = other {
+          true
+        } else {
+          false
+        }
+      }
+      State::Sent(value1) => {
+        if let State::Sent(value2) = other {
+          value1 == value2
+        } else {
+          false
+        }
+      }
+    }
+  }
+}
+
+impl<V> std::fmt::Debug for State<V> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Init => f.write_str("State::Init"),
+      Self::SenderDropped => f.write_str("State::SenderDropped"),
+      Self::ReceiverDropped => f.write_str("State::ReceiverDropped"),
+      Self::Sent(_) => f.write_str("State::Sent(...)"),
+      Self::Listening(waker) => {
+        f.write_fmt(format_args!("State::Listening({:?})", waker))
+      }
+    }
+  }
 }
 
 pub struct Inner<V>(Mutex<UnsafeCell<State<V>>>);
@@ -114,31 +181,12 @@ impl<V> Inner<V> {
   pub(super) fn new() -> Self {
     Inner(Mutex::new(UnsafeCell::new(State::Init)))
   }
-  // SAFETY:
-  //   - 'state': is behind mutex
-  fn with_state<R>(&self, f: impl FnOnce(*mut State<V>) -> R) -> R {
-    let lock = self.0.lock().unwrap();
-    lock.with_mut(f)
-  }
+}
 
-  fn inner_try_recv(
-    &self,
-    state: *mut State<V>,
-  ) -> Result<Option<V>, OneshotError> {
-    let state = mem::replace(unsafe { &mut *state }, State::Init);
-    match state {
-      State::Init => Ok(None),
-      State::ReceiverDropped => unreachable!(),
-      State::SenderDropped => Err(OneshotError::SenderDropped),
-      State::Listening(_) => unreachable!(),
-      State::Sent(value) => Ok(Some(value)),
-    }
-  }
-  pub fn try_recv(&self) -> Result<Option<V>, OneshotError> {
+impl<V> Inner<V> {
+  fn try_recv(&self) -> Result<Option<V>, OneshotError> {
     self.with_state(|state| self.inner_try_recv(state))
   }
-
-  #[tracing::instrument(skip_all, name = "recv_poll")]
   fn recv_poll(
     &self,
     recv_ctx: &mut Context<'_>,
@@ -155,13 +203,78 @@ impl<V> Inner<V> {
       },
     })
   }
-
+  fn send(&self, value: V) -> Result<(), OneshotError> {
+    self.with_state(|state| match unsafe { &*state } {
+      State::Init => {
+        unsafe { ptr::write(state, State::Sent(ValueState::Value(value))) };
+        Ok(())
+      }
+      State::Listening(waker) => {
+        unsafe { ptr::write(state, State::Sent(ValueState::Value(value))) };
+        waker.wake_by_ref();
+        Ok(())
+      }
+      State::ReceiverDropped => Err(OneshotError::ReceiverDropped),
+      State::SenderDropped | State::Sent(_) => unreachable!(),
+    })
+  }
   fn drop_channel_sender(&self) {
-    self.with_state(|state| unsafe { ptr::write(state, State::SenderDropped) })
+    self.with_state(|state| {
+      let _ =
+        mem::replace(unsafe { state.as_mut().unwrap() }, State::SenderDropped);
+    });
   }
 
   fn drop_channel_receiver(&self) {
-    self
-      .with_state(|state| unsafe { ptr::write(state, State::ReceiverDropped) })
+    self.with_state(|state| {
+      let _ = mem::replace(
+        unsafe { state.as_mut().unwrap() },
+        State::ReceiverDropped,
+      );
+    });
   }
+}
+
+impl<V> Inner<V> {
+  // SAFETY:
+  //   - 'state': is behind mutex
+  fn with_state<R>(&self, f: impl FnOnce(*mut State<V>) -> R) -> R {
+    let lock = self.0.lock().unwrap();
+    lock.with_mut(f)
+  }
+
+  fn inner_try_recv(
+    &self,
+    state: *mut State<V>,
+  ) -> Result<Option<V>, OneshotError> {
+    match unsafe { &mut *state } {
+      State::Init => Ok(None),
+      State::ReceiverDropped => unreachable!(),
+      State::SenderDropped => Err(OneshotError::SenderDropped),
+      State::Listening(_) => unreachable!(
+        "If State::Listening, inner_try_recv can't be called again"
+      ),
+      State::Sent(ref mut value) => match value.take() {
+        Some(value) => Ok(Some(value)),
+        None => {
+          panic!("Value already taken: tried to run try_recv after value taken")
+        }
+      },
+    }
+  }
+}
+
+#[test]
+fn test_inner_try_recv() {
+  let inner = Inner::<u8>::new();
+
+  assert_eq!(inner.try_recv(), Ok(None));
+  inner.send(0).unwrap();
+  inner.with_state(|state| unsafe {
+    assert_eq!(state.read(), State::Sent(ValueState::Value(0)));
+  });
+  assert_eq!(inner.try_recv(), Ok(Some(0)));
+  inner.with_state(|state| unsafe {
+    assert_eq!(state.read(), State::Sent(ValueState::Taken));
+  });
 }

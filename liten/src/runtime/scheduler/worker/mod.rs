@@ -1,9 +1,6 @@
 use std::{num::NonZero, ops::Deref, sync::OnceLock};
 
-use crate::loom::{
-  sync::Arc,
-  thread::{Builder, JoinHandle},
-};
+use crate::loom::thread::{Builder, JoinHandle};
 
 use crossbeam_deque::Stealer;
 use crossbeam_utils::sync::Unparker;
@@ -20,12 +17,12 @@ pub mod worker;
 
 pub struct WorkerShutdown {
   worker_id: usize,
-  signal_sender: Sender<()>,
+  signal_sender: Sender<()>, // pub temp
   unparker: Unparker,
   handle: OnceLock<JoinHandle<()>>,
 }
 
-pub struct ShutdownWorkers(Vec<WorkerShutdown>);
+pub struct ShutdownWorkers(/* temp*/ pub Vec<WorkerShutdown>);
 
 impl ShutdownWorkers {
   pub fn before_starting_workers<'a>(
@@ -56,8 +53,9 @@ impl ShutdownWorkers {
   pub fn shutdown(self) {
     for WorkerShutdown { signal_sender, unparker, handle, worker_id } in self.0
     {
-      unparker.unpark();
+      tracing::trace!("sending signal_sender");
       signal_sender.send(()).unwrap();
+      unparker.unpark();
 
       handle
         .into_inner()
@@ -76,6 +74,7 @@ pub struct Remote {
   stealer: Stealer<Task>,
   unparker: crossbeam_utils::sync::Unparker,
 }
+
 impl Remote {
   pub fn from_stealer(
     stealer: Stealer<Task>,
@@ -99,10 +98,9 @@ impl Deref for Workers {
 pub struct Workers(Vec<Worker>);
 
 impl Workers {
-  pub fn new(quantity: NonZero<usize>, handle: Handle) -> Self {
-    let worker_vec = (0..quantity.into())
-      .map(|worker_id| Worker::new(worker_id, handle.clone()))
-      .collect();
+  pub fn new(quantity: NonZero<usize>) -> Self {
+    let worker_vec =
+      (0..quantity.into()).map(|worker_id| Worker::new(worker_id)).collect();
 
     Workers(worker_vec)
   }
@@ -111,7 +109,8 @@ impl Workers {
     ShutdownWorkers::before_starting_workers(self.0.iter())
   }
 
-  pub fn launch(self, handle: Arc<Handle>) -> Vec<JoinHandle<()>> {
+  // FIXME: Here somewhere does the oneshot channel send so all the workers sleep.
+  pub fn launch(self, handle: Handle) -> Vec<JoinHandle<()>> {
     let join_handles: Vec<JoinHandle<()>> = self
       .0
       .into_iter()
@@ -121,7 +120,9 @@ impl Workers {
         let another_handle = handle.clone();
         builder
           .spawn(move || {
-            context::runtime_enter(another_handle, move |_| worker.launch());
+            context::runtime_enter(another_handle, move |ctx| {
+              worker.launch(ctx);
+            })
           })
           .unwrap()
       })
