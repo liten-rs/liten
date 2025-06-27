@@ -20,8 +20,7 @@ impl Runtime {
   }
 }
 
-#[derive(Default)]
-#[non_exhaustive]
+#[derive(Default, Clone)]
 pub enum RuntimeThreads {
   #[default]
   Cpus,
@@ -41,14 +40,26 @@ impl RuntimeThreads {
   }
 }
 
-#[derive(Default)]
+#[derive(Clone)]
 pub struct RuntimeBuilder {
   max_threads: RuntimeThreads,
+  enable_work_stealing: bool,
+}
+
+impl Default for RuntimeBuilder {
+  fn default() -> Self {
+    Self { enable_work_stealing: true, max_threads: RuntimeThreads::default() }
+  }
 }
 
 impl RuntimeBuilder {
   pub fn num_workers(mut self, num: usize) -> Self {
     self.max_threads.set_threads(NonZero::new(num).unwrap());
+    self
+  }
+
+  pub fn disable_work_stealing(mut self) -> Self {
+    self.enable_work_stealing = false;
     self
   }
 

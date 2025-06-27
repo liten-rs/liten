@@ -1,6 +1,12 @@
 use std::{num::NonZero, ops::Deref, sync::OnceLock};
 
-use crate::loom::thread::{Builder, JoinHandle};
+use crate::{
+  loom::{
+    sync::Arc,
+    thread::{Builder, JoinHandle},
+  },
+  runtime::RuntimeBuilder,
+};
 
 use crossbeam_deque::Stealer;
 use crossbeam_utils::sync::Unparker;
@@ -76,6 +82,9 @@ pub struct Remote {
 }
 
 impl Remote {
+  pub fn stealer(&self) -> &Stealer<Task> {
+    &self.stealer
+  }
   pub fn from_stealer(
     stealer: Stealer<Task>,
     unparker: crossbeam_utils::sync::Unparker,
@@ -98,9 +107,10 @@ impl Deref for Workers {
 pub struct Workers(Vec<Worker>);
 
 impl Workers {
-  pub fn new(quantity: NonZero<usize>) -> Self {
-    let worker_vec =
-      (0..quantity.into()).map(|worker_id| Worker::new(worker_id)).collect();
+  pub fn new(config: Arc<RuntimeBuilder>) -> Self {
+    let worker_vec = (0..config.get_num_workers().into())
+      .map(|worker_id| Worker::new(worker_id, config.clone()))
+      .collect();
 
     Workers(worker_vec)
   }

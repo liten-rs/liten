@@ -5,7 +5,7 @@ mod context;
 mod events;
 pub mod io;
 mod loom;
-pub mod net;
+// pub mod net;
 pub mod runtime;
 pub mod sync;
 pub mod task;

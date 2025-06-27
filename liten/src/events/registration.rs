@@ -10,9 +10,16 @@ pub struct EventRegistration {
 }
 
 impl EventRegistration {
-  pub fn new(interest: Interest) -> EventRegistration {
-    let token = context::with_context(|ctx| ctx.handle().io().next_token());
-    EventRegistration { token, interest }
+  pub fn new(
+    interest: Interest,
+    source: &mut impl Source,
+  ) -> io::Result<EventRegistration> {
+    context::with_context(|ctx| {
+      let token = ctx.handle().io().next_token();
+      ctx.handle().io().register(source, token, interest)?;
+
+      Ok(EventRegistration { token, interest })
+    })
   }
 
   pub fn token(&self) -> Token {
@@ -25,12 +32,6 @@ impl EventRegistration {
 
   pub fn is_write(&self) -> bool {
     self.interest.is_writable()
-  }
-
-  pub fn register(&self, source: &mut impl Source) -> io::Result<()> {
-    context::with_context(|ctx| {
-      ctx.handle().io().register(source, self.token, self.interest)
-    })
   }
 
   pub fn reregister(
@@ -49,7 +50,7 @@ impl EventRegistration {
     context::with_context(|ctx| ctx.handle().io().deregister(source))
   }
 
-  pub fn register_io_waker(&self, waker: &mut Context) {
+  pub fn associate_waker(&self, waker: &mut Context) {
     context::with_context(|ctx| ctx.handle().io().poll(self.token(), waker));
   }
 }

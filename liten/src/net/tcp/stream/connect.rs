@@ -19,9 +19,8 @@ pub struct Connect {
 
 impl Connect {
   /// Registration and it's management is passed on
-  pub(crate) fn inherit_stream(mut stream: mionet::TcpStream) -> Self {
-    let registration = EventRegistration::new(Interest::READABLE);
-    registration.register(&mut stream).expect("internal 'liten' error: failed to register liten::net::tcp::stream::Connect's IoRegistration");
+  pub(crate) fn connect_mio(mut stream: mionet::TcpStream) -> Self {
+    let registration = EventRegistration::new(Interest::READABLE | Interest::WRITABLE, &mut stream).expect("internal 'liten' error: failed to register liten::net::tcp::stream::Connect's IoRegistration");
     Self { socket: Some(stream), registration }
   }
 }
@@ -60,9 +59,7 @@ impl Future for Connect {
               || err.raw_os_error()
                 == Some(115 /* = libc::EINPROGRESS */) =>
           {
-            context::with_context(|ctx| {
-              ctx.handle().io().poll(self.registration.token(), _cx)
-            });
+            self.registration.associate_waker(_cx);
             self.socket = Some(socket);
 
             Poll::Pending

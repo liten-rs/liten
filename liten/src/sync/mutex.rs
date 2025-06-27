@@ -27,7 +27,7 @@ impl<T> Mutex<T> {
   pub fn new(value: T) -> Self {
     Self {
       inner: UnsafeCell::new(value),
-      guard: semaphore::Semaphore::with_size(1.try_into().unwrap()),
+      guard: semaphore::Semaphore::new(1),
       poisoned: AtomicBool::new(false),
     }
   }
@@ -46,7 +46,7 @@ impl<T> Mutex<T> {
 
   pub fn try_lock(&self) -> Result<MutexGuard<'_, T>, TryLockError> {
     let guard =
-      self.guard.try_acquire().map_err(|_| TryLockError::UnableToAcquireLock);
+      self.guard.try_acquire().ok_or(TryLockError::UnableToAcquireLock);
     guard.map(|guard| MutexGuard(self, guard))
   }
 }

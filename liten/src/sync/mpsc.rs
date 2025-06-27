@@ -3,7 +3,8 @@ use futures_core::{FusedFuture, Stream};
 use std::{
   collections::VecDeque,
   future::Future,
-  task::{Poll, Waker},
+  pin::Pin,
+  task::{Context, Poll, Waker},
 };
 
 use crate::loom::sync::{
@@ -19,7 +20,7 @@ pub fn unbounded<T>() -> (Sender<T>, Receiver<T>) {
   (Sender::from(channel.clone()), Receiver::from(channel.clone()))
 }
 
-pub fn unbounded_with_capacity<T>(num: usize) -> (Sender<T>, Receiver<T>) {
+pub fn channel<T>(num: usize) -> (Sender<T>, Receiver<T>) {
   let channel = Arc::new(UnboundedChannel::with_capacity(num));
   (Sender::from(channel.clone()), Receiver::from(channel.clone()))
 }
@@ -71,6 +72,49 @@ impl<T> UnboundedChannel<T> {
       ..Default::default()
     }
   }
+
+  fn send(&self, t: T) -> Result<(), ReceiverDroppedError> {
+    if self.senders_has_all_dropped() {
+      return Err(ReceiverDroppedError);
+    }
+
+    let mut lock = self.list.try_lock().unwrap();
+    lock.push_back(t);
+
+    let lock = self.waker.read().unwrap();
+
+    if let Some(tesing) = lock.as_ref() {
+      tesing.wake_by_ref();
+    }
+
+    Ok(())
+  }
+
+  fn try_recv(&self) -> Result<T, RecvError> {
+    if self.senders_has_all_dropped() {
+      return Err(RecvError::Disconnected);
+    }
+
+    let mut lock = self.list.try_lock().unwrap();
+    match lock.pop_front() {
+      Some(t) => Ok(t),
+      None => Err(RecvError::Empty),
+    }
+  }
+  fn poll_recv(&self, cx: &mut Context<'_>) -> Poll<Result<T, RecvError>> {
+    match self.try_recv() {
+      Ok(value) => Poll::Ready(Ok(value)),
+      Err(err) => match err {
+        RecvError::Disconnected => Poll::Ready(Err(RecvError::Disconnected)),
+        RecvError::Empty => {
+          let mut lock = self.waker.write().unwrap();
+          *lock = Some(cx.waker().clone());
+
+          Poll::Pending
+        }
+      },
+    }
+  }
 }
 
 pub struct Receiver<T> {
@@ -120,18 +164,7 @@ impl<T> Future for ReceiverFuture<'_, T> {
     self: std::pin::Pin<&mut Self>,
     cx: &mut std::task::Context<'_>,
   ) -> std::task::Poll<Self::Output> {
-    match self.0.try_recv() {
-      Ok(value) => Poll::Ready(Ok(value)),
-      Err(err) => match err {
-        RecvError::Disconnected => Poll::Ready(Err(RecvError::Disconnected)),
-        RecvError::Empty => {
-          let mut lock = self.0.channel.waker.write().unwrap();
-          *lock = Some(cx.waker().clone());
-
-          Poll::Pending
-        }
-      },
-    }
+    self.0.channel.poll_recv(cx)
   }
 }
 
@@ -147,15 +180,7 @@ impl<T> Receiver<T> {
   }
 
   pub fn try_recv(&self) -> Result<T, RecvError> {
-    if self.channel.senders_has_all_dropped() {
-      return Err(RecvError::Disconnected);
-    }
-
-    let mut lock = self.channel.list.try_lock().unwrap();
-    match lock.pop_front() {
-      Some(t) => Ok(t),
-      None => Err(RecvError::Empty),
-    }
+    self.channel.try_recv()
   }
 }
 impl<T> Stream for Receiver<T> {
@@ -178,6 +203,9 @@ impl<T> Stream for Receiver<T> {
   }
 }
 
+#[derive(Debug)]
+pub struct ReceiverDroppedError;
+
 pub struct Sender<T> {
   channel: Arc<UnboundedChannel<T>>,
 }
@@ -189,25 +217,9 @@ impl<T> From<Arc<UnboundedChannel<T>>> for Sender<T> {
   }
 }
 
-#[derive(Debug)]
-pub struct ReceiverDroppedError;
-
 impl<T> Sender<T> {
   pub fn send(&self, t: T) -> Result<(), ReceiverDroppedError> {
-    if self.channel.senders_has_all_dropped() {
-      return Err(ReceiverDroppedError);
-    }
-
-    let mut lock = self.channel.list.try_lock().unwrap();
-    lock.push_back(t);
-
-    let lock = self.channel.waker.read().unwrap();
-
-    if let Some(tesing) = lock.as_ref() {
-      tesing.wake_by_ref();
-    }
-
-    Ok(())
+    self.channel.send(t)
   }
 }
 

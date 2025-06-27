@@ -29,7 +29,7 @@ impl Scheduler {
 
     let handle = driver.handle(Shared::new_without_remotes());
 
-    let workers = Workers::new(config.get_num_workers());
+    let workers = Workers::new(Arc::new(config));
 
     handle.shared.fill_remotes(&workers);
 
