@@ -1,68 +1,17 @@
 use std::{collections::HashMap, task::Poll};
 
-use crossbeam_deque::{Injector, Steal, Stealer, Worker as CBWorkerQueue};
-use crossbeam_utils::sync::Parker;
-
 use crate::{
   context::Context,
-  runtime::waker::TaskWaker,
+  loom::sync::Arc,
+  runtime::{waker::TaskWaker, Runtime, RuntimeBuilder},
   sync::{
     mpsc,
     oneshot::{self, not_sync::OneshotError, Receiver},
   },
   task::{Task, TaskId},
 };
-
-#[derive(Debug)]
-pub struct WorkerQueue(CBWorkerQueue<Task>);
-
-impl WorkerQueue {
-  pub fn new() -> Self {
-    Self(CBWorkerQueue::new_fifo())
-  }
-  pub fn push(&self, task: Task) {
-    self.0.push(task);
-  }
-  pub fn fetch_task(
-    &self,
-    injector: &Injector<Task>,
-    remotes: &[Stealer<Task>],
-  ) -> Option<Task> {
-    if let Some(task) = self.0.pop() {
-      return Some(task);
-      // Fill local queue from the global tasks
-    };
-
-    // Try to steal tasks from the global queue
-    loop {
-      match injector.steal_batch_and_pop(&self.0) {
-        Steal::Retry => continue,
-        Steal::Success(task) => return Some(task),
-        Steal::Empty => break,
-      };
-    }
-
-    // Global queue is empty: So we steal tasks from other workers.
-    for remote_stealer in remotes.into_iter() {
-      loop {
-        // Steal workers and pop the local queue
-        match remote_stealer.steal_batch_and_pop(&self.0) {
-          // Try again with same remote
-          Steal::Retry => continue,
-          // Stop trying and move on to the next one.
-          Steal::Empty => break,
-          // Break immediately and return task
-          Steal::Success(task) => {
-            tracing::trace!("hehe stole task");
-            return Some(task);
-          }
-        }
-      }
-    }
-
-    None
-  }
-}
+use crossbeam_deque::{Injector, Steal, Stealer, Worker as CBWorkerQueue};
+use crossbeam_utils::sync::Parker;
 
 // Local worker.
 pub struct Worker {
@@ -70,22 +19,25 @@ pub struct Worker {
   // handle: Handle,
   parker: Parker,
 
-  hot: WorkerQueue,
+  hot: CBWorkerQueue<Task>,
   cold: HashMap<TaskId, Task>,
 
   pub shutdown_receiver: Receiver<()>,
+
+  config: Arc<RuntimeBuilder>,
 }
 
 impl Worker {
-  pub fn new(id: usize) -> Worker {
+  pub fn new(id: usize, config: Arc<RuntimeBuilder>) -> Worker {
     let (sender, receiver) = oneshot::channel();
     drop(sender);
     Worker {
       worker_id: id,
       parker: Parker::new(),
-      hot: WorkerQueue::new(),
+      hot: CBWorkerQueue::new_fifo(),
       cold: HashMap::new(),
       shutdown_receiver: receiver,
+      config,
     }
   }
 
@@ -102,7 +54,45 @@ impl Worker {
   }
 
   pub fn stealer(&self) -> Stealer<Task> {
-    self.hot.0.stealer()
+    self.hot.stealer()
+  }
+
+  pub fn fetch_task(&self, ctx: &Context) -> Option<Task> {
+    let state = ctx.handle().state();
+    if let Some(task) = self.hot.pop() {
+      return Some(task);
+      // Fill local queue from the global tasks
+    };
+
+    // Try to steal tasks from the global queue
+    loop {
+      match state.injector().steal_batch_and_pop(&self.hot) {
+        Steal::Retry => continue,
+        Steal::Success(task) => return Some(task),
+        Steal::Empty => break,
+      };
+    }
+
+    if self.config.enable_work_stealing {
+      // Global queue is empty: So we steal tasks from other workers.
+      for remote_stealer in state.iter_all_stealers() {
+        loop {
+          // Steal workers and pop the local queue
+          match remote_stealer.steal_batch_and_pop(&self.hot) {
+            // Try again with same remote
+            Steal::Retry => continue,
+            // Stop trying and move on to the next one.
+            Steal::Empty => break,
+            // Break immediately and return task
+            Steal::Success(task) => {
+              return Some(task);
+            }
+          }
+        }
+      }
+    }
+
+    None
   }
 
   pub fn launch(&mut self, context: &Context) {
@@ -135,15 +125,11 @@ impl Worker {
         self.hot.push(task);
       }
 
-      let shared = context.handle().state();
-
-      let stealers: Vec<Stealer<Task>> =
-        shared.remotes().iter().map(|remote| remote.stealer.clone()).collect();
-
-      let Some(task) = self.hot.fetch_task(shared.injector(), &stealers) else {
+      let Some(task) = self.fetch_task(context) else {
         self.parker.park();
         continue;
       };
+
       let id = task.id();
       let liten_waker =
         std::sync::Arc::new(TaskWaker::new(id, sender.clone())).into();

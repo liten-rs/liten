@@ -34,7 +34,7 @@ impl TcpStream {
     ))?;
 
     let mio_stream = mionet::TcpStream::connect(addr)?;
-    Ok(Connect::inherit_stream(mio_stream))
+    Ok(Connect::connect_mio(mio_stream))
   }
 
   // Partially to maintain compatibility with std.
@@ -73,8 +73,8 @@ impl TcpStream {
   /// This function assumes the TcpStream input has been registered as an event.
   pub(crate) fn inherit_mio_stream(mut mio: mionet::TcpStream) -> TcpStream {
     let registration =
-      EventRegistration::new(Interest::READABLE | Interest::WRITABLE);
-    registration.register(&mut mio).expect("Couldn't register TcpStream");
+      EventRegistration::new(Interest::READABLE | Interest::WRITABLE, &mut mio)
+        .expect("Couldn't register TcpStream");
     TcpStream { inner: mio, registration }
   }
 }

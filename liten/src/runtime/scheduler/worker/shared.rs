@@ -1,7 +1,7 @@
 use std::sync::OnceLock;
 
 use super::{worker::Worker, Remote};
-use crossbeam_deque::Injector;
+use crossbeam_deque::{Injector, Stealer};
 
 use crate::task::Task;
 
@@ -55,8 +55,8 @@ impl Shared {
     }
   }
 
-  pub fn remotes(&self) -> &[Remote] {
-    self.0.remotes.get().expect("Remotes accessed before 'fill_remotes'")
+  pub fn iter_all_stealers(&self) -> impl Iterator<Item = &Stealer<Task>> {
+    self.0.remotes.get().unwrap().iter().map(|remote| remote.stealer())
   }
 
   pub fn injector(&self) -> &Injector<Task> {

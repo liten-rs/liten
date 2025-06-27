@@ -1,5 +1,6 @@
 mod accept;
 use std::{
+  future::Future,
   io,
   net::{SocketAddr, ToSocketAddrs},
   pin::Pin,
@@ -15,18 +16,14 @@ use crate::events::EventRegistration;
 
 use super::TcpStream;
 
-pub struct TcpListener {
-  registration: EventRegistration,
+// This is just for passing down to the struct Accept.
+pub struct TcpListener(mionet::TcpListener);
 
-  // This is just for passing down to the struct Accept.
-  listener: mionet::TcpListener,
-}
-
-impl Drop for TcpListener {
-  fn drop(&mut self) {
-    let _ = self.registration.deregister(&mut self.listener);
-  }
-}
+// impl Drop for TcpListener {
+//   fn drop(&mut self) {
+//     let _ = self.registration.deregister(&mut self.listener);
+//   }
+// }
 
 impl TcpListener {
   pub fn bind<A>(addr: A) -> io::Result<TcpListener>
@@ -36,15 +33,15 @@ impl TcpListener {
     let tcp = stdnet::TcpListener::bind(addr)?;
     tcp.set_nonblocking(true)?;
 
-    let mut listener = mionet::TcpListener::from_std(tcp);
+    let listener = mionet::TcpListener::from_std(tcp);
 
     // This is only readable because this IoRegistration is only used for listening for incoming
     // connections. TcpStream read and write operations are all blocking.
     //
     // This is because some trange bugs happen when trying for async io.
-    let registration = EventRegistration::new(Interest::READABLE);
-    let _ = registration.register(&mut listener);
-    Ok(TcpListener { registration, listener })
+    // let registration = EventRegistration::new(Interest::READABLE);
+    // let _ = registration.register(&mut listener);
+    Ok(TcpListener(listener))
   }
 
   pub fn accept(&self) -> Accept<'_> {
@@ -60,7 +57,7 @@ impl futures_core::Stream for TcpListener {
     cx: &mut Context<'_>,
   ) -> Poll<Option<Self::Item>> {
     let fut = std::pin::pin!(self.accept());
-    match std::future::Future::poll(fut, cx) {
+    match Future::poll(fut, cx) {
       Poll::Ready(value) => Poll::Ready(Some(value)),
       Poll::Pending => Poll::Pending,
     }

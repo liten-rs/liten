@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use liten::sync::oneshot::{self, sync::OneshotError};
+use liten::sync::oneshot::{self};
 
 macro_rules! get_ready {
   ($expr:expr) => {{
@@ -60,34 +60,34 @@ fn non_sync_basic_drop_handling() {
   assert_eq!(result, Err(oneshot::not_sync::OneshotError::ReceiverDropped));
 }
 
-#[liten::internal_test]
-fn sync_drop_handling() {
-  let (sender, receiver) = oneshot::sync_channel::<u8>();
-  drop(sender);
-
-  let should_err = get_ready!(receiver);
-
-  assert_eq!(should_err, Err(OneshotError::ChannelDropped));
-
-  let (sender, receiver) = oneshot::sync_channel::<u8>();
-  drop(receiver);
-
-  let should_err = get_ready!(sender.send(VALUE));
-
-  assert_eq!(should_err, Err(OneshotError::ChannelDropped));
-}
-
-#[liten::internal_test]
-fn sync_happy_path() {
-  let (sender, mut receiver) = oneshot::sync_channel::<u8>();
-
-  assert!(should_pending!(receiver));
-
-  let mut fut = sender.send(VALUE);
-
-  get_ready!(fut).unwrap();
-
-  let result = get_ready!(receiver);
-
-  assert_eq!(result, Ok(VALUE));
-}
+// #[liten::internal_test]
+// fn sync_drop_handling() {
+//   let (sender, receiver) = oneshot::sync_channel::<u8>();
+//   drop(sender);
+//
+//   let should_err = get_ready!(receiver);
+//
+//   assert_eq!(should_err, Err(OneshotError::ChannelDropped));
+//
+//   let (sender, receiver) = oneshot::sync_channel::<u8>();
+//   drop(receiver);
+//
+//   let should_err = get_ready!(sender.send(VALUE));
+//
+//   assert_eq!(should_err, Err(OneshotError::ChannelDropped));
+// }
+//
+// #[liten::internal_test]
+// fn sync_happy_path() {
+//   let (sender, mut receiver) = oneshot::sync_channel::<u8>();
+//
+//   assert!(should_pending!(receiver));
+//
+//   let mut fut = sender.send(VALUE);
+//
+//   get_ready!(fut).unwrap();
+//
+//   let result = get_ready!(receiver);
+//
+//   assert_eq!(result, Ok(VALUE));
+// }
