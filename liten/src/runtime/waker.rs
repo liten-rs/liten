@@ -2,7 +2,8 @@ use std::task::Wake;
 
 use crate::loom::thread::Thread;
 
-use crate::{sync::mpsc, task::TaskId};
+use crate::task::TaskId;
+use std::sync::mpsc;
 
 pub struct TaskWaker {
   task_id: TaskId,
@@ -18,6 +19,7 @@ impl TaskWaker {
 impl Wake for TaskWaker {
   fn wake(self: std::sync::Arc<Self>) {
     tracing::trace!(task_id = ?self.task_id, "task wake called");
+    // It doesn't block since it's unbounded.
     self.sender.send(self.task_id).unwrap();
   }
 }

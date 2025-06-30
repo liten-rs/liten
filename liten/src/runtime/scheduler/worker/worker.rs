@@ -1,17 +1,14 @@
-use std::{collections::HashMap, task::Poll};
+use std::{collections::HashMap, sync::mpsc, task::Poll};
 
 use crate::{
   context::Context,
   loom::sync::Arc,
-  runtime::{waker::TaskWaker, Runtime, RuntimeBuilder},
-  sync::{
-    mpsc,
-    oneshot::{self, not_sync::OneshotError, Receiver},
-  },
+  runtime::{waker::TaskWaker, RuntimeBuilder},
+  sync::oneshot::{self, not_sync::OneshotError, Receiver},
   task::{Task, TaskId},
 };
-use crossbeam_deque::{Injector, Steal, Stealer, Worker as CBWorkerQueue};
-use crossbeam_utils::sync::Parker;
+use crossbeam_deque::{Steal, Stealer, Worker as CBWorkerQueue};
+use parking::Parker;
 
 // Local worker.
 pub struct Worker {
@@ -73,30 +70,30 @@ impl Worker {
       };
     }
 
-    if self.config.enable_work_stealing {
-      // Global queue is empty: So we steal tasks from other workers.
-      for remote_stealer in state.iter_all_stealers() {
-        loop {
-          // Steal workers and pop the local queue
-          match remote_stealer.steal_batch_and_pop(&self.hot) {
-            // Try again with same remote
-            Steal::Retry => continue,
-            // Stop trying and move on to the next one.
-            Steal::Empty => break,
-            // Break immediately and return task
-            Steal::Success(task) => {
-              return Some(task);
-            }
-          }
-        }
-      }
-    }
+    // if self.config.enable_work_stealing {
+    //   // Global queue is empty: So we steal tasks from other workers.
+    //   for remote_stealer in state.iter_all_stealers() {
+    //     loop {
+    //       // Steal workers and pop the local queue
+    //       match remote_stealer.steal_batch_and_pop(&self.hot) {
+    //         // Try again with same remote
+    //         Steal::Retry => continue,
+    //         // Stop trying and move on to the next one.
+    //         Steal::Empty => break,
+    //         // Break immediately and return task
+    //         Steal::Success(task) => {
+    //           return Some(task);
+    //         }
+    //       }
+    //     }
+    //   }
+    // }
 
     None
   }
 
   pub fn launch(&mut self, context: &Context) {
-    let (sender, receiver) = mpsc::unbounded();
+    let (sender, receiver) = mpsc::channel();
     let _guard = tracing::trace_span!("worker launch", worker_id = self.id());
     let _ye = _guard.enter();
     tracing::trace!(worker_id = self.id(), "starting");
@@ -115,8 +112,13 @@ impl Worker {
         },
       };
 
-      for now_active_task_id in receiver.try_iter() {
+      loop {
+        let Ok(now_active_task_id) = receiver.try_recv() else {
+          break;
+        };
+
         tracing::trace!(task_id = ?now_active_task_id, "moving task from cold_queue to local_queue");
+
         let task = self
           .cold
           .remove(&now_active_task_id)
@@ -125,8 +127,8 @@ impl Worker {
         self.hot.push(task);
       }
 
-      let Some(task) = self.fetch_task(context) else {
-        self.parker.park();
+      let Some(task) = self.fetch_task(&context) else {
+        // self.parker.park(); // this line deadlocks
         continue;
       };
 

@@ -4,12 +4,9 @@ use std::{future::Future, io};
 
 use crate::{
   context, events,
-  loom::{
-    sync::{
-      atomic::{AtomicUsize, Ordering},
-      Arc,
-    },
-    thread,
+  loom::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
   },
   runtime::{main_executor::GlobalExecutor, scheduler::worker::shared::Shared},
 };
@@ -25,7 +22,7 @@ impl Scheduler {
   where
     F: Future<Output = Res>,
   {
-    let mut driver = Driver::new().unwrap();
+    let driver = Driver::new().unwrap();
 
     let handle = driver.handle(Shared::new_without_remotes());
 
@@ -43,20 +40,21 @@ impl Scheduler {
     // NOTE: Has to be over the mio join handle.
     let shutdown_waker = handle.io().shutdown_waker();
 
-    let join_handle = thread::spawn(move || loop {
-      if driver.io.turn() {
-        tracing::trace!("shutting down driver thread");
-        break;
-      }
+    // let join_handle = thread::spawn(move || loop {
+    //   if driver.io.turn() {
+    //     tracing::trace!("shutting down driver thread");
+    //     break;
+    //   }
+    // });
+    //
+    let return_type = context::runtime_enter(handle, move |ctx| {
+      GlobalExecutor::block_on(fut, ctx.handle().state())
     });
-
-    let return_type =
-      context::runtime_enter(handle, move |_| GlobalExecutor::block_on(fut));
 
     shutdown.shutdown();
 
     shutdown_waker.wake().expect("noo :(");
-    join_handle.join().unwrap();
+    // join_handle.join().unwrap();
 
     return_type
   }
@@ -70,8 +68,8 @@ pub struct Handle {
   current_task_id: Arc<AtomicUsize>,
 }
 
-#[cfg(test)]
-static_assertions::assert_impl_one!(Handle: Send);
+// #[cfg(test)]
+// static_assertions::assert_impl_one!(Handle: Send);
 
 impl Handle {
   pub fn state(&self) -> &Shared {

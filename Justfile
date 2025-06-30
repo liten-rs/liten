@@ -1,9 +1,12 @@
 watch-test:
-  RUSTFLAGS="--cfg loom" cargo watch -x "test --release"
+  RUSTFLAGS="--cfg liten=\"loom\"" cargo watch -x "test --release"
+
+loom-test:
+  RUSTFLAGS="--cfg liten=\"loom\"" cargo nextest r --release
 
 test:
-  RUSTFLAGS="--cfg loom" cargo nextest r --release
+  cargo nextest r
 
 miri-test:
   # miriflgas is for issue with crossbeam-deque
-  MIRIFLAGS=-Zmiri-permissive-provenance cargo miri nextest r --target x86_64-unknown-linux-gnu
+  MIRIFLAGS="-Zmiri-permissive-provenance -Zmiri-disable-isolation" cargo miri nextest r --target x86_64-unknown-linux-gnu

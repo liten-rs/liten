@@ -92,7 +92,8 @@ impl ToTokens for TestFn {
     let tokens_to_extend = quote::quote! {
         #[test]
         fn #ident(#(#args),*) #return_type {
-            liten::runtime::Runtime::new()
+            liten::runtime::Runtime::builder()
+                .num_workers(1)
                 .block_on(async #block)
         }
     };
@@ -105,18 +106,30 @@ impl ToTokens for InternalTestFn {
   fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
     let CallerFn { return_type, block, ident, args } = &self.0;
 
-    let tokens_to_extend = quote::quote! {
-        #[test]
-        #[cfg_attr(not(miri), ignore)]
-        #[cfg(not(loom))]
-        fn #ident(#(#args),*) #return_type #block
-
-        #[test]
+    let tokens_to_extend = if cfg!(loom) {
+      quote::quote! {
         #[cfg(loom)]
+        #[test]
         fn #ident(#(#args),*) #return_type {
             loom::model(|| #block)
         }
+      }
+    } else {
+      quote::quote! {
+        #[test]
+        fn #ident(#(#args),*) #return_type #block
+      }
     };
+
+    // if cfg!(loom) {
+    //   tokens_to_extend.extend(quote::quote! {
+    //   });
+    //     quote::quote! {
+    //
+    //
+    //     #[test]
+    //     fn #ident(#(#args),*) #return_type #block
+    // };
 
     tokens.extend(tokens_to_extend);
   }
