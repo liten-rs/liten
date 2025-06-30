@@ -34,27 +34,15 @@ impl Scheduler {
 
     shutdown.fill_handle(workers.launch(handle.clone()));
 
-    let span = tracing::trace_span!("liten runtime");
-    let _span = span.enter();
-
     // NOTE: Has to be over the mio join handle.
     let shutdown_waker = handle.io().shutdown_waker();
 
-    // let join_handle = thread::spawn(move || loop {
-    //   if driver.io.turn() {
-    //     tracing::trace!("shutting down driver thread");
-    //     break;
-    //   }
-    // });
-    //
-    let return_type = context::runtime_enter(handle, move |ctx| {
-      GlobalExecutor::block_on(fut, ctx.handle().state())
-    });
+    let return_type =
+      context::runtime_enter(handle, move |_| GlobalExecutor::block_on(fut));
 
     shutdown.shutdown();
 
     shutdown_waker.wake().expect("noo :(");
-    // join_handle.join().unwrap();
 
     return_type
   }
@@ -68,8 +56,8 @@ pub struct Handle {
   current_task_id: Arc<AtomicUsize>,
 }
 
-// #[cfg(test)]
-// static_assertions::assert_impl_one!(Handle: Send);
+#[cfg(test)]
+static_assertions::assert_impl_one!(Handle: Send);
 
 impl Handle {
   pub fn state(&self) -> &Shared {

@@ -1,4 +1,7 @@
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::{
+  sync::atomic::{AtomicU8, Ordering},
+  time::Duration,
+};
 
 use liten::{
   actor::{Actor, ActorResult},

@@ -23,6 +23,8 @@ crossbeam-deque = "0.8.6"
 parking = "2.2.1"
 futures-task = "0.3"
 async-channel = "2.3.1"
+oneshot = "0.1.11"
+crossbeam-channel = "0.5.15"
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"]}

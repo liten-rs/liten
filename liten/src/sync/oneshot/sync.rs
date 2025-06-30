@@ -38,7 +38,6 @@ impl<V> Sender<V> {
 // This runs if not Sender::send has been called. If it has, then SenderSendFuture::drop does the
 // job.
 impl<V> Drop for Sender<V> {
-  #[tracing::instrument(skip_all, name = "impl_drop_send")]
   fn drop(&mut self) {
     self.0.drop_channel()
   }
@@ -58,7 +57,6 @@ impl<V> Future for SenderSendFuture<V> {
 }
 
 impl<V> Drop for SenderSendFuture<V> {
-  #[tracing::instrument(skip_all, name = "impl_drop_send_fut")]
   fn drop(&mut self) {
     drop(unsafe { Box::from_raw(self.value_to_send) });
     self.inner.drop_channel();
@@ -74,7 +72,6 @@ impl<V> Receiver<V> {
 }
 
 impl<V> Drop for Receiver<V> {
-  #[tracing::instrument(skip_all, name = "impl_drop_receiver")]
   fn drop(&mut self) {
     self.0.drop_channel();
   }
@@ -108,7 +105,6 @@ impl<V> Inner<V> {
     lock.with_mut(f)
   }
 
-  #[tracing::instrument(skip_all, name = "send_poll")]
   fn send_poll(
     &self,
     send_ctx: &mut Context<'_>,
@@ -151,7 +147,6 @@ impl<V> Inner<V> {
     })
   }
 
-  #[tracing::instrument(skip_all, name = "recv_poll")]
   fn recv_poll(
     &self,
     recv_ctx: &mut Context<'_>,

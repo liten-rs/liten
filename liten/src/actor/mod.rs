@@ -1,10 +1,6 @@
-use std::{
-  future::{ready, Future},
-  sync::atomic::AtomicBool,
-};
+use std::future::Future;
 
 use crate::{
-  loom::sync::{atomic::Ordering, Arc},
   sync::request::{self, Requester},
   task::{self, TaskHandle},
 };
@@ -43,10 +39,8 @@ impl ActorRunner {
       request::channel::<Option<Message>, Option<A::Output>>();
 
     let task_handle = task::spawn(async move {
-      tracing::trace!("Starting actor");
       'outer: loop {
         let raw_req = responder.recv().await;
-        tracing::trace!("Actor received message");
 
         let Some((req, sender)) = raw_req else {
           // Handle is dropped, this should exit.
@@ -55,7 +49,6 @@ impl ActorRunner {
 
         let Some(message) = req else {
           // Shutdown signal
-          println!("shutdown");
           let _ = sender.send(None);
           break;
         };
@@ -65,17 +58,14 @@ impl ActorRunner {
             ActorResult::Result(out) => out,
             ActorResult::Retry => continue,
           };
-          tracing::trace!("Actor processed message");
           if sender.send(Some(result)).is_err() {
             // Handle is dropped, this should exit.
             break 'outer;
           } else {
-            tracing::trace!("Sent Message");
             break;
           };
         }
       }
-      tracing::trace!("Exiting actor");
     });
 
     let handle = ActorHandle::new(requester, task_handle);
@@ -110,7 +100,6 @@ where
     Self { requester: requester, state: ActorHandleState::with_handle(handle) }
   }
   pub async fn send(&self, msg: Message) -> Option<Res> {
-    tracing::trace!("sending message");
     self
       .requester
       .send(Some(msg))
