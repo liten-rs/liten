@@ -3,6 +3,9 @@ name = "liten"
 version = "0.1.0"
 edition = "2021"
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+
 [target.'cfg(loom)'.dependencies]
 loom = { version = "0.7", features = ["futures"] }
 
@@ -17,14 +20,11 @@ tracing = "0.1.41"
 thiserror = "2.0.11"
 
 crossbeam-deque = "0.8.6"
-crossbeam-utils = "0.8.21"
+parking = "2.2.1"
+futures-task = "0.3"
+async-channel = "2.3.1"
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"]}
 static_assertions = "1.1.0"
 tracing-subscriber = "0.3.19"
-futures-task = "0.3"
-
-[[bench]]
-name = "channel"
-harness = false

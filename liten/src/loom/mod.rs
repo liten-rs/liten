@@ -9,6 +9,12 @@ pub(crate) mod cell {
 
   #[cfg(loom)]
   pub(crate) use loom::cell::UnsafeCell;
+
+  #[cfg(not(loom))]
+  pub(crate) use std::cell::Cell;
+
+  #[cfg(loom)]
+  pub(crate) use loom::cell::Cell;
 }
 
 pub(crate) mod sync {

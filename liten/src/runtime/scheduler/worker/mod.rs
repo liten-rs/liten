@@ -1,4 +1,4 @@
-use std::{num::NonZero, ops::Deref, sync::OnceLock};
+use std::{ops::Deref, sync::OnceLock};
 
 use crate::{
   loom::{
@@ -9,7 +9,7 @@ use crate::{
 };
 
 use crossbeam_deque::Stealer;
-use crossbeam_utils::sync::Unparker;
+use parking::Unparker;
 use worker::Worker;
 
 use crate::{context, sync::oneshot::Sender, task::Task};
@@ -78,17 +78,14 @@ impl ShutdownWorkers {
 #[derive(Clone, Debug)]
 pub struct Remote {
   stealer: Stealer<Task>,
-  unparker: crossbeam_utils::sync::Unparker,
+  unparker: Unparker,
 }
 
 impl Remote {
   pub fn stealer(&self) -> &Stealer<Task> {
     &self.stealer
   }
-  pub fn from_stealer(
-    stealer: Stealer<Task>,
-    unparker: crossbeam_utils::sync::Unparker,
-  ) -> Self {
+  pub fn from_stealer(stealer: Stealer<Task>, unparker: Unparker) -> Self {
     Remote { stealer, unparker }
   }
 

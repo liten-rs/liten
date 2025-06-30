@@ -1,20 +1,36 @@
-use std::error::Error;
+use std::sync::atomic::{AtomicU8, Ordering};
 
-fn main() -> Result<(), Box<dyn Error>> {
-  liten::runtime::Runtime::builder()
-    .disable_work_stealing()
-    .num_workers(4)
-    .block_on(async {
-      let handle = liten::task::spawn(async {
-        tracing::info!("Very nice");
-        "yes"
-      });
-      println!("program stop -----");
+use liten::{
+  actor::{Actor, ActorResult},
+  runtime::Runtime,
+};
+use tracing_subscriber::fmt;
 
-      let reslut = handle.await;
+static COUNT: AtomicU8 = AtomicU8::new(0);
 
-      println!("{:#?}", reslut);
+struct DemoActor;
 
-      Ok(())
-    })
+impl Actor<u8> for DemoActor {
+  type Output = u8;
+  async fn handle(self: &mut Self, input: &u8) -> ActorResult<Self::Output> {
+    ActorResult::Result(COUNT.fetch_add(*input, Ordering::AcqRel) + *input)
+  }
+}
+
+fn main() {
+  tracing::subscriber::set_global_default(
+    fmt().with_max_level(tracing::Level::TRACE).finish(),
+  )
+  .unwrap();
+  Runtime::builder().num_workers(1).block_on(async {
+    let handle = DemoActor.start();
+    println!("wha");
+
+    handle.send(1).await;
+    // println!("wha");
+    handle.send(1).await;
+    handle.send(1).await;
+    //
+    handle.stop().await;
+  })
 }

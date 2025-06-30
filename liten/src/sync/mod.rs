@@ -1,5 +1,6 @@
 pub mod mpsc;
 mod mutex;
+pub mod request;
 mod semaphore;
 pub use mutex::*;
 pub use semaphore::*;

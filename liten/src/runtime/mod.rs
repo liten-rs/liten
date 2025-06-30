@@ -3,9 +3,9 @@ pub(crate) mod scheduler;
 mod waker;
 
 use scheduler::Scheduler;
-use std::{future::Future, marker::PhantomData, num::NonZero};
+use std::{future::Future, num::NonZero};
 
-pub struct Runtime(PhantomData<()>);
+pub struct Runtime;
 
 impl Runtime {
   pub fn builder() -> RuntimeBuilder {
@@ -21,6 +21,7 @@ impl Runtime {
 }
 
 #[derive(Default, Clone)]
+#[non_exhaustive]
 pub enum RuntimeThreads {
   #[default]
   Cpus,
