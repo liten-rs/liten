@@ -1,10 +1,8 @@
-use std::panic::UnwindSafe;
-
 use pool::{BlockingPool, Job};
 
 use crate::sync::oneshot;
 
-mod pool;
+pub(crate) mod pool;
 
 pub async fn unblock<T, R>(f: T) -> R
 where

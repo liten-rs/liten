@@ -1,5 +1,4 @@
-use std::panic::UnwindSafe;
-use std::sync::OnceLock;
+use std::sync::{atomic::AtomicBool, OnceLock};
 use std::time::Duration;
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
@@ -11,19 +10,20 @@ use crate::loom::sync::{
 };
 use crate::loom::thread;
 
-pub(super) struct BlockingPool {
+pub(crate) struct BlockingPool {
   queue: (Sender<Box<dyn JobRun>>, Receiver<Box<dyn JobRun>>),
   thread_state: Arc<ThreadState>,
 }
 
 #[derive(Debug)]
-pub struct ThreadState {
+struct ThreadState {
   threads_running: AtomicUsize,
   threads_busy: AtomicUsize,
   max_threads: usize,
+  shutdown_signal: AtomicBool,
 }
 
-pub struct ThreadPanicGuard<'a>(&'a BlockingPool, bool);
+struct ThreadPanicGuard<'a>(&'a BlockingPool, bool);
 
 impl<'a> ThreadPanicGuard<'a> {
   pub fn new(pool: &'a BlockingPool) -> Self {
@@ -44,17 +44,15 @@ impl Drop for ThreadPanicGuard<'_> {
   }
 }
 
-const MAX_THREADS: usize = 500;
-
 impl BlockingPool {
   pub(super) fn get() -> &'static BlockingPool {
     static BLOCKING_POOL: OnceLock<BlockingPool> = OnceLock::new();
-
     let blocking = BLOCKING_POOL.get_or_init(|| BlockingPool {
       thread_state: Arc::new(ThreadState {
         max_threads: 500,
         threads_busy: AtomicUsize::new(0),
         threads_running: AtomicUsize::new(0),
+        shutdown_signal: AtomicBool::new(false),
       }),
       queue: crossbeam_channel::bounded(500),
     });
@@ -62,8 +60,20 @@ impl BlockingPool {
     blocking
   }
 
+  pub(crate) fn shutdown() {
+    let thing = Self::get();
+    thing.thread_state.shutdown_signal.store(true, Ordering::SeqCst);
+
+    while thing.thread_state.threads_running.load(Ordering::SeqCst) > 0 {
+      std::thread::yield_now();
+    }
+  }
+
   fn add_thread(&'static self) {
-    println!("maybe thread... {:?}", self.thread_state);
+    if self.thread_state.shutdown_signal.load(Ordering::SeqCst) {
+      return;
+    }
+
     let threads_busy = self.thread_state.threads_busy.load(Ordering::SeqCst);
     let threads_running =
       self.thread_state.threads_running.load(Ordering::SeqCst);
@@ -92,6 +102,10 @@ impl BlockingPool {
           self.thread_state.threads_busy.fetch_add(1, Ordering::SeqCst);
           job.run();
           self.thread_state.threads_busy.fetch_sub(1, Ordering::SeqCst);
+
+          if self.thread_state.shutdown_signal.load(Ordering::SeqCst) {
+            break;
+          }
         }
         Err(RecvTimeoutError::Timeout) => break,
         Err(RecvTimeoutError::Disconnected) => unreachable!(),
@@ -108,8 +122,10 @@ impl BlockingPool {
     F: FnOnce() -> R + Send + 'static,
     R: 'static + Send,
   {
-    self.add_thread();
-    self.queue.0.send(Box::new(job));
+    if !self.thread_state.shutdown_signal.load(Ordering::SeqCst) {
+      self.add_thread();
+      self.queue.0.send(Box::new(job));
+    }
   }
 }
 

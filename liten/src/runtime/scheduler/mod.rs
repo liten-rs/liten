@@ -3,6 +3,7 @@ pub mod worker;
 use std::{future::Future, io};
 
 use crate::{
+  blocking::pool::BlockingPool,
   context, events,
   loom::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -43,6 +44,8 @@ impl Scheduler {
     shutdown.shutdown();
 
     shutdown_waker.wake().expect("noo :(");
+
+    BlockingPool::shutdown();
 
     return_type
   }
