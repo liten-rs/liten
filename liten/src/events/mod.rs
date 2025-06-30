@@ -123,7 +123,6 @@ impl Handle {
         vacant.insert(cx.waker().clone());
       }
       Entry::Occupied(mut occupied) => {
-        tracing::warn!(token = ?token, "entry occupied");
         let waker = cx.waker().clone();
         if !occupied.get().will_wake(&waker) {
           occupied.insert(waker);

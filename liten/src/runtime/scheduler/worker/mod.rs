@@ -59,7 +59,6 @@ impl ShutdownWorkers {
   pub fn shutdown(self) {
     for WorkerShutdown { signal_sender, unparker, handle, worker_id } in self.0
     {
-      tracing::trace!("sending signal_sender");
       signal_sender.send(()).unwrap();
       unparker.unpark();
 
@@ -68,8 +67,6 @@ impl ShutdownWorkers {
         .expect("worker-handle not initialied")
         .join()
         .unwrap();
-
-      tracing::trace!(worker_id, "worker has shutdown");
     }
   }
 }

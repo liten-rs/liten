@@ -38,7 +38,6 @@ impl<V> Sender<V> {
 // This runs if not Sender::send has been called. If it has, then SenderSendFuture::drop does the
 // job.
 impl<V> Drop for Sender<V> {
-  #[tracing::instrument(skip_all, name = "impl_drop_send")]
   fn drop(&mut self) {
     self.0.drop_channel_sender();
   }
@@ -62,7 +61,6 @@ impl<V> Receiver<V> {
 }
 
 impl<V> Drop for Receiver<V> {
-  #[tracing::instrument(skip_all, name = "impl_drop_receiver")]
   fn drop(&mut self) {
     self.0.drop_channel_receiver();
   }

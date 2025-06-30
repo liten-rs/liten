@@ -5,12 +5,12 @@ use std::{
 
 use crate::loom::thread;
 
-use super::{scheduler::worker::shared::Shared, waker::RuntimeWaker};
+use super::waker::RuntimeWaker;
 
 pub struct GlobalExecutor;
 
 impl GlobalExecutor {
-  pub fn block_on<F, R>(f: F, shared: &Shared) -> R
+  pub fn block_on<F, R>(f: F) -> R
   where
     F: Future<Output = R>,
   {
@@ -23,9 +23,7 @@ impl GlobalExecutor {
       match pinned.as_mut().poll(&mut context) {
         Poll::Ready(value) => return value,
         Poll::Pending => {
-          tracing::trace!("main parking");
           thread::park();
-          tracing::trace!("main unparking");
         }
       };
     }

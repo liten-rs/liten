@@ -1,3 +1,5 @@
+use std::panic::UnwindSafe;
+
 use pool::{BlockingPool, Job};
 
 use crate::sync::oneshot;

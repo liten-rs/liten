@@ -94,13 +94,9 @@ impl Worker {
 
   pub fn launch(&mut self, context: &Context) {
     let (sender, receiver) = mpsc::channel();
-    let _guard = tracing::trace_span!("worker launch", worker_id = self.id());
-    let _ye = _guard.enter();
-    tracing::trace!(worker_id = self.id(), "starting");
     loop {
       match self.shutdown_receiver.try_recv() {
         Ok(Some(_)) => {
-          tracing::trace!(worker_id = self.id(), "shutting down");
           break;
         }
         Ok(None) => {}
@@ -117,8 +113,6 @@ impl Worker {
           break;
         };
 
-        tracing::trace!(task_id = ?now_active_task_id, "moving task from cold_queue to local_queue");
-
         let task = self
           .cold
           .remove(&now_active_task_id)
@@ -128,13 +122,17 @@ impl Worker {
       }
 
       let Some(task) = self.fetch_task(&context) else {
-        // self.parker.park(); // this line deadlocks
+        self.parker.park(); // this line deadlocks
         continue;
       };
 
       let id = task.id();
-      let liten_waker =
-        std::sync::Arc::new(TaskWaker::new(id, sender.clone())).into();
+      let liten_waker = std::sync::Arc::new(TaskWaker::new(
+        id,
+        sender.clone(),
+        self.parker.unparker(),
+      ))
+      .into();
       let mut context = std::task::Context::from_waker(&liten_waker);
 
       let poll_result =
@@ -144,7 +142,6 @@ impl Worker {
         });
 
       if let Ok(UnwindTaskResult::Pending(task)) = poll_result {
-        tracing::trace!(task_id = ?task.id(), "moving to cold_queue");
         let old_value = self.cold.insert(id, task);
         assert!(old_value.is_none(), "logic error of inserted cold_queue task");
       }

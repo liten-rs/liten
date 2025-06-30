@@ -47,7 +47,6 @@ impl Shared {
   }
 
   pub fn push_task(&self, task: Task) {
-    tracing::trace!("Pushed task");
     self.0.injector.push(task);
 
     for remote in self.0.remotes.get().unwrap().iter() {
