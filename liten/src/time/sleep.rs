@@ -1,13 +1,32 @@
-use crate::sync::oneshot;
-use std::time::Duration;
+use super::{clock::TimerId, TimeDriver};
+use std::{future::Future, time::Duration};
 
-// BAD CODE
 pub async fn sleep(duration: Duration) {
-  let (sender, receiver) = oneshot::channel();
-  std::thread::spawn(move || {
-    std::thread::sleep(duration);
-    sender.send(()).unwrap(); // in this scenario: oneshot errors if panics
-  });
+  let duration_millis = duration.as_millis() as usize;
 
-  receiver.await.unwrap(); // in this scenario: oneshot errors if panics
+  let driver = TimeDriver::get();
+
+  let timer_id = driver.insert(duration_millis);
+
+  Sleep(timer_id).await
+}
+
+pub struct Sleep(TimerId);
+
+impl Future for Sleep {
+  type Output = ();
+
+  fn poll(
+    self: std::pin::Pin<&mut Self>,
+    cx: &mut std::task::Context<'_>,
+  ) -> std::task::Poll<Self::Output> {
+    TimeDriver::get().poll(cx, self.0)
+  }
+}
+
+#[crate::internal_test]
+fn sleep_test() {
+  crate::runtime::Runtime::builder().block_on(async {
+    sleep(Duration::from_millis(0)).await;
+  })
 }

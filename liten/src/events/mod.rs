@@ -2,7 +2,6 @@ mod event_token;
 mod registration;
 
 use event_token::EventToken;
-pub use registration::EventRegistration;
 
 use std::{
   collections::{hash_map::Entry, HashMap},
@@ -18,6 +17,7 @@ use mio::{Events, Interest, Token};
 // allows when there is no handlers left.
 #[derive(Debug)]
 pub struct Driver {
+  #[allow(unused)]
   poll: mio::Poll,
   /// Is only used when consumers are calling [`Self::handle()`]
   handle_to_give: Handle,
@@ -39,6 +39,7 @@ impl Driver {
     self.handle_to_give.clone()
   }
 
+  #[allow(unused)]
   pub fn turn(&mut self) -> bool {
     // FIXME: This doesn't quit.
     let mut events = Events::with_capacity(1024);
@@ -80,12 +81,14 @@ impl Clone for Handle {
 }
 
 impl Handle {
+  #[allow(unused)]
   pub fn next_token(&self) -> Token {
     self.event_token.token()
   }
   pub fn shutdown_waker(&self) -> mio::Waker {
     mio::Waker::new(&self.registry, EventToken::SHUTDOWN_SIGNAL_TOKEN).unwrap()
   }
+  #[allow(unused)]
   pub(self) fn register(
     &self,
     source: &mut dyn mio::event::Source,
@@ -95,6 +98,7 @@ impl Handle {
     self.registry.register(source, token, interest)
   }
 
+  #[allow(unused)]
   pub(self) fn reregister(
     &self,
     source: &mut dyn mio::event::Source,
@@ -104,6 +108,7 @@ impl Handle {
     self.registry.reregister(source, token, interest)
   }
 
+  #[allow(unused)]
   pub(self) fn deregister(
     &self,
     source: &mut dyn mio::event::Source,

@@ -4,6 +4,7 @@ use mio::Token;
 
 #[derive(Debug)]
 pub(super) struct EventToken {
+  #[allow(unused)]
   current_token: AtomicUsize,
 }
 
@@ -13,6 +14,7 @@ impl EventToken {
   pub fn new() -> EventToken {
     EventToken { current_token: AtomicUsize::new(1) }
   }
+  #[allow(unused)]
   pub fn token(&self) -> Token {
     Token(self.current_token.fetch_add(1, Ordering::Acquire))
   }

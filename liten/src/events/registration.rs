@@ -22,18 +22,22 @@ impl EventRegistration {
     })
   }
 
+  #[allow(unused)]
   pub fn token(&self) -> Token {
     self.token
   }
 
+  #[allow(unused)]
   pub fn is_read(&self) -> bool {
     self.interest.is_readable()
   }
 
+  #[allow(unused)]
   pub fn is_write(&self) -> bool {
     self.interest.is_writable()
   }
 
+  #[allow(unused)]
   pub fn reregister(
     &mut self,
     source: &mut impl Source,
@@ -46,10 +50,12 @@ impl EventRegistration {
     })
   }
 
+  #[allow(unused)]
   pub fn deregister(&self, source: &mut impl Source) -> io::Result<()> {
     context::with_context(|ctx| ctx.handle().io().deregister(source))
   }
 
+  #[allow(unused)]
   pub fn associate_waker(&self, waker: &mut Context) {
     context::with_context(|ctx| ctx.handle().io().poll(self.token(), waker));
   }

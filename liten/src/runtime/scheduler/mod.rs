@@ -10,6 +10,7 @@ use crate::{
     Arc,
   },
   runtime::{main_executor::GlobalExecutor, scheduler::worker::shared::Shared},
+  time::TimeDriver,
 };
 use worker::Workers;
 
@@ -46,6 +47,7 @@ impl Scheduler {
     shutdown_waker.wake().expect("noo :(");
 
     BlockingPool::shutdown();
+    TimeDriver::shutdown();
 
     return_type
   }

@@ -30,18 +30,10 @@
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
-            bacon
-
-            cargo-expand
-            cargo-watch
             cargo-nextest
-            cargo-release
 
             just
-
-            samply
           ];
-
         };
       }
     );

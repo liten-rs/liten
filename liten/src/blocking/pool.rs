@@ -1,7 +1,10 @@
 use std::sync::{atomic::AtomicBool, OnceLock};
+use std::thread::ThreadId;
 use std::time::Duration;
 
-use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
+use crossbeam_channel::{Receiver, Sender, TryRecvError};
+use dashmap::DashMap;
+use parking::{Parker, Unparker};
 use private::JobRun;
 
 use crate::loom::sync::{
@@ -11,6 +14,7 @@ use crate::loom::sync::{
 use crate::loom::thread;
 
 pub(crate) struct BlockingPool {
+  // Some for another job and None for shutdown
   queue: (Sender<Box<dyn JobRun>>, Receiver<Box<dyn JobRun>>),
   thread_state: Arc<ThreadState>,
 }
@@ -20,7 +24,9 @@ struct ThreadState {
   threads_running: AtomicUsize,
   threads_busy: AtomicUsize,
   max_threads: usize,
-  shutdown_signal: AtomicBool,
+
+  unparkers: DashMap<ThreadId, Unparker>,
+  shutting_down: AtomicBool,
 }
 
 struct ThreadPanicGuard<'a>(&'a BlockingPool, bool);
@@ -52,7 +58,8 @@ impl BlockingPool {
         max_threads: 500,
         threads_busy: AtomicUsize::new(0),
         threads_running: AtomicUsize::new(0),
-        shutdown_signal: AtomicBool::new(false),
+        shutting_down: AtomicBool::new(false),
+        unparkers: DashMap::new(),
       }),
       queue: crossbeam_channel::bounded(500),
     });
@@ -62,21 +69,26 @@ impl BlockingPool {
 
   pub(crate) fn shutdown() {
     let thing = Self::get();
-    thing.thread_state.shutdown_signal.store(true, Ordering::SeqCst);
+    thing.thread_state.shutting_down.store(true, Ordering::Release);
 
-    while thing.thread_state.threads_running.load(Ordering::SeqCst) > 0 {
+    thing.thread_state.unparkers.retain(|_, value| {
+      value.unpark();
+      false
+    });
+
+    while thing.thread_state.threads_running.load(Ordering::Acquire) > 0 {
       std::thread::yield_now();
     }
   }
 
   fn add_thread(&'static self) {
-    if self.thread_state.shutdown_signal.load(Ordering::SeqCst) {
+    if self.thread_state.shutting_down.load(Ordering::Acquire) {
       return;
     }
 
-    let threads_busy = self.thread_state.threads_busy.load(Ordering::SeqCst);
+    let threads_busy = self.thread_state.threads_busy.load(Ordering::Acquire);
     let threads_running =
-      self.thread_state.threads_running.load(Ordering::SeqCst);
+      self.thread_state.threads_running.load(Ordering::Acquire);
     let threads_max = self.thread_state.max_threads;
 
     if threads_running == threads_max {
@@ -92,29 +104,39 @@ impl BlockingPool {
 
   pub(super) fn main_loop(&self) {
     println!("starting thread... {:?}", self.thread_state);
-    self.thread_state.threads_running.fetch_add(1, Ordering::SeqCst);
+    self.thread_state.threads_running.fetch_add(1, Ordering::AcqRel);
 
     let mut _guard = ThreadPanicGuard::new(self);
+
+    let parker = Parker::new();
+
     // TODO
     loop {
-      match self.queue.1.recv_timeout(Duration::from_secs(5)) {
+      if self.thread_state.shutting_down.load(Ordering::Acquire) {
+        break;
+      }
+      match self.queue.1.try_recv() {
         Ok(mut job) => {
-          self.thread_state.threads_busy.fetch_add(1, Ordering::SeqCst);
+          self.thread_state.threads_busy.fetch_add(1, Ordering::AcqRel);
           job.run();
-          self.thread_state.threads_busy.fetch_sub(1, Ordering::SeqCst);
-
-          if self.thread_state.shutdown_signal.load(Ordering::SeqCst) {
-            break;
-          }
+          self.thread_state.threads_busy.fetch_sub(1, Ordering::AcqRel);
         }
-        Err(RecvTimeoutError::Timeout) => break,
-        Err(RecvTimeoutError::Disconnected) => unreachable!(),
+        Err(TryRecvError::Empty) => {
+          self
+            .thread_state
+            .unparkers
+            .insert(thread::current().id(), parker.unparker());
+
+          parker.park_timeout(Duration::from_secs(5));
+
+          let _ = self.thread_state.unparkers.remove(&thread::current().id()); // Ignore the option
+                                                                               // TODO: Park
+        }
+        Err(TryRecvError::Disconnected) => unreachable!(),
       };
     }
     _guard.disactivate();
-    self.thread_state.threads_running.fetch_sub(1, Ordering::SeqCst);
-
-    println!("shutting thread... {:?}", self.thread_state);
+    self.thread_state.threads_running.fetch_sub(1, Ordering::AcqRel);
   }
 
   pub(super) fn insert<R, F>(&'static self, job: Job<R, F>)
@@ -122,9 +144,9 @@ impl BlockingPool {
     F: FnOnce() -> R + Send + 'static,
     R: 'static + Send,
   {
-    if !self.thread_state.shutdown_signal.load(Ordering::SeqCst) {
+    if !self.thread_state.shutting_down.load(Ordering::Acquire) {
       self.add_thread();
-      self.queue.0.send(Box::new(job));
+      self.queue.0.send(Box::new(job)).unwrap();
     }
   }
 }
