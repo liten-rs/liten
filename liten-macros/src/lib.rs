@@ -9,6 +9,7 @@ use syn::FnArg;
 use syn::Ident;
 use syn::ReturnType;
 use syn::Token;
+use syn::Attribute;
 
 #[proc_macro_attribute]
 pub fn main(_: TokenStream, function: TokenStream) -> TokenStream {
@@ -33,6 +34,7 @@ pub fn internal_test(_: TokenStream, function: TokenStream) -> TokenStream {
 }
 
 struct CallerFn {
+  attrs: Vec<Attribute>,
   return_type: ReturnType,
   args: Vec<FnArg>,
   ident: Ident,
@@ -46,6 +48,7 @@ struct InternalTestFn(CallerFn);
 
 impl Parse for CallerFn {
   fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    let mut attrs = input.call(Attribute::parse_outer)?;
     let _ = input.parse::<Token![async]>();
     input.parse::<Token![fn]>()?;
     let ident = input.parse::<Ident>()?;
@@ -66,50 +69,57 @@ impl Parse for CallerFn {
 
     let block = input.parse::<Block>()?;
 
-    Ok(CallerFn { return_type, args, block, ident })
+    Ok(CallerFn { attrs, return_type, args, block, ident })
   }
 }
 
 impl ToTokens for MainFn {
   fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-    let CallerFn { return_type, block, ident, args } = &self.0;
-
+    let CallerFn { attrs, return_type, block, ident, args } = &self.0;
+    let filtered_attrs = attrs.iter().filter(|attr| {
+      !attr.path().is_ident("main")
+    });
     let tokens_to_extend = quote::quote! {
+        #(#filtered_attrs)*
         fn #ident(#(#args),*) #return_type {
             liten::runtime::Runtime::builder()
                 .block_on(async #block)
         }
     };
-
     tokens.extend(tokens_to_extend);
   }
 }
 
 impl ToTokens for TestFn {
   fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-    let CallerFn { return_type, block, ident, args } = &self.0;
-
+    let CallerFn { attrs, return_type, block, ident, args } = &self.0;
+    let filtered_attrs = attrs.iter().filter(|attr| {
+      !attr.path().is_ident("test")
+    });
     let tokens_to_extend = quote::quote! {
         #[test]
+        #(#filtered_attrs)*
         fn #ident(#(#args),*) #return_type {
             liten::runtime::Runtime::builder()
                 .num_workers(1)
                 .block_on(async #block)
         }
     };
-
     tokens.extend(tokens_to_extend);
   }
 }
 
 impl ToTokens for InternalTestFn {
   fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-    let CallerFn { return_type, block, ident, args } = &self.0;
-
+    let CallerFn { attrs, return_type, block, ident, args } = &self.0;
+    let filtered_attrs = attrs.iter().filter(|attr| {
+      !attr.path().is_ident("internal_test")
+    });
     let tokens_to_extend = if cfg!(loom) {
       quote::quote! {
         #[cfg(loom)]
         #[test]
+        #(#filtered_attrs)*
         fn #ident(#(#args),*) #return_type {
             loom::model(|| #block)
         }
@@ -117,20 +127,10 @@ impl ToTokens for InternalTestFn {
     } else {
       quote::quote! {
         #[test]
+        #(#filtered_attrs)*
         fn #ident(#(#args),*) #return_type #block
       }
     };
-
-    // if cfg!(loom) {
-    //   tokens_to_extend.extend(quote::quote! {
-    //   });
-    //     quote::quote! {
-    //
-    //
-    //     #[test]
-    //     fn #ident(#(#args),*) #return_type #block
-    // };
-
     tokens.extend(tokens_to_extend);
   }
 }

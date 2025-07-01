@@ -6,7 +6,7 @@ mod wheel;
 use std::{
   collections::HashMap,
   sync::{atomic::AtomicUsize, OnceLock},
-  task::{Context, Poll, Waker},
+  task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
   thread::{self, JoinHandle},
   time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -177,12 +177,39 @@ impl TimeDriver {
   }
 }
 
-#[test]
-fn timer_playground() {
-  use std::time::Duration;
-  let mut mng = TimeDriver::get();
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
-  std::thread::sleep(Duration::from_millis(2));
+  fn dummy_waker() -> Waker {
+    fn no_op(_: *const ()) {}
+    fn clone(_: *const ()) -> RawWaker {
+      dummy_raw_waker()
+    }
+    static VTABLE: RawWakerVTable =
+      RawWakerVTable::new(clone, no_op, no_op, no_op);
+    fn dummy_raw_waker() -> RawWaker {
+      RawWaker::new(std::ptr::null(), &VTABLE)
+    }
+    unsafe { Waker::from_raw(dummy_raw_waker()) }
+  }
 
-  TimeDriver::shutdown();
+  #[crate::internal_test]
+  fn timer_insert_and_poll_integration() {
+    let driver = TimeDriver::get();
+    let timer_id = driver.insert(1000);
+    let waker = dummy_waker();
+    let mut cx = Context::from_waker(&waker);
+    let poll = driver.poll(&mut cx, timer_id);
+    assert!(matches!(poll, Poll::Pending));
+    TimeDriver::shutdown();
+  }
+
+  #[crate::internal_test]
+  #[should_panic]
+  fn shutdown_twice_panics_integration() {
+    TimeDriver::shutdown();
+    TimeDriver::shutdown();
+  }
 }

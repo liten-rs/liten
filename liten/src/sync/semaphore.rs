@@ -128,3 +128,48 @@ impl Drop for AcquireLock<'_> {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::task::{Context, Poll, Waker, RawWaker, RawWakerVTable};
+    use futures_executor::block_on;
+
+    fn dummy_waker() -> Waker {
+        fn no_op(_: *const ()) {}
+        fn clone(_: *const ()) -> RawWaker { dummy_raw_waker() }
+        static VTABLE: RawWakerVTable = RawWakerVTable::new(clone, no_op, no_op, no_op);
+        fn dummy_raw_waker() -> RawWaker { RawWaker::new(std::ptr::null(), &VTABLE) }
+        unsafe { Waker::from_raw(dummy_raw_waker()) }
+    }
+
+    #[crate::internal_test]
+    fn basic_acquire_release() {
+        let s = Semaphore::new(1);
+        let lock = s.try_acquire().unwrap();
+        drop(lock);
+        assert!(s.try_acquire().is_some());
+    }
+
+    #[crate::internal_test]
+    fn try_acquire_fail() {
+        let s = Semaphore::new(1);
+        let _lock = s.try_acquire().unwrap();
+        assert!(s.try_acquire().is_none());
+    }
+
+    #[crate::internal_test]
+    fn waker_wakeup_on_release() {
+        let s = Arc::new(Semaphore::new(1));
+        let _lock = s.try_acquire().unwrap();
+        let s2 = s.clone();
+        let waker = dummy_waker();
+        let mut cx = Context::from_waker(&waker);
+        let mut fut = s2.acquire();
+        assert!(matches!(Pin::new(&mut fut).poll(&mut cx), Poll::Pending));
+        drop(_lock);
+        // After dropping, should be acquirable
+        assert!(s.try_acquire().is_some());
+    }
+}

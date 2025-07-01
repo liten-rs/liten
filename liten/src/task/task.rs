@@ -72,3 +72,37 @@ impl Task {
     poll
   }
 }
+
+// #[cfg(test)]
+// mod tests {
+//   use super::*;
+//   use std::cell::Cell;
+//   use std::future::{ready, Future};
+//   use std::pin::Pin;
+//   use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+//
+//   fn dummy_waker() -> Waker {
+//     fn no_op(_: *const ()) {}
+//     fn clone(_: *const ()) -> RawWaker {
+//       dummy_raw_waker()
+//     }
+//     static VTABLE: RawWakerVTable =
+//       RawWakerVTable::new(clone, no_op, no_op, no_op);
+//     fn dummy_raw_waker() -> RawWaker {
+//       RawWaker::new(std::ptr::null(), &VTABLE)
+//     }
+//     unsafe { Waker::from_raw(dummy_raw_waker()) }
+//   }
+
+// Fix handler first
+// #[crate::internal_test]
+// fn task_poll_ready() {
+//   let (sender, receiver) = crate::sync::oneshot::channel();
+//   let task = Task::new(TaskId::new(), async { 42 }, sender);
+//   let waker = dummy_waker();
+//   let mut cx = Context::from_waker(&waker);
+//   let poll = task.poll(&mut cx);
+//   assert!(matches!(poll, Poll::Ready(())));
+//   assert_eq!(receiver.try_recv().unwrap(), Some(42));
+// }
+// }

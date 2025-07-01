@@ -50,3 +50,41 @@ impl<Req, Res> Requester<Req, Res> {
     Some(())
   }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[crate::internal_test]
+    fn request_response_roundtrip() {
+        futures_executor::block_on(async {
+            let (req, mut resp) = channel::<u32, u32>();
+            
+            // Spawn the responder in a separate task
+            let responder_handle = std::thread::spawn(move || {
+                futures_executor::block_on(async {
+                    let (val, sender) = resp.recv().await.unwrap();
+                    assert_eq!(val, 42);
+                    sender.send(val + 1).unwrap();
+                });
+            });
+            
+            // Send request and await response
+            let result = req.send(42).await;
+            assert_eq!(result, Some(43));
+            
+            // Wait for responder to finish
+            responder_handle.join().unwrap();
+        });
+    }
+
+    #[crate::internal_test]
+    fn drop_responder() {
+        futures_executor::block_on(async {
+            let (req, mut resp) = channel::<u32, u32>();
+            drop(resp);
+            let result = req.send(1).await;
+            assert_eq!(result, None);
+        });
+    }
+}

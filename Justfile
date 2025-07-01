@@ -1,11 +1,9 @@
-watch-test:
-  RUSTFLAGS="--cfg liten=\"loom\"" cargo watch -x "test --release"
-
 loom-test:
   RUSTFLAGS="--cfg liten=\"loom\"" cargo nextest r --release
 
 test:
   cargo nextest r
+  cargo test --doc
 
 miri-test:
   # miriflgas is for issue with crossbeam-deque

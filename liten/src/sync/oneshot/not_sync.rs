@@ -268,3 +268,29 @@ fn test_inner_try_recv() {
   assert_eq!(*state, State::Sent(ValueState::Taken));
   drop(state);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[crate::internal_test]
+    fn channel_send_receive() {
+        let (sender, receiver) = super::super::channel();
+        sender.send(123).unwrap();
+        assert_eq!(receiver.try_recv().unwrap(), Some(123));
+    }
+
+    #[crate::internal_test]
+    fn drop_sender() {
+        let (sender, receiver) = super::super::channel::<u32>();
+        drop(sender);
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[crate::internal_test]
+    fn drop_receiver() {
+        let (sender, receiver) = super::super::channel::<u32>();
+        drop(receiver);
+        assert!(sender.send(1).is_err());
+    }
+}

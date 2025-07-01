@@ -112,8 +112,8 @@ impl Drop for PulseSender {
 }
 
 impl PulseReceiver {
-  pub fn wait(&self) -> Result<bool, ReceiverDropped> {
-    self.0.send()
+  pub fn wait(&self) -> WaitFuture<'_> {
+    WaitFuture(&self)
   }
 }
 
@@ -123,7 +123,7 @@ impl Drop for PulseReceiver {
   }
 }
 
-pub struct PulseReceiverFuture<'a>(&'a PulseReceiver);
+pub struct WaitFuture<'a>(&'a PulseReceiver);
 
 #[derive(Error, Debug)]
 #[error("All Pulse::Sender's has been dropped")]
@@ -132,7 +132,7 @@ pub struct SenderDropped;
 #[error("Pulse::Receiver has been dropped")]
 pub struct ReceiverDropped;
 
-impl Future for PulseReceiverFuture<'_> {
+impl Future for WaitFuture<'_> {
   type Output = Result<(), SenderDropped>;
   fn poll(
     self: std::pin::Pin<&mut Self>,
@@ -146,7 +146,7 @@ impl Future for PulseReceiverFuture<'_> {
 fn test_pulse_creation() {
   let (sender, receiver) = pulse();
   assert!(sender.send().is_ok());
-  assert!(receiver.wait().is_ok());
+  assert!(futures_executor::block_on(receiver.wait()).is_ok());
 }
 
 #[crate::internal_test]
@@ -158,7 +158,7 @@ fn test_receiver_dropped() {
 #[crate::internal_test]
 fn test_sender_dropped() {
   let (_sender, receiver) = pulse();
-  let receiver_future = PulseReceiverFuture(&receiver);
+  let receiver_future = WaitFuture(&receiver);
   let waker = noop_waker();
   let mut cx = Context::from_waker(&waker);
 
@@ -174,10 +174,33 @@ fn test_async_pulse() {
     let (sender, receiver) = pulse();
 
     // Simulate async behavior
-    let receiver_future = PulseReceiverFuture(&receiver);
+    let receiver_future = WaitFuture(&receiver);
     let _ = sender.send().unwrap();
     let result = receiver_future.await;
 
     assert!(result.is_ok());
   })
+}
+
+#[cfg(test)]
+mod extra_tests {
+  use super::*;
+  use std::sync::Arc;
+  use std::thread;
+
+  #[crate::internal_test]
+  fn multiple_sends() {
+    let (s1, r) = pulse();
+    assert!(s1.send().is_ok());
+    assert!(s1.send().is_ok());
+    assert!(futures_executor::block_on(r.wait()).is_ok());
+  }
+
+  #[crate::internal_test]
+  fn poll_after_all_senders_dropped() {
+    let (s, r) = pulse();
+    drop(s);
+    let result = futures_executor::block_on(r.wait());
+    assert!(matches!(result, Err(_)));
+  }
 }
