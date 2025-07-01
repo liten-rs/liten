@@ -1,12 +1,12 @@
 use std::{
   sync::atomic::{AtomicU8, Ordering},
+  thread,
   time::Duration,
 };
 
 use liten::{
   actor::{Actor, ActorResult},
-  // blocking::unblock,
-  // runtime::Runtime,
+  blocking::unblock,
   time::sleep,
 };
 // use tracing_subscriber::fmt;
@@ -24,7 +24,7 @@ use liten::{
 
 #[liten::main]
 async fn main() {
-  sleep(Duration::from_secs(10)).await;
+  // sleep(Duration::from_secs(10)).await;
   // tracing::subscriber::set_global_default(
   //   fmt().with_max_level(tracing::Level::TRACE).finish(),
   // )
@@ -40,6 +40,6 @@ async fn main() {
   //   //
   //   handle.stop().await;
   //
-  //   assert_eq!(unblock(|| 5).await, 5);
+  unblock(|| thread::sleep(Duration::from_millis(500))).await;
   // })
 }

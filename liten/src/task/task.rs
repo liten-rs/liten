@@ -1,5 +1,5 @@
 use std::{
-  cell::UnsafeCell,
+  cell::{Cell, UnsafeCell},
   future::Future,
   panic::UnwindSafe,
   pin::{self as stdpin, Pin},
@@ -28,7 +28,7 @@ impl TaskId {
 
 pub struct Task {
   id: TaskId,
-  pub future: UnsafeCell<Pin<Box<dyn Future<Output = ()> + Send>>>,
+  pub future: Cell<Option<Pin<Box<dyn Future<Output = ()> + Send>>>>,
 }
 
 impl UnwindSafe for Task {}
@@ -50,7 +50,7 @@ impl Task {
         // Ignore, task handler has been dropped in this case.
       }
     });
-    Self { id, future: UnsafeCell::new(future) }
+    Self { id, future: Cell::new(Some(future)) }
   }
 
   pub fn id(&self) -> TaskId {
@@ -58,8 +58,17 @@ impl Task {
   }
 
   pub fn poll(&self, cx: &mut Context) -> Poll<()> {
-    let future = unsafe { &mut *self.future.get() };
+    let mut future = self
+      .future
+      .take()
+      .expect(&format!("Future::poll called on Task id {:?}", self.id()));
 
-    stdpin::pin!(future).poll(cx)
+    let poll = stdpin::pin!(&mut future).poll(cx);
+
+    if poll == Poll::Pending {
+      self.future.set(Some(future));
+    }
+
+    poll
   }
 }
