@@ -2,9 +2,7 @@
 name = "liten"
 version = "0.1.0"
 edition = "2021"
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+build = "build.rs"
 
 [target.'cfg(loom)'.dependencies]
 loom = { version = "0.7", features = ["futures"] }

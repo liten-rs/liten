@@ -108,7 +108,7 @@ struct InternalTestFn(CallerFn);
 
 impl Parse for CallerFn {
   fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-    let mut attrs = input.call(Attribute::parse_outer)?;
+    let attrs = input.call(Attribute::parse_outer)?;
     let _ = input.parse::<Token![async]>();
     input.parse::<Token![fn]>()?;
     let ident = input.parse::<Ident>()?;

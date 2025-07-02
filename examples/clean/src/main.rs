@@ -1,14 +1,11 @@
 use std::{
-  sync::atomic::{AtomicU8, Ordering},
   thread,
   time::Duration,
 };
 
 use liten::{
-  actor::{Actor, ActorResult},
   blocking::unblock,
   task,
-  time::sleep,
 };
 // use tracing_subscriber::fmt;
 //

@@ -8,7 +8,6 @@ use std::{
   task::{Context, Poll, Waker},
 };
 
-use futures_task::noop_waker;
 use thiserror::Error;
 
 pub struct PulseReceiver(State);

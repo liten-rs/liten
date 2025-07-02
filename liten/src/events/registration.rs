@@ -10,6 +10,7 @@ pub struct EventRegistration {
 }
 
 impl EventRegistration {
+  #[allow(unused)]
   pub fn new(
     interest: Interest,
     source: &mut impl Source,

@@ -6,7 +6,7 @@ mod wheel;
 use std::{
   collections::HashMap,
   sync::{atomic::AtomicUsize, OnceLock},
-  task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
+  task::{Context, Poll, Waker},
   thread::{self, JoinHandle},
   time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };

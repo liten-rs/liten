@@ -22,6 +22,7 @@ pub mod shared;
 pub mod worker;
 
 pub struct WorkerShutdown {
+  #[allow(unused)]
   worker_id: usize,
   signal_sender: Sender<()>, // pub temp
   unparker: Unparker,
@@ -57,7 +58,7 @@ impl ShutdownWorkers {
     }
   }
   pub fn shutdown(self) {
-    for WorkerShutdown { signal_sender, unparker, handle, worker_id } in self.0
+    for WorkerShutdown { signal_sender, unparker, handle, worker_id: _ } in self.0
     {
       signal_sender.send(()).unwrap();
       unparker.unpark();

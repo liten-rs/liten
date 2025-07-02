@@ -1,5 +1,5 @@
 use std::{
-  cell::{Cell, UnsafeCell},
+  cell::Cell,
   future::Future,
   panic::UnwindSafe,
   pin::{self as stdpin, Pin},
