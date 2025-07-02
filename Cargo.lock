@@ -231,6 +231,7 @@ dependencies = [
  "mio",
  "oneshot",
  "parking",
+ "pin-project-lite",
  "static_assertions",
  "thiserror",
  "tracing",

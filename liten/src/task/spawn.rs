@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::sync::oneshot;
 
-use super::builder;
+use super::{builder, Builder, TaskHandle};
 
 /// Spawns a new asynchronous task.
 ///
@@ -71,27 +71,5 @@ where
   F: Future + Send + 'static,
   F::Output: Send,
 {
-  builder().build(fut)
-}
-
-pub struct TaskHandle<Out>(pub(super) oneshot::Receiver<Out>);
-
-#[derive(Error, Debug, PartialEq)]
-pub enum TaskHandleError {
-  #[error("task panicked")]
-  BodyPanicked,
-}
-
-impl<Out> Future for TaskHandle<Out>
-where
-  Out: 'static,
-{
-  type Output = Result<Out, TaskHandleError>;
-  fn poll(
-    mut self: Pin<&mut Self>,
-    cx: &mut Context<'_>,
-  ) -> Poll<Self::Output> {
-    let mut pinned = std::pin::pin!(&mut self.0);
-    pinned.as_mut().poll(cx).map_err(|_| TaskHandleError::BodyPanicked)
-  }
+  Builder::default().spawn(fut)
 }

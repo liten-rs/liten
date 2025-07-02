@@ -1,15 +1,11 @@
 use std::{
-  cell::Cell,
   future::Future,
   panic::UnwindSafe,
-  pin::{self as stdpin, Pin},
+  pin::Pin,
   task::{Context, Poll},
 };
 
-use crate::{
-  context::{self},
-  sync::oneshot::Sender,
-};
+use crate::context::{self};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct TaskId(pub usize);
@@ -28,81 +24,57 @@ impl TaskId {
 
 pub struct Task {
   id: TaskId,
-  pub future: Cell<Option<Pin<Box<dyn Future<Output = ()> + Send>>>>,
+  raw: *mut (),
+  vtable: TaskVTable,
 }
 
 impl UnwindSafe for Task {}
 // SAFETY: Task is only used in a single thread at any time.
 unsafe impl Sync for Task {}
+unsafe impl Send for Task {}
 
 #[cfg(test)]
 static_assertions::assert_impl_all!(Task: Send, Sync);
 
 impl Task {
-  pub(super) fn new<F>(id: TaskId, future: F, sender: Sender<F::Output>) -> Task
+  pub(super) fn new<F>(id: TaskId, future: F) -> Task
   where
-    F: Future + Send + 'static,
-    F::Output: Send,
+    F: Future<Output = ()> + Send + 'static,
   {
-    let future = Box::pin(async move {
-      let fut = future.await;
-      if sender.send(fut).is_err() {
-        // Ignore, task handler has been dropped in this case.
-      }
-    });
-    Self { id, future: Cell::new(Some(future)) }
+    Self {
+      id,
+      raw: Box::into_raw(Box::new(future)) as *mut (),
+      vtable: TaskVTable { poll_fn: poll_fn::<F>, drop_fn: drop_fn::<F> },
+    }
   }
 
   pub fn id(&self) -> TaskId {
     self.id
   }
 
-  pub fn poll(&self, cx: &mut Context) -> Poll<()> {
-    let mut future = self
-      .future
-      .take()
-      .expect(&format!("Future::poll called on Task id {:?}", self.id()));
-
-    let poll = stdpin::pin!(&mut future).poll(cx);
-
-    if poll == Poll::Pending {
-      self.future.set(Some(future));
-    }
-
-    poll
+  pub fn poll(&mut self, cx: &mut Context) -> Poll<()> {
+    unsafe { (self.vtable.poll_fn)(self.raw, cx) }
   }
 }
 
-// #[cfg(test)]
-// mod tests {
-//   use super::*;
-//   use std::cell::Cell;
-//   use std::future::{ready, Future};
-//   use std::pin::Pin;
-//   use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
-//
-//   fn dummy_waker() -> Waker {
-//     fn no_op(_: *const ()) {}
-//     fn clone(_: *const ()) -> RawWaker {
-//       dummy_raw_waker()
-//     }
-//     static VTABLE: RawWakerVTable =
-//       RawWakerVTable::new(clone, no_op, no_op, no_op);
-//     fn dummy_raw_waker() -> RawWaker {
-//       RawWaker::new(std::ptr::null(), &VTABLE)
-//     }
-//     unsafe { Waker::from_raw(dummy_raw_waker()) }
-//   }
+impl Drop for Task {
+  fn drop(&mut self) {
+    unsafe { (self.vtable.drop_fn)(self.raw) }
+  }
+}
 
-// Fix handler first
-// #[crate::internal_test]
-// fn task_poll_ready() {
-//   let (sender, receiver) = crate::sync::oneshot::channel();
-//   let task = Task::new(TaskId::new(), async { 42 }, sender);
-//   let waker = dummy_waker();
-//   let mut cx = Context::from_waker(&waker);
-//   let poll = task.poll(&mut cx);
-//   assert!(matches!(poll, Poll::Ready(())));
-//   assert_eq!(receiver.try_recv().unwrap(), Some(42));
-// }
-// }
+struct TaskVTable {
+  poll_fn: unsafe fn(*mut (), &mut Context<'_>) -> Poll<()>,
+  drop_fn: unsafe fn(*mut ()),
+}
+
+unsafe fn poll_fn<F: Future<Output = ()>>(
+  ptr: *mut (),
+  cx: &mut Context<'_>,
+) -> Poll<()> {
+  Pin::new_unchecked(&mut *(ptr as *mut F)).poll(cx)
+}
+
+unsafe fn drop_fn<F: Future<Output = ()>>(ptr: *mut ()) {
+  let _ = Box::from_raw(ptr as *mut F);
+}

@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::mpsc, task::Poll};
 use crate::{
   context::Context,
   loom::sync::Arc,
-  runtime::{waker::TaskWaker, RuntimeBuilder},
+  runtime::{waker::create_task_waker, RuntimeBuilder},
   sync::oneshot::{self, not_sync::OneshotError, Receiver},
   task::{Task, TaskId},
 };
@@ -121,18 +121,14 @@ impl Worker {
         self.hot.push(task);
       }
 
-      let Some(task) = self.fetch_task(&context) else {
+      let Some(mut task) = self.fetch_task(&context) else {
         self.parker.park(); // this line deadlocks
         continue;
       };
 
       let id = task.id();
-      let liten_waker = std::sync::Arc::new(TaskWaker::new(
-        id,
-        sender.clone(),
-        self.parker.unparker(),
-      ))
-      .into();
+      let liten_waker =
+        create_task_waker(id, sender.clone(), self.parker.unparker());
       let mut context = std::task::Context::from_waker(&liten_waker);
 
       let poll_result =

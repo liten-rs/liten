@@ -5,7 +5,7 @@ use std::{
 
 use crate::loom::thread;
 
-use super::waker::RuntimeWaker;
+use super::waker::create_runtime_waker;
 
 pub struct GlobalExecutor;
 
@@ -14,8 +14,7 @@ impl GlobalExecutor {
   where
     F: Future<Output = R>,
   {
-    let runtime_waker =
-      std::sync::Arc::new(RuntimeWaker::new(thread::current())).into();
+    let runtime_waker = create_runtime_waker(thread::current());
     let mut context = StdContext::from_waker(&runtime_waker);
     let mut pinned = std::pin::pin!(f);
 
