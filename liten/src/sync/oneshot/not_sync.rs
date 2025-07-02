@@ -312,8 +312,6 @@ fn test_inner_try_recv() {
 
 #[cfg(test)]
 mod tests {
-  use super::*;
-
   #[crate::internal_test]
   fn channel_send_receive() {
     let (sender, receiver) = super::super::channel();

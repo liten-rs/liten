@@ -87,39 +87,41 @@ impl<T> Drop for MutexGuard<'_, T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::sync::Arc;
-    use std::thread;
+  use super::*;
+  use std::sync::Arc;
 
-    #[crate::internal_test]
-    async fn basic_lock_unlock() {
-        let m = Mutex::new(5);
-        let guard = futures_executor::block_on(m.lock()).unwrap();
-        assert_eq!(*guard, 5);
-    }
+  #[crate::internal_test]
+  async fn basic_lock_unlock() {
+    let m = Mutex::new(5);
+    let guard = futures_executor::block_on(m.lock()).unwrap();
+    assert_eq!(*guard, 5);
+  }
 
-    #[crate::internal_test]
-    fn try_lock_success() {
-        let m = Mutex::new(10);
-        let guard = m.try_lock().unwrap();
-        assert_eq!(*guard, 10);
-    }
+  #[crate::internal_test]
+  fn try_lock_success() {
+    let m = Mutex::new(10);
+    let guard = m.try_lock().unwrap();
+    assert_eq!(*guard, 10);
+  }
 
-    #[crate::internal_test]
-    fn try_lock_fail() {
-        let m = Mutex::new(20);
-        let _guard = m.try_lock().unwrap();
-        assert!(matches!(m.try_lock(), Err(super::TryLockError::UnableToAcquireLock)));
-    }
+  #[crate::internal_test]
+  fn try_lock_fail() {
+    let m = Mutex::new(20);
+    let _guard = m.try_lock().unwrap();
+    assert!(matches!(
+      m.try_lock(),
+      Err(super::TryLockError::UnableToAcquireLock)
+    ));
+  }
 
-    #[crate::internal_test]
-    fn poisoning_on_panic() {
-        let m = Arc::new(Mutex::new(42));
-        let m2 = m.clone();
-        let _ = std::panic::catch_unwind(move || {
-            let _guard = futures_executor::block_on(m2.lock()).unwrap();
-            panic!("poison");
-        });
-        assert!(m.poisoned.load(std::sync::atomic::Ordering::Relaxed));
-    }
+  #[crate::internal_test]
+  fn poisoning_on_panic() {
+    let m = Arc::new(Mutex::new(42));
+    let m2 = m.clone();
+    let _ = std::panic::catch_unwind(move || {
+      let _guard = futures_executor::block_on(m2.lock()).unwrap();
+      panic!("poison");
+    });
+    assert!(m.poisoned.load(std::sync::atomic::Ordering::Relaxed));
+  }
 }

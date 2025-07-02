@@ -158,7 +158,7 @@ fn test_receiver_dropped() {
 fn test_sender_dropped() {
   let (_sender, receiver) = pulse();
   let receiver_future = WaitFuture(&receiver);
-  let waker = noop_waker();
+  let waker = futures_task::noop_waker();
   let mut cx = Context::from_waker(&waker);
 
   assert!(matches!(
@@ -184,8 +184,6 @@ fn test_async_pulse() {
 #[cfg(test)]
 mod extra_tests {
   use super::*;
-  use std::sync::Arc;
-  use std::thread;
 
   #[crate::internal_test]
   fn multiple_sends() {
