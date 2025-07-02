@@ -19,7 +19,6 @@ pub enum OneshotError {
   ChannelDropped,
 }
 
-// TODO: Get rid of Arc
 pub struct Sender<V>(Arc<Inner<V>>);
 
 impl<V> Sender<V> {

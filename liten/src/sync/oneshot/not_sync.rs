@@ -21,6 +21,27 @@ pub enum OneshotError {
   ReceiverDropped,
 }
 
+/// Sender for a oneshot channel.
+///
+/// This is the sender side of a oneshot channel. It can be used to send a value to the receiver.
+///
+/// # Example
+///
+/// ```rust
+/// use liten::sync::oneshot;
+///
+/// #[liten::main]
+/// async fn main() {
+///   
+///   let (sender, receiver) = oneshot::channel();
+///   
+///   sender.send(42);
+///   
+///   let value = receiver.await;
+///   
+///   assert_eq!(value, Ok(42));
+/// }
+/// ```
 // TODO: Get rid of Arc
 pub struct Sender<V>(Arc<Inner<V>>);
 
@@ -43,6 +64,26 @@ impl<V> Drop for Sender<V> {
   }
 }
 
+/// Receiver for a oneshot channel.
+///
+/// This is the receiver side of a oneshot channel. It can be used to receive a value from the sender.
+///
+/// # Example
+///
+/// ```rust
+/// use liten::sync::oneshot;
+///
+/// #[liten::main]
+/// async fn main() {
+///   let (sender, receiver) = oneshot::channel();
+///   
+///   sender.send(42);
+///   
+///   let value = receiver.await;
+///   
+///   assert_eq!(value, Ok(42));
+/// }
+/// ```
 pub struct Receiver<V>(Arc<Inner<V>>);
 
 impl<V> Receiver<V> {
@@ -271,26 +312,26 @@ fn test_inner_try_recv() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+  use super::*;
 
-    #[crate::internal_test]
-    fn channel_send_receive() {
-        let (sender, receiver) = super::super::channel();
-        sender.send(123).unwrap();
-        assert_eq!(receiver.try_recv().unwrap(), Some(123));
-    }
+  #[crate::internal_test]
+  fn channel_send_receive() {
+    let (sender, receiver) = super::super::channel();
+    sender.send(123).unwrap();
+    assert_eq!(receiver.try_recv().unwrap(), Some(123));
+  }
 
-    #[crate::internal_test]
-    fn drop_sender() {
-        let (sender, receiver) = super::super::channel::<u32>();
-        drop(sender);
-        assert!(receiver.try_recv().is_err());
-    }
+  #[crate::internal_test]
+  fn drop_sender() {
+    let (sender, receiver) = super::super::channel::<u32>();
+    drop(sender);
+    assert!(receiver.try_recv().is_err());
+  }
 
-    #[crate::internal_test]
-    fn drop_receiver() {
-        let (sender, receiver) = super::super::channel::<u32>();
-        drop(receiver);
-        assert!(sender.send(1).is_err());
-    }
+  #[crate::internal_test]
+  fn drop_receiver() {
+    let (sender, receiver) = super::super::channel::<u32>();
+    drop(receiver);
+    assert!(sender.send(1).is_err());
+  }
 }

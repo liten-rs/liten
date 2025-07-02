@@ -11,12 +11,72 @@ use syn::ReturnType;
 use syn::Token;
 use syn::Attribute;
 
+/// Boots the runtime and runs the async code within it.
+///
+/// This macro transforms an async main function into one that starts the Liten runtime
+/// and executes the async code within it. It should be used to annotate your main function:
+///
+/// # Example
+/// ```ignore
+/// #[liten::main]
+/// async fn main() {
+///     // Your async code here
+/// }
+/// ```
+///
+/// The macro expands your async main function into code that creates and starts the Liten runtime,
+/// then blocks on your async main body:
+///
+/// ```ignore
+/// fn main() {
+///     liten::runtime::Runtime::default().block_on(async {
+///         // Your async code here
+///     })
+/// }
+/// ```
+///
+/// # Note
+/// This macro is required for running async code at the top level, as Rust does not
+/// natively support async main functions.
+///
+
+
 #[proc_macro_attribute]
 pub fn main(_: TokenStream, function: TokenStream) -> TokenStream {
   let testing = parse_macro_input!(function as CallerFn);
 
   MainFn(testing).into_token_stream().into()
 }
+
+/// Boots the runtime and runs the async code within it for tests.
+///
+/// This macro transforms an async test function into one that starts the Liten runtime
+/// and executes the async code within it. It should be used to annotate your async test functions:
+///
+/// # Example
+/// ```ignore
+/// #[liten::test]
+/// async fn my_test() {
+///     // Your async test code here
+/// }
+/// ```
+///
+/// The macro expands your async test function into code that creates and starts the Liten runtime,
+/// then blocks on your async test body:
+///
+/// ```ignore
+/// #[test]
+/// fn my_test() {
+///     liten::runtime::Runtime::default().block_on(async {
+///         // Your async test code here
+///     })
+/// }
+/// ```
+///
+/// # Note
+/// This macro not is required for running async code in tests. The runtime can be manually started, but Rust does not
+/// natively support async test functions.
+///
 
 #[proc_macro_attribute]
 pub fn test(_: TokenStream, function: TokenStream) -> TokenStream {

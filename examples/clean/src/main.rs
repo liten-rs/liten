@@ -7,6 +7,7 @@ use std::{
 use liten::{
   actor::{Actor, ActorResult},
   blocking::unblock,
+  task,
   time::sleep,
 };
 // use tracing_subscriber::fmt;
@@ -24,6 +25,7 @@ use liten::{
 
 #[liten::main]
 async fn main() {
+  task::spawn(async {});
   // sleep(Duration::from_secs(10)).await;
   // tracing::subscriber::set_global_default(
   //   fmt().with_max_level(tracing::Level::TRACE).finish(),

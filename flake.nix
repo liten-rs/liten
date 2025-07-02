@@ -31,6 +31,7 @@
           buildInputs = with pkgs; [
             (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
             cargo-nextest
+            mdbook
 
             just
           ];

@@ -1,6 +1,6 @@
 pub use not_sync::{Receiver, Sender};
 pub mod not_sync;
-mod sync;
+//mod sync;
 
 use crate::loom::sync::Arc;
 

@@ -17,9 +17,6 @@ use clock::{Clock, TimerId};
 use parking::{Parker, Unparker};
 pub use sleep::*;
 
-pub struct TimeHandle {
-  driver: TimeDriver,
-}
 
 #[derive(Clone)]
 pub struct TimeDriver(Arc<Mutex<TimeDriverInner>>);

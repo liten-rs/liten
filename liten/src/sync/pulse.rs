@@ -11,8 +11,8 @@ use std::{
 use futures_task::noop_waker;
 use thiserror::Error;
 
-struct PulseReceiver(State);
-struct PulseSender(State);
+pub struct PulseReceiver(State);
+pub struct PulseSender(State);
 
 #[derive(Clone)]
 struct State(Arc<StateInner>);

@@ -44,10 +44,6 @@ pub struct Clock {
 }
 
 impl Clock {
-  pub fn new() -> Self {
-    Self::new_with_positions(0, 0, 0, 0, 0)
-  }
-
   pub fn new_with_positions(
     days: usize,
     hours: usize,

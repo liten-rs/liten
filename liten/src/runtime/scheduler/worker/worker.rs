@@ -70,24 +70,24 @@ impl Worker {
       };
     }
 
-    // if self.config.enable_work_stealing {
-    //   // Global queue is empty: So we steal tasks from other workers.
-    //   for remote_stealer in state.iter_all_stealers() {
-    //     loop {
-    //       // Steal workers and pop the local queue
-    //       match remote_stealer.steal_batch_and_pop(&self.hot) {
-    //         // Try again with same remote
-    //         Steal::Retry => continue,
-    //         // Stop trying and move on to the next one.
-    //         Steal::Empty => break,
-    //         // Break immediately and return task
-    //         Steal::Success(task) => {
-    //           return Some(task);
-    //         }
-    //       }
-    //     }
-    //   }
-    // }
+    if self.config.enable_work_stealing {
+      // Global queue is empty: So we steal tasks from other workers.
+      for remote_stealer in state.iter_all_stealers() {
+        loop {
+          // Steal workers and pop the local queue
+          match remote_stealer.steal_batch_and_pop(&self.hot) {
+            // Try again with same remote
+            Steal::Retry => continue,
+            // Stop trying and move on to the next one.
+            Steal::Empty => break,
+            // Break immediately and return task
+            Steal::Success(task) => {
+              return Some(task);
+            }
+          }
+        }
+      }
+    }
 
     None
   }
