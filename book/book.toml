@@ -1,5 +1,0 @@
-[book]
-authors = ["Vincent Thomas"]
-language = "en"
-src = "src"
-title = "Liten async runtime"

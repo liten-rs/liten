@@ -17,7 +17,6 @@ use clock::{Clock, TimerId};
 use parking::{Parker, Unparker};
 pub use sleep::*;
 
-
 #[derive(Clone)]
 pub struct TimeDriver(Arc<Mutex<TimeDriverInner>>);
 
@@ -109,19 +108,14 @@ impl TimeDriver {
           // There is one
           let instant = Instant::now()
             + Duration::from_millis(delta_time_to_next_thing as u64);
-          println!("time deadline park");
           parker.park_deadline(instant);
-          println!("time deadline unpark");
         }
         None => {
           // No timers currently waiting...
-          println!("time park");
           parker.park();
-          println!("time unpark");
         }
       }
       if self.0.lock().unwrap().shutdown_signal {
-        println!("quit background thread");
         break;
       }
       self.jump();
@@ -158,7 +152,6 @@ impl TimeDriver {
   }
 
   fn jump(&self) {
-    println!("Jumping");
     let mut _lock = self.0.lock().unwrap();
 
     let millis = _lock.last_advance.elapsed().as_millis() as usize;

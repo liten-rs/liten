@@ -1,17 +1,6 @@
-use std::fmt;
-
 pub struct Wheel<const T: usize, I> {
   slots: [Vec<I>; T], // Fixed-size array of Vec<Timer>
   current_slot: usize,
-}
-
-impl<const T: usize, I> fmt::Debug for Wheel<T, I> {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.debug_struct("Wheel")
-      .field("slot_sizes", &"[Cell<Vec<I>>; T]")
-      .field("current_slot", &self.current_slot)
-      .finish()
-  }
 }
 
 pub struct TimerTickResult<T> {

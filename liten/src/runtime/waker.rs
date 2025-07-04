@@ -1,5 +1,5 @@
 use std::mem::ManuallyDrop;
-use std::task::{RawWaker, RawWakerVTable, Wake, Waker};
+use std::task::{RawWaker, RawWakerVTable, Waker};
 
 use parking::Unparker;
 

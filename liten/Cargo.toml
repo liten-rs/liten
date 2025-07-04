@@ -4,6 +4,15 @@ version = "0.1.0"
 edition = "2021"
 build = "build.rs"
 
+
+[features]
+default = []
+sync = []
+time = []
+blocking = ["dep:crossbeam-channel"]
+actor = []
+fs = ["blocking"]
+
 [target.'cfg(loom)'.dependencies]
 loom = { version = "0.7", features = ["futures"] }
 
@@ -20,14 +29,13 @@ thiserror = "2.0.11"
 crossbeam-deque = "0.8.6"
 parking = "2.2.1"
 futures-task = "0.3"
-async-channel = "2.3.1"
+async-channel = { version = "2.3.1" }
 oneshot = "0.1.11"
-crossbeam-channel = "0.5.15"
+crossbeam-channel = { version = "0.5.15", optional = true }
 dashmap = "6.1.0"
 pin-project-lite = "0.2.16"
 
 [dev-dependencies]
 futures-executor = "0.3.31"
-# criterion = { version = "0.5.1", features = ["html_reports"]}
 static_assertions = "1.1.0"
 tracing-subscriber = "0.3.19"

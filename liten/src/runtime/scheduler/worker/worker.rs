@@ -4,7 +4,7 @@ use crate::{
   context::Context,
   loom::sync::Arc,
   runtime::{waker::create_task_waker, RuntimeBuilder},
-  sync::oneshot::{self, not_sync::OneshotError, Receiver},
+  sync::oneshot::{self, OneshotError, Receiver},
   task::{Task, TaskId},
 };
 use crossbeam_deque::{Steal, Stealer, Worker as CBWorkerQueue};

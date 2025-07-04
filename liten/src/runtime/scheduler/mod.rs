@@ -3,14 +3,9 @@ pub mod worker;
 use std::{future::Future, io};
 
 use crate::{
-  blocking::pool::BlockingPool,
   context, events,
-  loom::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-  },
+  loom::sync::Arc,
   runtime::{main_executor::GlobalExecutor, scheduler::worker::shared::Shared},
-  time::TimeDriver,
 };
 use worker::Workers;
 
@@ -46,8 +41,11 @@ impl Scheduler {
 
     shutdown_waker.wake().expect("noo :(");
 
-    BlockingPool::shutdown();
-    TimeDriver::shutdown();
+    #[cfg(feature = "blocking")]
+    crate::blocking::pool::BlockingPool::shutdown();
+
+    #[cfg(feature = "time")]
+    crate::time::TimeDriver::shutdown();
 
     return_type
   }
@@ -57,8 +55,6 @@ impl Scheduler {
 pub struct Handle {
   pub io: events::Handle,
   pub shared: Arc<Shared>,
-  // TODO: maybe move this into some sort of WorkerHandle?
-  current_task_id: Arc<AtomicUsize>,
 }
 
 #[cfg(test)]
@@ -72,11 +68,6 @@ impl Handle {
   pub fn io(&self) -> &events::Handle {
     &self.io
   }
-
-  /// Returns the previous value
-  pub fn task_id_inc(&self) -> usize {
-    self.current_task_id.fetch_add(1, Ordering::SeqCst)
-  }
 }
 
 pub struct Driver {
@@ -88,10 +79,6 @@ impl Driver {
     Ok(Self { io: events::Driver::new()? })
   }
   pub fn handle(&self, shared: Shared) -> Handle {
-    Handle {
-      io: self.io.handle(),
-      shared: Arc::new(shared),
-      current_task_id: Arc::new(AtomicUsize::new(0)),
-    }
+    Handle { io: self.io.handle(), shared: Arc::new(shared) }
   }
 }

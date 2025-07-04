@@ -1,7 +1,7 @@
 use std::{
   fmt::Debug,
   future::Future,
-  mem::{self, ManuallyDrop},
+  mem::ManuallyDrop,
   pin::Pin,
   task::{Context, Poll, Waker},
 };
@@ -114,51 +114,11 @@ impl<V> Future for Receiver<V> {
   }
 }
 
-pub enum ValueState<V> {
-  Taken,
-  Value(V),
-}
-
-impl<V> ValueState<V> {
-  /// Extracts the value from [`self`] into a [`Option<V>`]
-  pub fn take(&mut self) -> Option<V> {
-    match mem::replace(self, ValueState::Taken) {
-      Self::Taken => None,
-      Self::Value(value) => Some(value),
-    }
-  }
-}
-
-impl<V: PartialEq> PartialEq for ValueState<V> {
-  fn eq(&self, other: &Self) -> bool {
-    match self {
-      Self::Taken => matches!(other, ValueState::Taken),
-      Self::Value(value) => {
-        if let Self::Value(value2) = other {
-          value2 == value
-        } else {
-          false
-        }
-      }
-    }
-  }
-}
-
-impl<V: Debug> Debug for ValueState<V> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match *self {
-      Self::Taken => f.write_str("ValueState::Taken"),
-      Self::Value(ref value) => {
-        f.write_fmt(format_args!("ValueState::Value({:?})", value))
-      }
-    }
-  }
-}
-
 pub enum State<V> {
   Init,
   Listening(Waker),
-  Sent(ValueState<V>),
+  /// None is taken, and Some(V) is non-taken.
+  Sent(Option<V>),
   SenderDropped,
   ReceiverDropped,
 }
@@ -235,12 +195,12 @@ impl<V> Inner<V> {
     let state = &mut *self.0.lock().unwrap();
     match state {
       State::Init => {
-        *state = State::Sent(ValueState::Value(value));
+        *state = State::Sent(Some(value));
         Ok(())
       }
       State::Listening(waker) => {
         let waker = waker.clone();
-        *state = State::Sent(ValueState::Value(value));
+        *state = State::Sent(Some(value));
         waker.wake_by_ref();
         Ok(())
       }
@@ -301,34 +261,36 @@ fn test_inner_try_recv() {
   assert_eq!(inner.try_recv(), Ok(None));
   inner.send(0).unwrap();
   let state = inner.0.lock().unwrap();
-  assert_eq!(*state, State::Sent(ValueState::Value(0)));
+  assert_eq!(*state, State::Sent(Some(0)));
   drop(state);
 
   assert_eq!(inner.try_recv(), Ok(Some(0)));
   let state = inner.0.lock().unwrap();
-  assert_eq!(*state, State::Sent(ValueState::Taken));
+  assert_eq!(*state, State::Sent(None));
   drop(state);
 }
 
 #[cfg(test)]
 mod tests {
+  use crate::sync::oneshot::channel;
+
   #[crate::internal_test]
   fn channel_send_receive() {
-    let (sender, receiver) = super::super::channel();
+    let (sender, receiver) = channel();
     sender.send(123).unwrap();
     assert_eq!(receiver.try_recv().unwrap(), Some(123));
   }
 
   #[crate::internal_test]
   fn drop_sender() {
-    let (sender, receiver) = super::super::channel::<u32>();
+    let (sender, receiver) = channel::<u32>();
     drop(sender);
     assert!(receiver.try_recv().is_err());
   }
 
   #[crate::internal_test]
   fn drop_receiver() {
-    let (sender, receiver) = super::super::channel::<u32>();
+    let (sender, receiver) = channel::<u32>();
     drop(receiver);
     assert!(sender.send(1).is_err());
   }

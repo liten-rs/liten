@@ -32,7 +32,6 @@ impl TimerId {
   }
 }
 
-#[derive(Debug)]
 pub struct Clock {
   milliseconds: Wheel<1000, TimerId>,
   seconds: Wheel<60, TimerId>,

@@ -36,7 +36,7 @@ fn non_sync_basic_drop_handling() {
 
   let result = get_ready!(receiver);
 
-  assert_eq!(result, Err(oneshot::not_sync::OneshotError::SenderDropped));
+  assert_eq!(result, Err(oneshot::OneshotError::SenderDropped));
 
   let (sender, receiver) = oneshot::channel::<u8>();
 
@@ -44,5 +44,5 @@ fn non_sync_basic_drop_handling() {
 
   let result = sender.send(VALUE);
 
-  assert_eq!(result, Err(oneshot::not_sync::OneshotError::ReceiverDropped));
+  assert_eq!(result, Err(oneshot::OneshotError::ReceiverDropped));
 }

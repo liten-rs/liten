@@ -1,12 +1,9 @@
-use std::{thread, time};
-
 use liten::blocking::unblock;
 
 #[liten::test]
 async fn simple() {
   // Define a blocking operation
   let blocking_operation = || {
-    thread::sleep(time::Duration::from_millis(100)); // Simulate a blocking operation
     42 // Return some result
   };
 

@@ -1,6 +1,11 @@
-use std::sync::{atomic::AtomicBool, OnceLock};
-use std::thread::ThreadId;
-use std::time::Duration;
+use std::{
+  sync::{
+    atomic::AtomicBool,
+    OnceLock
+  },
+  thread::ThreadId,
+  time::Duration
+};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use dashmap::DashMap;
@@ -102,8 +107,7 @@ impl BlockingPool {
     thread::spawn(|| self.main_loop());
   }
 
-  pub(super) fn main_loop(&self) {
-    println!("starting thread... {:?}", self.thread_state);
+  fn main_loop(&self) {
     self.thread_state.threads_running.fetch_add(1, Ordering::AcqRel);
 
     let mut _guard = ThreadPanicGuard::new(self);

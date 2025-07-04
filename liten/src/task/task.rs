@@ -1,80 +1,122 @@
+mod raw;
+
 use std::{
   future::Future,
-  panic::UnwindSafe,
   pin::Pin,
+  sync::atomic::{AtomicUsize, Ordering},
   task::{Context, Poll},
 };
 
-use crate::context::{self};
-
+pub use crate::sync::oneshot;
+use thiserror::Error;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct TaskId(pub usize);
 
+static CURRENT_TASK_ID: AtomicUsize = AtomicUsize::new(0);
+
 impl Default for TaskId {
   fn default() -> Self {
-    Self(context::with_context(|ctx| ctx.handle().task_id_inc()))
+    Self(CURRENT_TASK_ID.fetch_add(1, Ordering::SeqCst))
   }
 }
 
 impl TaskId {
-  pub fn new() -> Self {
+  fn new() -> Self {
     Self::default()
   }
 }
 
 pub struct Task {
   id: TaskId,
-  raw: *mut (),
-  vtable: TaskVTable,
+  raw: raw::RawTask,
 }
 
-impl UnwindSafe for Task {}
-// SAFETY: Task is only used in a single thread at any time.
-unsafe impl Sync for Task {}
-unsafe impl Send for Task {}
-
-#[cfg(test)]
-static_assertions::assert_impl_all!(Task: Send, Sync);
-
 impl Task {
-  pub(super) fn new<F>(id: TaskId, future: F) -> Task
+  pub fn new<Fut, Res>(fut: Fut) -> (Self, TaskHandle<Res>)
   where
-    F: Future<Output = ()> + Send + 'static,
+    Fut: Future<Output = Res> + 'static,
   {
-    Self {
-      id,
-      raw: Box::into_raw(Box::new(future)) as *mut (),
-      vtable: TaskVTable { poll_fn: poll_fn::<F>, drop_fn: drop_fn::<F> },
-    }
+    let (task_future, handle) = TaskFuture::new(fut);
+    let this =
+      Task { id: TaskId::new(), raw: raw::RawTask::from_future(task_future) };
+
+    (this, handle)
   }
 
   pub fn id(&self) -> TaskId {
     self.id
   }
 
-  pub fn poll(&mut self, cx: &mut Context) -> Poll<()> {
-    unsafe { (self.vtable.poll_fn)(self.raw, cx) }
+  pub fn poll(&mut self, cx: &mut std::task::Context) -> Poll<()> {
+    self.raw.poll(cx)
   }
 }
 
-impl Drop for Task {
-  fn drop(&mut self) {
-    unsafe { (self.vtable.drop_fn)(self.raw) }
+pin_project_lite::pin_project! {
+  pub(crate) struct TaskFuture<F>
+  where
+    F: Future,
+  {
+    #[pin]
+    fut: F,
+    sender: Option<oneshot::Sender<F::Output>>,
   }
 }
 
-struct TaskVTable {
-  poll_fn: unsafe fn(*mut (), &mut Context<'_>) -> Poll<()>,
-  drop_fn: unsafe fn(*mut ()),
+impl<F> TaskFuture<F>
+where
+  F: Future,
+{
+  fn new(fut: F) -> (Self, TaskHandle<F::Output>) {
+    let (sender, receiver) = oneshot::channel::<F::Output>();
+    let this = Self { fut, sender: Some(sender) };
+    let handle = TaskHandle(receiver);
+
+    (this, handle)
+  }
+}
+impl<F> Future for TaskFuture<F>
+where
+  F: Future,
+{
+  type Output = ();
+  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    let this = self.project();
+
+    match this.fut.poll(cx) {
+      Poll::Pending => Poll::Pending,
+      Poll::Ready(value) => {
+        // Ignore
+        // receiver dropping
+        let _ = this
+          .sender
+          .take()
+          .expect("future polled after completion")
+          .send(value);
+        Poll::Ready(())
+      }
+    }
+  }
 }
 
-unsafe fn poll_fn<F: Future<Output = ()>>(
-  ptr: *mut (),
-  cx: &mut Context<'_>,
-) -> Poll<()> {
-  Pin::new_unchecked(&mut *(ptr as *mut F)).poll(cx)
+pub struct TaskHandle<Out>(pub(super) oneshot::Receiver<Out>);
+
+#[derive(Error, Debug, PartialEq)]
+pub enum TaskHandleError {
+  #[error("task panicked")]
+  BodyPanicked,
 }
 
-unsafe fn drop_fn<F: Future<Output = ()>>(ptr: *mut ()) {
-  let _ = Box::from_raw(ptr as *mut F);
+impl<Out> Future for TaskHandle<Out>
+where
+  Out: 'static,
+{
+  type Output = Result<Out, TaskHandleError>;
+  fn poll(
+    mut self: Pin<&mut Self>,
+    cx: &mut Context<'_>,
+  ) -> Poll<Self::Output> {
+    let mut pinned = std::pin::pin!(&mut self.0);
+    pinned.as_mut().poll(cx).map_err(|_| TaskHandleError::BodyPanicked)
+  }
 }
