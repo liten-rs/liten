@@ -3,7 +3,7 @@ pub mod worker;
 use std::{future::Future, io};
 
 use crate::{
-  context, events,
+  context,
   loom::sync::Arc,
   runtime::{main_executor::GlobalExecutor, scheduler::worker::shared::Shared},
 };
@@ -32,14 +32,14 @@ impl Scheduler {
     shutdown.fill_handle(workers.launch(handle.clone()));
 
     // NOTE: Has to be over the mio join handle.
-    let shutdown_waker = handle.io().shutdown_waker();
+    // let shutdown_waker = handle.io().shutdown_waker();
 
     let return_type =
       context::runtime_enter(handle, move |_| GlobalExecutor::block_on(fut));
 
     shutdown.shutdown();
 
-    shutdown_waker.wake().expect("noo :(");
+    // shutdown_waker.wake().expect("noo :(");
 
     #[cfg(feature = "blocking")]
     crate::blocking::pool::BlockingPool::shutdown();
@@ -53,7 +53,7 @@ impl Scheduler {
 
 #[derive(Debug, Clone)]
 pub struct Handle {
-  pub io: events::Handle,
+  // pub io: events::Handle,
   pub shared: Arc<Shared>,
 }
 
@@ -65,20 +65,20 @@ impl Handle {
     self.shared.as_ref()
   }
 
-  pub fn io(&self) -> &events::Handle {
-    &self.io
-  }
+  // pub fn io(&self) -> &events::Handle {
+  //   &self.io
+  // }
 }
 
 pub struct Driver {
-  io: events::Driver,
+  // io: events::Driver,
 }
 
 impl Driver {
   pub fn new() -> io::Result<Self> {
-    Ok(Self { io: events::Driver::new()? })
+    Ok(Self { /*io: events::Driver::new()?*/ })
   }
   pub fn handle(&self, shared: Shared) -> Handle {
-    Handle { io: self.io.handle(), shared: Arc::new(shared) }
+    Handle { /*io: self.io.handle(),*/ shared: Arc::new(shared) }
   }
 }

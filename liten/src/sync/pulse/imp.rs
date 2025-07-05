@@ -143,6 +143,7 @@ impl Future for WaitFuture<'_> {
 mod tests {
   use super::*;
   use crate::sync::pulse::pulse;
+  pub use crate::testing_util::noop_waker;
 
   #[crate::internal_test]
   fn test_pulse_creation() {
@@ -161,7 +162,7 @@ mod tests {
   fn test_sender_dropped() {
     let (_sender, receiver) = pulse();
     let receiver_future = WaitFuture(&receiver);
-    let waker = futures_task::noop_waker();
+    let waker = noop_waker();
     let mut cx = Context::from_waker(&waker);
 
     assert!(matches!(

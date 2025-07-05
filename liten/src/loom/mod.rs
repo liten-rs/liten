@@ -31,11 +31,11 @@ pub(crate) mod sync {
   pub mod atomic {
     #[cfg(loom)]
     pub use loom::sync::atomic::{
-      AtomicBool, AtomicU16, AtomicU8, AtomicUsize, Ordering,
+      AtomicBool, AtomicPtr, AtomicU16, AtomicU8, AtomicUsize, Ordering,
     };
     #[cfg(not(loom))]
     pub use std::sync::atomic::{
-      AtomicBool, AtomicU16, AtomicU8, AtomicUsize, Ordering,
+      AtomicBool, AtomicPtr, AtomicU16, AtomicU8, AtomicUsize, Ordering,
     };
   }
 }

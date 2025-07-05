@@ -1,16 +1,20 @@
 mod raw;
+mod state;
 
 use std::{
   future::Future,
   pin::Pin,
-  sync::atomic::{AtomicUsize, Ordering},
+  sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+  },
   task::{Context, Poll},
 };
 
-pub use crate::sync::oneshot;
 use thiserror::Error;
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct TaskId(pub usize);
+pub(crate) struct TaskId(pub usize);
 
 static CURRENT_TASK_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -43,7 +47,7 @@ impl Task {
     (this, handle)
   }
 
-  pub fn id(&self) -> TaskId {
+  pub(crate) fn id(&self) -> TaskId {
     self.id
   }
 
@@ -59,7 +63,13 @@ pin_project_lite::pin_project! {
   {
     #[pin]
     fut: F,
-    sender: Option<oneshot::Sender<F::Output>>,
+    state: Arc<state::TaskResultState<F::Output>>,
+  }
+
+  impl<F: Future> PinnedDrop for TaskFuture<F> {
+    fn drop(this: Pin<&mut Self>) {
+      this.state.set_panicked();
+    }
   }
 }
 
@@ -68,13 +78,16 @@ where
   F: Future,
 {
   fn new(fut: F) -> (Self, TaskHandle<F::Output>) {
-    let (sender, receiver) = oneshot::channel::<F::Output>();
-    let this = Self { fut, sender: Some(sender) };
-    let handle = TaskHandle(receiver);
+    // Single Arc allocation - this is the minimal allocation needed for soundness
+    let state = Arc::new(state::TaskResultState::new());
+
+    let this = Self { fut, state: state.clone() };
+    let handle = TaskHandle::new(state);
 
     (this, handle)
   }
 }
+
 impl<F> Future for TaskFuture<F>
 where
   F: Future,
@@ -86,20 +99,23 @@ where
     match this.fut.poll(cx) {
       Poll::Pending => Poll::Pending,
       Poll::Ready(value) => {
-        // Ignore
-        // receiver dropping
-        let _ = this
-          .sender
-          .take()
-          .expect("future polled after completion")
-          .send(value);
+        this.state.set_ready(value);
         Poll::Ready(())
       }
     }
   }
 }
 
-pub struct TaskHandle<Out>(pub(super) oneshot::Receiver<Out>);
+/// Task handle with sound lifetime management
+pub struct TaskHandle<Out> {
+  state: Arc<state::TaskResultState<Out>>,
+}
+
+impl<Out> TaskHandle<Out> {
+  fn new(state: Arc<state::TaskResultState<Out>>) -> Self {
+    Self { state }
+  }
+}
 
 #[derive(Error, Debug, PartialEq)]
 pub enum TaskHandleError {
@@ -112,11 +128,14 @@ where
   Out: 'static,
 {
   type Output = Result<Out, TaskHandleError>;
-  fn poll(
-    mut self: Pin<&mut Self>,
-    cx: &mut Context<'_>,
-  ) -> Poll<Self::Output> {
-    let mut pinned = std::pin::pin!(&mut self.0);
-    pinned.as_mut().poll(cx).map_err(|_| TaskHandleError::BodyPanicked)
+  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    // Set the waker
+    self.state.set_waker(cx.waker().clone());
+
+    // Try to take the result
+    match self.state.try_take() {
+      Some(result) => Poll::Ready(result),
+      None => Poll::Pending,
+    }
   }
 }

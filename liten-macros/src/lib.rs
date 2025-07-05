@@ -4,12 +4,12 @@ use syn::parenthesized;
 use syn::parse::Parse;
 use syn::parse_macro_input;
 
+use syn::Attribute;
 use syn::Block;
 use syn::FnArg;
 use syn::Ident;
 use syn::ReturnType;
 use syn::Token;
-use syn::Attribute;
 
 /// Boots the runtime and runs the async code within it.
 ///
@@ -39,7 +39,6 @@ use syn::Attribute;
 /// This macro is required for running async code at the top level, as Rust does not
 /// natively support async main functions.
 ///
-
 
 #[proc_macro_attribute]
 pub fn main(_: TokenStream, function: TokenStream) -> TokenStream {
@@ -136,9 +135,8 @@ impl Parse for CallerFn {
 impl ToTokens for MainFn {
   fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
     let CallerFn { attrs, return_type, block, ident, args } = &self.0;
-    let filtered_attrs = attrs.iter().filter(|attr| {
-      !attr.path().is_ident("main")
-    });
+    let filtered_attrs =
+      attrs.iter().filter(|attr| !attr.path().is_ident("main"));
     let tokens_to_extend = quote::quote! {
         #(#filtered_attrs)*
         fn #ident(#(#args),*) #return_type {
@@ -153,9 +151,8 @@ impl ToTokens for MainFn {
 impl ToTokens for TestFn {
   fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
     let CallerFn { attrs, return_type, block, ident, args } = &self.0;
-    let filtered_attrs = attrs.iter().filter(|attr| {
-      !attr.path().is_ident("test")
-    });
+    let filtered_attrs =
+      attrs.iter().filter(|attr| !attr.path().is_ident("test"));
     let tokens_to_extend = quote::quote! {
         #[test]
         #(#filtered_attrs)*
@@ -172,9 +169,8 @@ impl ToTokens for TestFn {
 impl ToTokens for InternalTestFn {
   fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
     let CallerFn { attrs, return_type, block, ident, args } = &self.0;
-    let filtered_attrs = attrs.iter().filter(|attr| {
-      !attr.path().is_ident("internal_test")
-    });
+    let filtered_attrs =
+      attrs.iter().filter(|attr| !attr.path().is_ident("internal_test"));
     let tokens_to_extend = if cfg!(loom) {
       quote::quote! {
         #[cfg(loom)]

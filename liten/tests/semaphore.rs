@@ -1,7 +1,7 @@
+use liten::testing_util::noop_waker;
 use std::future::Future;
 use std::task::Context;
 
-use futures_task::noop_waker;
 use liten::sync::Semaphore;
 
 macro_rules! get_ready {

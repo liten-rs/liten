@@ -254,44 +254,49 @@ impl<V> Inner<V> {
   }
 }
 
-#[crate::internal_test]
-fn test_inner_try_recv() {
-  let inner = Inner::<u8>::new();
-
-  assert_eq!(inner.try_recv(), Ok(None));
-  inner.send(0).unwrap();
-  let state = inner.0.lock().unwrap();
-  assert_eq!(*state, State::Sent(Some(0)));
-  drop(state);
-
-  assert_eq!(inner.try_recv(), Ok(Some(0)));
-  let state = inner.0.lock().unwrap();
-  assert_eq!(*state, State::Sent(None));
-  drop(state);
-}
-
 #[cfg(test)]
 mod tests {
-  use crate::sync::oneshot::channel;
+  use super::*;
 
   #[crate::internal_test]
-  fn channel_send_receive() {
-    let (sender, receiver) = channel();
-    sender.send(123).unwrap();
-    assert_eq!(receiver.try_recv().unwrap(), Some(123));
+  fn test_inner_try_recv() {
+    let inner = Inner::<u8>::new();
+
+    assert_eq!(inner.try_recv(), Ok(None));
+    inner.send(0).unwrap();
+    let state = inner.0.lock().unwrap();
+    assert_eq!(*state, State::Sent(Some(0)));
+    drop(state);
+
+    assert_eq!(inner.try_recv(), Ok(Some(0)));
+    let state = inner.0.lock().unwrap();
+    assert_eq!(*state, State::Sent(None));
+    drop(state);
   }
 
-  #[crate::internal_test]
-  fn drop_sender() {
-    let (sender, receiver) = channel::<u32>();
-    drop(sender);
-    assert!(receiver.try_recv().is_err());
-  }
+  #[cfg(test)]
+  mod tests {
+    use crate::sync::oneshot::channel;
 
-  #[crate::internal_test]
-  fn drop_receiver() {
-    let (sender, receiver) = channel::<u32>();
-    drop(receiver);
-    assert!(sender.send(1).is_err());
+    #[crate::internal_test]
+    fn channel_send_receive() {
+      let (sender, receiver) = channel();
+      sender.send(123).unwrap();
+      assert_eq!(receiver.try_recv().unwrap(), Some(123));
+    }
+
+    #[crate::internal_test]
+    fn drop_sender() {
+      let (sender, receiver) = channel::<u32>();
+      drop(sender);
+      assert!(receiver.try_recv().is_err());
+    }
+
+    #[crate::internal_test]
+    fn drop_receiver() {
+      let (sender, receiver) = channel::<u32>();
+      drop(receiver);
+      assert!(sender.send(1).is_err());
+    }
   }
 }

@@ -1,24 +1,30 @@
-#![doc = include_str!("../../README.md")]
+// #![doc = include_str!("../../README.md")]
+#![doc = include_str!("../../book/src/SUMMARY.md")]
 
+#[doc(hidden)]
+pub mod testing_util;
+
+#[doc(hidden)]
 pub use liten_macros::internal_test;
+#[cfg(feature = "runtime")]
 pub use liten_macros::{main, test};
 
 #[cfg(feature = "blocking")]
 pub mod blocking;
 
+#[cfg(feature = "runtime")]
 mod context;
-mod events;
-#[cfg(feature = "fs")]
 
+#[cfg(feature = "fs")]
 pub mod fs;
 pub mod io;
 mod loom;
+
+#[cfg(feature = "runtime")]
 pub mod runtime;
 
 #[cfg(feature = "sync")]
 pub mod sync;
-#[cfg(not(feature = "sync"))]
-mod sync;
 
 pub mod task;
 
@@ -28,6 +34,8 @@ pub mod time;
 #[cfg(feature = "actor")]
 pub mod actor;
 
-pub mod macros;
-pub mod utils;
+#[doc(hidden)]
+mod macros;
 
+#[doc(hidden)]
+pub mod utils;

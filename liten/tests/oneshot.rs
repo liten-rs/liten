@@ -1,3 +1,5 @@
+#![cfg(feature = "sync")]
+
 use std::future::Future;
 
 use liten::sync::oneshot::{self};

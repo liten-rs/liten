@@ -7,11 +7,13 @@ build = "build.rs"
 
 [features]
 default = []
-sync = []
+sync = ["dep:async-channel"]
 time = []
-blocking = ["dep:crossbeam-channel"]
+blocking = ["dep:crossbeam-channel", "sync"]
 actor = []
 fs = ["blocking"]
+runtime = []
+full = ["sync", "time", "blocking", "actor", "fs", "runtime"]
 
 [target.'cfg(loom)'.dependencies]
 loom = { version = "0.7", features = ["futures"] }
@@ -20,16 +22,13 @@ loom = { version = "0.7", features = ["futures"] }
 liten-macros = { version = "0.1.0", path = "../liten-macros" }
 mio = { version = "1.0.3", features = ["net", "os-poll", "os-ext"] }
 
-futures-core = "0.3"
-
 tracing = "0.1.41"
 
 thiserror = "2.0.11"
 
 crossbeam-deque = "0.8.6"
 parking = "2.2.1"
-futures-task = "0.3"
-async-channel = { version = "2.3.1" }
+async-channel = { version = "2.3.1", optional = true }
 oneshot = "0.1.11"
 crossbeam-channel = { version = "0.5.15", optional = true }
 dashmap = "6.1.0"
