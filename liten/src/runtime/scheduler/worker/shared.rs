@@ -46,13 +46,13 @@ impl Shared {
       .expect("Coun't fill remotes. Maybe error: Only allowed to call once.");
   }
 
-  pub fn push_task(&self, task: Task) {
-    self.0.injector.push(task);
-
-    for remote in self.0.remotes.get().unwrap().iter() {
-      remote.unpark();
-    }
-  }
+  // pub fn push_task(&self, task: Task) {
+  // self.0.injector.push(task);
+  //
+  // for remote in self.0.remotes.get().unwrap().iter() {
+  //   remote.unpark();
+  // }
+  // }
 
   pub fn iter_all_stealers(&self) -> impl Iterator<Item = &Stealer<Task>> {
     self.0.remotes.get().unwrap().iter().map(|remote| remote.stealer())

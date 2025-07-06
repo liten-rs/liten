@@ -5,7 +5,7 @@ use crate::{
   loom::sync::Arc,
   runtime::{waker::create_task_waker, RuntimeBuilder},
   sync::oneshot::{self, OneshotError, Receiver},
-  task::{Task, TaskId},
+  task::{Task, TaskId, TaskStore},
 };
 use crossbeam_deque::{Steal, Stealer, Worker as CBWorkerQueue};
 use parking::Parker;
@@ -61,12 +61,13 @@ impl Worker {
       // Fill local queue from the global tasks
     };
 
+    let task_store = TaskStore::get();
+
     // Try to steal tasks from the global queue
     loop {
-      match state.injector().steal_batch_and_pop(&self.hot) {
-        Steal::Retry => continue,
-        Steal::Success(task) => return Some(task),
-        Steal::Empty => break,
+      match task_store.pop() {
+        Some(task) => return Some(task),
+        None => break,
       };
     }
 
