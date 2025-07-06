@@ -39,15 +39,17 @@ impl Scheduler {
 
     shutdown.shutdown();
 
-    // shutdown_waker.wake().expect("noo :(");
+    return_type
+  }
+}
 
+impl Drop for Scheduler {
+  fn drop(&mut self) {
     #[cfg(feature = "blocking")]
     crate::blocking::pool::BlockingPool::shutdown();
 
     #[cfg(feature = "time")]
     crate::time::TimeDriver::shutdown();
-
-    return_type
   }
 }
 

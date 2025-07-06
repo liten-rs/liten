@@ -41,7 +41,6 @@ impl RuntimeThreads {
   }
 }
 
-#[derive(Clone)]
 pub struct RuntimeBuilder {
   max_threads: RuntimeThreads,
   enable_work_stealing: bool,

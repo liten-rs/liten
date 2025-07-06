@@ -2,19 +2,43 @@ mod raw;
 mod state;
 
 use std::{
+  collections::VecDeque,
   future::Future,
   pin::Pin,
-  sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-  },
+  sync::OnceLock,
   task::{Context, Poll},
+};
+
+use crate::loom::sync::{
+  atomic::{AtomicUsize, Ordering},
+  Arc, Mutex,
 };
 
 use thiserror::Error;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct TaskId(pub usize);
+
+pub(crate) struct TaskStore {
+  data: Mutex<VecDeque<Task>>,
+}
+
+impl TaskStore {
+  pub fn get() -> &'static Self {
+    static TASK_STORE: OnceLock<TaskStore> = OnceLock::new();
+    TASK_STORE.get_or_init(|| TaskStore { data: Mutex::new(VecDeque::new()) })
+  }
+
+  pub fn insert(&self, task: Task) {
+    let mut _lock = self.data.lock().unwrap();
+    _lock.push_front(task);
+  }
+
+  pub fn pop(&self) -> Option<Task> {
+    let mut _lock = self.data.lock().unwrap();
+    _lock.pop_back()
+  }
+}
 
 static CURRENT_TASK_ID: AtomicUsize = AtomicUsize::new(0);
 
