@@ -7,10 +7,9 @@ use liten::sync::oneshot::{self};
 macro_rules! get_ready {
   ($expr:expr) => {{
     let mut pinned = std::pin::pin!($expr);
-    match pinned
-      .as_mut()
-      .poll(&mut std::task::Context::from_waker(&futures_task::noop_waker()))
-    {
+    match pinned.as_mut().poll(&mut std::task::Context::from_waker(
+      &liten::testing_util::noop_waker(),
+    )) {
       std::task::Poll::Ready(value) => value,
       std::task::Poll::Pending => unreachable!("was Poll::Pending"),
     }
