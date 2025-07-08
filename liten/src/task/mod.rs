@@ -95,9 +95,11 @@ where
   F: Future + Send + 'static,
   F::Output: Send,
 {
+  let store = task::TaskStore::get();
   let (task, handle) = task::Task::new(fut);
-
-  task::TaskStore::get().insert(task);
+  // , |task| {
+  store.task_enqueue(task);
+  // });
 
   // crate::context::with_context(|ctx| ctx.handle().state().push_task(task));
 

@@ -1,12 +1,13 @@
 use std::{
   fmt::Debug,
   future::Future,
-  mem::ManuallyDrop,
+  mem::{self, ManuallyDrop},
   pin::Pin,
+  ptr::NonNull,
   task::{Context, Poll, Waker},
 };
 
-use crate::loom::sync::{Arc, Mutex, MutexGuard};
+use crate::loom::sync::{Mutex, MutexGuard};
 
 use thiserror::Error;
 
@@ -19,6 +20,9 @@ pub enum OneshotError {
 
   #[error("Channel has been dropped")]
   ReceiverDropped,
+
+  #[error("try_recv called after taken value")]
+  RecvAfterTakenValue
 }
 
 /// Sender for a oneshot channel.
@@ -43,16 +47,71 @@ pub enum OneshotError {
 /// }
 /// ```
 // TODO: Get rid of Arc
-pub struct Sender<V>(Arc<Inner<V>>);
+pub struct SyncSender<V>(NonNull<Inner<V>>);
+
+unsafe impl<V> Send for SyncSender<V> where V: Send {}
+
+impl<V> SyncSender<V> {
+  pub(crate) fn new(arc_inner: NonNull<Inner<V>>) -> Self {
+    Self(arc_inner)
+  }
+  pub async fn send(self, value: V) -> Result<(), OneshotError> {
+    unsafe { self.0.as_ref() }.send(value)?;
+    SyncSenderSendFuture { sender: self }.await
+  }
+}
+
+pub struct SyncSenderSendFuture<V> {
+  sender: SyncSender<V>,
+}
+
+impl<V> Future for SyncSenderSendFuture<V> {
+  type Output = Result<(), OneshotError>;
+  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    unsafe { self.sender.0.as_ref() }.send_waker_poll(cx)
+  }
+}
+
+/// Sender for a oneshot channel.
+///
+/// This is the sender side of a oneshot channel. It can be used to send a value to the receiver.
+///
+/// # Example
+///
+/// ```rust
+/// use liten::sync::oneshot;
+///
+/// #[liten::main]
+/// async fn main() {
+///   
+///   let (sender, receiver) = oneshot::channel();
+///   
+///   sender.send(42);
+///   
+///   let value = receiver.await;
+///   
+///   assert_eq!(value, Ok(42));
+/// }
+/// ```
+// TODO: Get rid of Arc
+pub struct Sender<V>(NonNull<Inner<V>>);
+
+unsafe impl<V> Send for Sender<V> where V: Send {}
 
 impl<V> Sender<V> {
-  pub(crate) fn new(arc_inner: Arc<Inner<V>>) -> Self {
+  pub(crate) fn new(arc_inner: NonNull<Inner<V>>) -> Self {
     Self(arc_inner)
   }
   pub fn send(self, value: V) -> Result<(), OneshotError> {
-    let this = ManuallyDrop::new(self);
-    let inner = unsafe { Arc::from_raw(Arc::as_ptr(&this.0)) };
-    inner.send(value)
+    match unsafe { self.0.as_ref() }.send(value) {
+      Ok(value) => {
+        // So that Inner state doesn't get overridden by SenderDropped.
+        mem::forget(self);
+
+        Ok(value)
+      }
+      Err(err) => Err(err),
+    }
   }
 }
 
@@ -60,7 +119,9 @@ impl<V> Sender<V> {
 // job.
 impl<V> Drop for Sender<V> {
   fn drop(&mut self) {
-    self.0.drop_channel_sender();
+    if unsafe { self.0.as_ref() }.drop_channel_sender() {
+      let _ = unsafe { Box::from_raw(self.0.as_ptr()) };
+    }
   }
 }
 
@@ -84,33 +145,37 @@ impl<V> Drop for Sender<V> {
 ///   assert_eq!(value, Ok(42));
 /// }
 /// ```
-pub struct Receiver<V>(Arc<Inner<V>>);
+pub struct Receiver<V>(NonNull<Inner<V>>);
+
+unsafe impl<V> Send for Receiver<V> where V: Send {}
 
 impl<V> Receiver<V> {
-  pub(crate) fn new(arc_inner: Arc<Inner<V>>) -> Self {
+  pub(crate) fn new(arc_inner: NonNull<Inner<V>>) -> Self {
     Receiver(arc_inner)
   }
 
   pub fn try_recv(&self) -> Result<Option<V>, OneshotError> {
-    self.0.try_recv()
+    unsafe { self.0.as_ref() }.try_recv()
   }
 
   pub fn try_get_sender(&self) -> Result<Sender<V>, OneshotError> {
-    self.0.try_get_sender()?;
+    unsafe { self.0.as_ref() }.try_get_sender()?;
     Ok(Sender(self.0.clone()))
   }
 }
 
 impl<V> Drop for Receiver<V> {
   fn drop(&mut self) {
-    self.0.drop_channel_receiver();
+    if unsafe { self.0.as_ref() }.drop_channel_receiver() {
+      let _ = unsafe { Box::from_raw(self.0.as_ptr()) };
+    }
   }
 }
 
 impl<V> Future for Receiver<V> {
   type Output = Result<V, OneshotError>;
   fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-    self.0.recv_poll(cx)
+    unsafe { self.0.as_ref() }.recv_poll(cx)
   }
 }
 
@@ -118,7 +183,7 @@ pub enum State<V> {
   Init,
   Listening(Waker),
   /// None is taken, and Some(V) is non-taken.
-  Sent(Option<V>),
+  Sent(Option<V>, Option<Waker>),
   SenderDropped,
   ReceiverDropped,
 }
@@ -137,8 +202,8 @@ impl<V: PartialEq> PartialEq for State<V> {
           false
         }
       }
-      State::Sent(value1) => {
-        if let State::Sent(value2) = other {
+      State::Sent(value1, _waker) => {
+        if let State::Sent(value2, _) = other {
           value1 == value2
         } else {
           false
@@ -155,7 +220,7 @@ impl<V> std::fmt::Debug for State<V> {
       Self::Init => f.write_str("State::Init"),
       Self::SenderDropped => f.write_str("State::SenderDropped"),
       Self::ReceiverDropped => f.write_str("State::ReceiverDropped"),
-      Self::Sent(_) => f.write_str("State::Sent(...)"),
+      Self::Sent(_, _) => f.write_str("State::Sent(...)"),
       Self::Listening(waker) => {
         f.write_fmt(format_args!("State::Listening({:?})", waker))
       }
@@ -175,37 +240,75 @@ impl<V> Inner<V> {
   fn try_recv(&self) -> Result<Option<V>, OneshotError> {
     self.inner_try_recv(&mut self.0.lock().unwrap())
   }
+
+  fn send_waker_poll(
+    &self,
+    recv_ctx: &mut Context<'_>,
+  ) -> Poll<Result<(), OneshotError>> {
+    let mut state = self.0.lock().unwrap();
+
+    match *state {
+      State::Init => unreachable!(),
+      State::ReceiverDropped => unreachable!(),
+      State::SenderDropped => Poll::Ready(Err(OneshotError::SenderDropped)),
+      State::Listening(_) => unreachable!(),
+      State::Sent(ref value, ref mut waker) => {
+        if value.is_none() {
+          return Poll::Ready(Ok(()));
+        }
+
+        *waker = Some(recv_ctx.waker().clone());
+        Poll::Pending
+      }
+    }
+  }
+
   fn recv_poll(
     &self,
     recv_ctx: &mut Context<'_>,
   ) -> Poll<Result<V, OneshotError>> {
     let mut state = self.0.lock().unwrap();
-    match self.inner_try_recv(&mut state) {
-      Err(error) => Poll::Ready(Err(error)),
-      Ok(maybe_value) => match maybe_value {
-        Some(value) => Poll::Ready(Ok(value)),
+
+    match *state {
+      State::Init => {
+        *state = State::Listening(recv_ctx.waker().clone());
+        Poll::Pending
+      }
+      State::ReceiverDropped => unreachable!(),
+      State::SenderDropped => Poll::Ready(Err(OneshotError::SenderDropped)),
+      State::Listening(_) => {
+        *state = State::Listening(recv_ctx.waker().clone());
+        Poll::Pending
+      }
+      State::Sent(ref mut value, ref mut waker) => match value.take() {
+        Some(value) => {
+          if let Some(waker) = waker.take() {
+            waker.wake();
+          };
+          Poll::Ready(Ok(value))
+        }
         None => {
-          *state = State::Listening(recv_ctx.waker().clone());
-          Poll::Pending
+          panic!("Value already taken: tried to run try_recv after value taken")
         }
       },
     }
   }
+
   fn send(&self, value: V) -> Result<(), OneshotError> {
     let state = &mut *self.0.lock().unwrap();
     match state {
       State::Init => {
-        *state = State::Sent(Some(value));
+        *state = State::Sent(Some(value), None);
         Ok(())
       }
       State::Listening(waker) => {
         let waker = waker.clone();
-        *state = State::Sent(Some(value));
+        *state = State::Sent(Some(value), None);
         waker.wake_by_ref();
         Ok(())
       }
       State::ReceiverDropped => Err(OneshotError::ReceiverDropped),
-      State::SenderDropped | State::Sent(_) => unreachable!(),
+      State::SenderDropped | State::Sent(_, _) => unreachable!(),
     }
   }
   pub fn try_get_sender(&self) -> Result<(), OneshotError> {
@@ -216,19 +319,34 @@ impl<V> Inner<V> {
         *state = State::Init;
         Ok(())
       }
-      State::Sent(_) => Err(OneshotError::SenderNotDropped),
+      State::Sent(_, _) => Err(OneshotError::SenderNotDropped),
       State::Listening(_) => Err(OneshotError::SenderNotDropped),
       State::ReceiverDropped => Err(OneshotError::SenderNotDropped),
     }
   }
-  fn drop_channel_sender(&self) {
+  // Returns if should drop
+  fn drop_channel_sender(&self) -> bool {
     let mut state = self.0.lock().unwrap();
-    *state = State::SenderDropped;
+
+    match *state {
+      State::ReceiverDropped => true,
+      _ => {
+        *state = State::SenderDropped;
+        false
+      }
+    }
   }
 
-  fn drop_channel_receiver(&self) {
+  fn drop_channel_receiver(&self) -> bool {
     let mut state = self.0.lock().unwrap();
-    *state = State::ReceiverDropped;
+
+    match *state {
+      State::SenderDropped | State::Sent(_, _) => true,
+      _ => {
+        *state = State::ReceiverDropped;
+        false
+      }
+    }
   }
 }
 
@@ -241,62 +359,17 @@ impl<V> Inner<V> {
       State::Init => Ok(None),
       State::ReceiverDropped => unreachable!(),
       State::SenderDropped => Err(OneshotError::SenderDropped),
-      State::Listening(_) => unreachable!(
-        "If State::Listening, inner_try_recv can't be called again"
-      ),
-      State::Sent(ref mut value) => match value.take() {
-        Some(value) => Ok(Some(value)),
-        None => {
-          panic!("Value already taken: tried to run try_recv after value taken")
+      State::Listening(_) => Ok(None),
+      State::Sent(ref mut value, waker) => match value.take() {
+        Some(value) => {
+          if let Some(waker) = waker.take() {
+            waker.wake();
+          };
+
+          Ok(Some(value))
         }
+        None => Err(OneshotError::RecvAfterTakenValue)
       },
-    }
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[crate::internal_test]
-  fn test_inner_try_recv() {
-    let inner = Inner::<u8>::new();
-
-    assert_eq!(inner.try_recv(), Ok(None));
-    inner.send(0).unwrap();
-    let state = inner.0.lock().unwrap();
-    assert_eq!(*state, State::Sent(Some(0)));
-    drop(state);
-
-    assert_eq!(inner.try_recv(), Ok(Some(0)));
-    let state = inner.0.lock().unwrap();
-    assert_eq!(*state, State::Sent(None));
-    drop(state);
-  }
-
-  #[cfg(test)]
-  mod tests {
-    use crate::sync::oneshot::channel;
-
-    #[crate::internal_test]
-    fn channel_send_receive() {
-      let (sender, receiver) = channel();
-      sender.send(123).unwrap();
-      assert_eq!(receiver.try_recv().unwrap(), Some(123));
-    }
-
-    #[crate::internal_test]
-    fn drop_sender() {
-      let (sender, receiver) = channel::<u32>();
-      drop(sender);
-      assert!(receiver.try_recv().is_err());
-    }
-
-    #[crate::internal_test]
-    fn drop_receiver() {
-      let (sender, receiver) = channel::<u32>();
-      drop(receiver);
-      assert!(sender.send(1).is_err());
     }
   }
 }

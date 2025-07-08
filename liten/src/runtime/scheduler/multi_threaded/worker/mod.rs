@@ -5,7 +5,7 @@ use crate::{
     sync::Arc,
     thread::{Builder, JoinHandle},
   },
-  runtime::RuntimeBuilder,
+  runtime::scheduler::multi_threaded::Multithreaded,
 };
 
 use crossbeam_deque::Stealer;
@@ -58,7 +58,8 @@ impl ShutdownWorkers {
     }
   }
   pub fn shutdown(self) {
-    for WorkerShutdown { signal_sender, unparker, handle, worker_id: _ } in self.0
+    for WorkerShutdown { signal_sender, unparker, handle, worker_id: _ } in
+      self.0
     {
       signal_sender.send(()).unwrap();
       unparker.unpark();
@@ -75,16 +76,16 @@ impl ShutdownWorkers {
 // One remote worker.
 #[derive(Clone, Debug)]
 pub struct Remote {
-  stealer: Stealer<Task>,
+  // stealer: Stealer<Task>,
   unparker: Unparker,
 }
 
 impl Remote {
-  pub fn stealer(&self) -> &Stealer<Task> {
-    &self.stealer
-  }
-  pub fn from_stealer(stealer: Stealer<Task>, unparker: Unparker) -> Self {
-    Remote { stealer, unparker }
+  pub fn from_stealer(
+    /*
+    stealer: Stealer<Task>, */ unparker: Unparker,
+  ) -> Self {
+    Remote { unparker }
   }
 
   pub fn unpark(&self) {
@@ -102,9 +103,9 @@ impl Deref for Workers {
 pub struct Workers(Vec<Worker>);
 
 impl Workers {
-  pub fn new(config: Arc<RuntimeBuilder>) -> Self {
-    let worker_vec = (0..config.get_num_workers().into())
-      .map(|worker_id| Worker::new(worker_id, config.clone()))
+  pub fn new(config: Arc<Multithreaded>) -> Self {
+    let worker_vec = (0..config.work_stealing().into())
+      .map(|worker_id| Worker::new(worker_id /*config.clone()*/))
       .collect();
 
     Workers(worker_vec)
@@ -125,9 +126,10 @@ impl Workers {
         let another_handle = handle.clone();
         builder
           .spawn(move || {
-            context::runtime_enter(another_handle, move |ctx| {
-              worker.launch(ctx);
-            })
+            worker.launch();
+            // context::runtime_enter(another_handle, move |ctx| {
+            //   worker.launch(ctx);
+            // })
           })
           .unwrap()
       })

@@ -173,7 +173,7 @@ mod tests {
 
   #[crate::internal_test]
   fn test_async_pulse() {
-    crate::runtime::Runtime::builder().block_on(async {
+    crate::runtime::Runtime::single_threaded().block_on(async {
       let (sender, receiver) = pulse();
 
       // Simulate async behavior

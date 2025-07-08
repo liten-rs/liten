@@ -6,7 +6,7 @@ use std::sync::Arc;
 fn builder_and_block_on_integration() {
   let counter = Arc::new(AtomicUsize::new(0));
   let c = counter.clone();
-  let res = Runtime::builder().block_on(async move {
+  let res = Runtime::single_threaded().block_on(async move {
     c.fetch_add(1, Ordering::SeqCst);
     42
   });

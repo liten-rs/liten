@@ -26,7 +26,7 @@ impl Future for Sleep {
 
 #[crate::internal_test]
 fn sleep_test() {
-  crate::runtime::Runtime::builder().block_on(async {
+  crate::runtime::Runtime::single_threaded().block_on(async {
     sleep(Duration::from_millis(0)).await;
   })
 }

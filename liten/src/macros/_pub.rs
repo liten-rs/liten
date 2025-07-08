@@ -103,7 +103,7 @@ macro_rules! join {
 #[crate::internal_test]
 fn testing() {
   use std::future::ready;
-  crate::runtime::Runtime::builder().block_on(async {
-    let result = join!(ready(3u8), ready(""));
+  crate::runtime::Runtime::single_threaded().block_on(async {
+    let _result = join!(ready(3u8), ready(""));
   })
 }

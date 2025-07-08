@@ -153,7 +153,7 @@ mod tests {
 
   #[crate::internal_test]
   fn actors_work() {
-    Runtime::builder().block_on(async {
+    Runtime::single_threaded().block_on(async {
       let handle = DemoActor.start();
 
       handle.send(1).await;

@@ -29,7 +29,7 @@ use syn::Token;
 ///
 /// ```ignore
 /// fn main() {
-///     liten::runtime::Runtime::default().block_on(async {
+///     liten::runtime::Runtime::single_threaded().block_on(async {
 ///         // Your async code here
 ///     })
 /// }
@@ -140,7 +140,7 @@ impl ToTokens for MainFn {
     let tokens_to_extend = quote::quote! {
         #(#filtered_attrs)*
         fn #ident(#(#args),*) #return_type {
-            liten::runtime::Runtime::builder()
+            liten::runtime::Runtime::single_threaded()
                 .block_on(async #block)
         }
     };
@@ -157,8 +157,7 @@ impl ToTokens for TestFn {
         #[test]
         #(#filtered_attrs)*
         fn #ident(#(#args),*) #return_type {
-            liten::runtime::Runtime::builder()
-                .num_workers(1)
+            liten::runtime::Runtime::single_threaded()
                 .block_on(async #block)
         }
     };
@@ -171,6 +170,14 @@ impl ToTokens for InternalTestFn {
     let CallerFn { attrs, return_type, block, ident, args } = &self.0;
     let filtered_attrs =
       attrs.iter().filter(|attr| !attr.path().is_ident("internal_test"));
+
+    let block_stmts = &block.stmts;
+
+    let block = quote::quote! {{
+      tracing::subscriber::set_global_default(tracing_subscriber::fmt().with_max_level(tracing::Level::TRACE).finish()).unwrap();
+      #(#block_stmts)*
+    }};
+
     let tokens_to_extend = if cfg!(loom) {
       quote::quote! {
         #[cfg(loom)]

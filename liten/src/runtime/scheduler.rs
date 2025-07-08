@@ -1,0 +1,99 @@
+use std::future::IntoFuture;
+
+pub(crate) mod multi_threaded;
+pub(crate) mod single_threaded;
+
+pub(crate) mod waker;
+
+pub trait Scheduler {
+  fn block_on<F, R>(self, fut: F) -> R
+  where
+    F: IntoFuture<Output = R>;
+}
+
+//
+//
+//
+//
+// pub mod worker;
+//
+// use std::{future::Future, io};
+//
+// use crate::{
+//   context,
+//   loom::sync::Arc,
+//   runtime::{main_executor::GlobalExecutor, scheduler::worker::shared::Shared},
+// };
+// use worker::Workers;
+//
+// use super::RuntimeBuilder;
+//
+// #[derive(Debug)]
+// pub struct Scheduler;
+//
+// impl Scheduler {
+//   pub fn block_on<F, Res>(self, fut: F, config: RuntimeBuilder) -> Res
+//   where
+//     F: Future<Output = Res>,
+//   {
+//     let driver = Driver::new().unwrap();
+//
+//     let handle = driver.handle(Shared::new_without_remotes());
+//
+//       // Multi-threaded mode: create worker threads
+//       let workers = Workers::new(Arc::new(config));
+//       handle.shared.fill_remotes(&workers);
+//
+//       let mut shutdown = workers.as_shutdown_workers();
+//       shutdown.fill_handle(workers.launch(handle.clone()));
+//
+//       let return_type =
+//         context::runtime_enter(handle, move |_| GlobalExecutor::block_on(fut));
+//
+//       shutdown.shutdown();
+//       return_type
+//
+//   }
+// }
+//
+// impl Drop for Scheduler {
+//   fn drop(&mut self) {
+//     #[cfg(feature = "blocking")]
+//     crate::blocking::pool::BlockingPool::shutdown();
+//
+//     #[cfg(feature = "time")]
+//     crate::time::TimeDriver::shutdown();
+//   }
+// }
+//
+// #[derive(Debug, Clone)]
+// pub struct Handle {
+//   // pub io: events::Handle,
+//   pub shared: Arc<Shared>,
+// }
+//
+// #[cfg(test)]
+// static_assertions::assert_impl_one!(Handle: Send);
+//
+// impl Handle {
+//   pub fn state(&self) -> &Shared {
+//     self.shared.as_ref()
+//   }
+//
+//   // pub fn io(&self) -> &events::Handle {
+//   //   &self.io
+//   // }
+// }
+//
+// pub struct Driver {
+//   // io: events::Driver,
+// }
+//
+// impl Driver {
+//   pub fn new() -> io::Result<Self> {
+//     Ok(Self { /*io: events::Driver::new()?*/ })
+//   }
+//   pub fn handle(&self, shared: Shared) -> Handle {
+//     Handle { /*io: self.io.handle(),*/ shared: Arc::new(shared) }
+//   }
+// }

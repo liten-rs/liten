@@ -1,9 +1,11 @@
 mod raw;
 mod state;
+// mod waker;
 
 use std::{
-  collections::VecDeque,
+  collections::{HashMap, VecDeque},
   future::Future,
+  mem,
   pin::Pin,
   sync::OnceLock,
   task::{Context, Poll},
@@ -19,24 +21,56 @@ use thiserror::Error;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct TaskId(pub usize);
 
-pub(crate) struct TaskStore {
-  data: Mutex<VecDeque<Task>>,
+pub(crate) struct TaskStore(Mutex<TaskStoreInner>);
+
+pub(crate) struct TaskStoreInner {
+  data: VecDeque<Task>,
+  cold: HashMap<TaskId, Task>,
+  cold_to_hot: VecDeque<TaskId>,
 }
 
 impl TaskStore {
   pub fn get() -> &'static Self {
     static TASK_STORE: OnceLock<TaskStore> = OnceLock::new();
-    TASK_STORE.get_or_init(|| TaskStore { data: Mutex::new(VecDeque::new()) })
+    TASK_STORE.get_or_init(|| {
+      TaskStore(Mutex::new(TaskStoreInner {
+        data: VecDeque::new(),
+        cold: HashMap::new(),
+        cold_to_hot: VecDeque::new(),
+      }))
+    })
   }
 
-  pub fn insert(&self, task: Task) {
-    let mut _lock = self.data.lock().unwrap();
-    _lock.push_front(task);
+  pub(super) fn task_enqueue(&self, task: Task) {
+    let mut _lock = self.0.lock().unwrap();
+    _lock.data.push_front(task);
   }
 
-  pub fn pop(&self) -> Option<Task> {
-    let mut _lock = self.data.lock().unwrap();
-    _lock.pop_back()
+  pub fn task_dequeue(&self) -> Option<Task> {
+    let mut _lock = self.0.lock().unwrap();
+    _lock.data.pop_back()
+  }
+
+  fn insert_cold(&self, task: Task) {
+    self.0.lock().unwrap().cold.insert(task.id(), task);
+  }
+
+  pub fn wake_task(&self, task_id: TaskId) {
+    let mut lock = self.0.lock().unwrap();
+
+    lock.cold_to_hot.push_front(task_id);
+  }
+
+  pub fn move_cold_to_hot(&self) {
+    let mut lock = self.0.lock().unwrap();
+
+    let testing = mem::replace(&mut lock.cold_to_hot, VecDeque::new());
+
+    for task_id in testing {
+      if let Some(task) = lock.cold.remove(&task_id) {
+        lock.data.push_front(task);
+      }
+    }
   }
 }
 
@@ -75,8 +109,11 @@ impl Task {
     self.id
   }
 
-  pub fn poll(&mut self, cx: &mut std::task::Context) -> Poll<()> {
-    self.raw.poll(cx)
+  pub fn poll(mut self, cx: &mut std::task::Context) {
+    match self.raw.poll(cx) {
+      Poll::Pending => TaskStore::get().insert_cold(self),
+      Poll::Ready(()) => {}
+    }
   }
 }
 

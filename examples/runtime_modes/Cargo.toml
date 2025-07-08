@@ -1,0 +1,8 @@
+[package]
+name = "runtime-modes-example"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+liten = { path = "../../liten", features = ["runtime", "time"] }
+futures = "0.3" 
