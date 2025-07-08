@@ -25,62 +25,6 @@ pub enum OneshotError {
   RecvAfterTakenValue,
 }
 
-/// Synchronous Sender for a oneshot channel.
-///
-/// This is the sender side of a oneshot channel. This special sender waits for receiver to send a value and then receives that value.
-///
-/// # Example
-///
-/// ```rust
-/// use liten::sync::oneshot;
-///
-/// #[liten::main]
-/// async fn main() {
-///   
-///   let (sender, receiver) = oneshot::channel();
-///   
-///   sender.send(42);
-///   
-///   let value = receiver.await;
-///   
-///   assert_eq!(value, Ok(42));
-/// }
-/// ```
-// TODO: Get rid of Arc
-pub struct SyncSender<V>(NonNull<Inner<V>>);
-
-unsafe impl<V> Send for SyncSender<V> where V: Send {}
-
-impl<V> SyncSender<V> {
-  pub(crate) fn new(arc_inner: NonNull<Inner<V>>) -> Self {
-    Self(arc_inner)
-  }
-  pub async fn send(self, value: V) -> Result<(), OneshotError> {
-    unsafe { self.0.as_ref() }.send(value)?;
-    SyncSenderSendFuture { sender: self }.await
-  }
-}
-
-pub struct SyncSenderSendFuture<V> {
-  sender: SyncSender<V>,
-}
-
-impl<V> Future for SyncSenderSendFuture<V> {
-  type Output = Result<(), OneshotError>;
-  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-    unsafe { self.sender.0.as_ref() }.send_waker_poll(cx)
-  }
-}
-
-impl<V> Drop for SyncSender<V> {
-  fn drop(&mut self) {
-    println!("dropping sync_sender");
-    if unsafe { self.0.as_ref() }.drop_channel_sender() {
-      let _ = unsafe { Box::from_raw(self.0.as_ptr()) };
-    }
-  }
-}
-
 /// Sender for a oneshot channel.
 ///
 /// This is the sender side of a oneshot channel. It can be used to send a value to the receiver.
@@ -192,8 +136,7 @@ pub enum State<V> {
   Init,
   Listening(Waker),
   /// None is taken, and Some(V) is non-taken.
-  /// bool is force-receiver-not-release value.
-  Sent(Option<V>, Option<Waker>, bool),
+  Sent(Option<V>, Option<Waker>),
   SenderDropped,
   ReceiverDropped,
 }
@@ -212,8 +155,8 @@ impl<V: PartialEq> PartialEq for State<V> {
           false
         }
       }
-      State::Sent(value1, _waker, _) => {
-        if let State::Sent(value2, _, _) = other {
+      State::Sent(value1, _waker) => {
+        if let State::Sent(value2, _) = other {
           value1 == value2
         } else {
           false
@@ -230,7 +173,7 @@ impl<V> std::fmt::Debug for State<V> {
       Self::Init => f.write_str("State::Init"),
       Self::SenderDropped => f.write_str("State::SenderDropped"),
       Self::ReceiverDropped => f.write_str("State::ReceiverDropped"),
-      Self::Sent(_, _, _) => f.write_str("State::Sent(...)"),
+      Self::Sent(_, _) => f.write_str("State::Sent(...)"),
       Self::Listening(waker) => {
         f.write_fmt(format_args!("State::Listening({:?})", waker))
       }
@@ -262,8 +205,7 @@ impl<V> Inner<V> {
       State::ReceiverDropped => unreachable!(),
       State::SenderDropped => Poll::Ready(Err(OneshotError::SenderDropped)),
       State::Listening(_) => unreachable!(),
-      State::Sent(ref value, ref mut waker, ref mut force_receiver_not_drop) => {
-        *force_receiver_not_drop = true;
+      State::Sent(ref value, ref mut waker) => {
         if value.is_none() {
           return Poll::Ready(Ok(()));
         }
@@ -291,7 +233,7 @@ impl<V> Inner<V> {
         *state = State::Listening(recv_ctx.waker().clone());
         Poll::Pending
       }
-      State::Sent(ref mut value, ref mut waker, _) => match value.take() {
+      State::Sent(ref mut value, ref mut waker) => match value.take() {
         Some(value) => {
           if let Some(waker) = waker.take() {
             waker.wake();
@@ -309,17 +251,17 @@ impl<V> Inner<V> {
     let state = &mut *self.0.lock().unwrap();
     match state {
       State::Init => {
-        *state = State::Sent(Some(value), None, false);
+        *state = State::Sent(Some(value), None);
         Ok(())
       }
       State::Listening(waker) => {
         let waker = waker.clone();
-        *state = State::Sent(Some(value), None, false);
+        *state = State::Sent(Some(value), None);
         waker.wake_by_ref();
         Ok(())
       }
       State::ReceiverDropped => Err(OneshotError::ReceiverDropped),
-      State::SenderDropped | State::Sent(_, _, _) => unreachable!(),
+      State::SenderDropped | State::Sent(_, _) => unreachable!(),
     }
   }
   pub fn try_get_sender(&self) -> Result<(), OneshotError> {
@@ -330,7 +272,7 @@ impl<V> Inner<V> {
         *state = State::Init;
         Ok(())
       }
-      State::Sent(_, _, _) => Err(OneshotError::SenderNotDropped),
+      State::Sent(_, _) => Err(OneshotError::SenderNotDropped),
       State::Listening(_) => Err(OneshotError::SenderNotDropped),
       State::ReceiverDropped => Err(OneshotError::SenderNotDropped),
     }
@@ -340,11 +282,7 @@ impl<V> Inner<V> {
     let mut state = self.0.lock().unwrap();
 
     match *state {
-      State::SenderDropped => unreachable!(),
       State::ReceiverDropped => true,
-      State::Sent(ref _value, ref __waker, force_recv_not_drop) => {
-        force_recv_not_drop
-      },
       _ => {
         *state = State::SenderDropped;
         false
@@ -356,19 +294,7 @@ impl<V> Inner<V> {
     let mut state = self.0.lock().unwrap();
 
     match *state {
-      State::SenderDropped => true,
-      State::Sent(ref mut value, ref mut waker, force_recv_not_drop) => {
-        // To fool the SyncSender that it should just quit
-        *value = None;
-        
-        if let Some(waker) = waker.take().clone() {
-          *state = State::ReceiverDropped;
-          waker.wake();
-        };
-
-        !force_recv_not_drop
-      },
-      State::ReceiverDropped => unreachable!(),
+      State::SenderDropped | State::Sent(_, _) => true,
       _ => {
         *state = State::ReceiverDropped;
         false
@@ -387,7 +313,7 @@ impl<V> Inner<V> {
       State::ReceiverDropped => unreachable!(),
       State::SenderDropped => Err(OneshotError::SenderDropped),
       State::Listening(_) => Ok(None),
-      State::Sent(ref mut value, waker, _) => match value.take() {
+      State::Sent(ref mut value, waker) => match value.take() {
         Some(value) => {
           if let Some(waker) = waker.take() {
             waker.wake();
