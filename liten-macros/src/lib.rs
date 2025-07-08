@@ -174,7 +174,7 @@ impl ToTokens for InternalTestFn {
     let block_stmts = &block.stmts;
 
     let block = quote::quote! {{
-      tracing::subscriber::set_global_default(tracing_subscriber::fmt().with_max_level(tracing::Level::TRACE).finish()).unwrap();
+      let _ = tracing::subscriber::set_global_default(tracing_subscriber::fmt().with_max_level(tracing::Level::TRACE).finish());
       #(#block_stmts)*
     }};
 
