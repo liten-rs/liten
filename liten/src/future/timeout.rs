@@ -53,7 +53,7 @@ mod tests {
   use std::task::Context;
   use std::time::Duration;
 
-  #[test]
+  #[crate::internal_test]
   #[cfg(feature = "time")]
   fn future_timeout_completes_before_timeout() {
     // A future that is immediately ready
@@ -66,28 +66,33 @@ mod tests {
     assert!(matches!(poll, std::task::Poll::Ready(Ok(123))));
   }
 
-  #[test]
+  #[crate::internal_test]
   #[cfg(feature = "time")]
-  fn future_timeout_times_out() {
+  fn future_timeout_with_async_await() {
     crate::runtime::Runtime::single_threaded().block_on(async {
-      // A future that never completes
+      // Test that a future completing before timeout works correctly
+      let fut = ready(42);
+      let timeout_fut = FutureTimeout {
+        future: fut,
+        sleep_future: crate::time::sleep(Duration::from_millis(100)),
+      };
+      let result = timeout_fut.await;
+      assert_eq!(result, Ok(42));
+    });
+  }
+
+  #[crate::internal_test]
+  #[cfg(feature = "time")]
+  fn future_timeout_with_async_await_times_out() {
+    crate::runtime::Runtime::single_threaded().block_on(async {
+      // Test that a future timing out works correctly
       let fut = pending::<()>();
-      let sleep = crate::time::sleep(Duration::from_millis(0));
-      let mut timeout =
-        pin!(FutureTimeout { future: fut, sleep_future: sleep });
-
-      // TODO: Why do i need to poll two times??
-      let waker = noop_waker();
-      let mut cx = Context::from_waker(&waker);
-      let _poll = timeout.as_mut().poll(&mut cx);
-
-      std::thread::sleep(Duration::from_millis(20));
-
-      let waker = noop_waker();
-      let mut cx = Context::from_waker(&waker);
-      let poll = timeout.as_mut().poll(&mut cx);
-
-      assert_eq!(poll, std::task::Poll::Ready(Err(Timeout)));
-    })
+      let timeout_fut = FutureTimeout {
+        future: fut,
+        sleep_future: crate::time::sleep(Duration::from_millis(0)),
+      };
+      let result = timeout_fut.await;
+      assert_eq!(result, Err(Timeout));
+    });
   }
 }

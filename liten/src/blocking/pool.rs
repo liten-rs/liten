@@ -1,19 +1,17 @@
-use std::{
-  sync::{atomic::AtomicBool, OnceLock},
-  thread::ThreadId,
-  time::Duration,
-};
+use std::{sync::OnceLock, time::Duration};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use dashmap::DashMap;
 use parking::{Parker, Unparker};
 use private::JobRun;
 
-use crate::loom::sync::{
-  atomic::{AtomicUsize, Ordering},
-  Arc,
+use crate::loom::{
+  sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc,
+  },
+  thread,
 };
-use crate::loom::thread;
 
 pub(crate) struct BlockingPool {
   // Some for another job and None for shutdown
@@ -27,7 +25,7 @@ struct ThreadState {
   threads_busy: AtomicUsize,
   max_threads: usize,
 
-  unparkers: DashMap<ThreadId, Unparker>,
+  unparkers: DashMap<thread::ThreadId, Unparker>,
   shutting_down: AtomicBool,
 }
 

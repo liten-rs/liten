@@ -22,19 +22,15 @@ loom = { version = "0.7", features = ["futures"] }
 liten-macros = { version = "0.1.0", path = "../liten-macros" }
 mio = { version = "1.0.3", features = ["net", "os-poll", "os-ext"] }
 
-tracing = "0.1.41"
-
 thiserror = "2.0.11"
 
-crossbeam-deque = "0.8.6"
 parking = "2.2.1"
 async-channel = { version = "2.3.1", optional = true }
-oneshot = "0.1.11"
 crossbeam-channel = { version = "0.5.15", optional = true }
 dashmap = "6.1.0"
 pin-project-lite = "0.2.16"
 
 [dev-dependencies]
-futures-executor = "0.3.31"
+tracing = "0.1.41"
 static_assertions = "1.1.0"
 tracing-subscriber = "0.3.19"

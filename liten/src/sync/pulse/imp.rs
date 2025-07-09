@@ -149,7 +149,7 @@ mod tests {
   fn test_pulse_creation() {
     let (sender, receiver) = pulse();
     assert!(sender.send().is_ok());
-    assert!(futures_executor::block_on(receiver.wait()).is_ok());
+    assert!(crate::future::block_on(receiver.wait()).is_ok());
   }
 
   #[crate::internal_test]
@@ -194,14 +194,14 @@ mod tests {
       let (s1, r) = pulse();
       assert!(s1.send().is_ok());
       assert!(s1.send().is_ok());
-      assert!(futures_executor::block_on(r.wait()).is_ok());
+      assert!(crate::future::block_on(r.wait()).is_ok());
     }
 
     #[crate::internal_test]
     fn poll_after_all_senders_dropped() {
       let (s, r) = pulse();
       drop(s);
-      let result = futures_executor::block_on(r.wait());
+      let result = crate::future::block_on(r.wait());
       assert!(matches!(result, Err(_)));
     }
   }
