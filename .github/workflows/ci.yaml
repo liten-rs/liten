@@ -26,6 +26,9 @@ jobs:
             ~/.cargo/git
           key: cargo-build-cache
 
+      - name: Run fmt
+        run: nix develop -c cargo fmt --check
+
       - name: Run tests
         run: nix develop -c just test
 

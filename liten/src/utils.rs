@@ -99,4 +99,3 @@ impl<T> Future for Ready<T> {
 //pub(crate) fn ok<T, E>(t: T) -> Ready<Result<T, E>> {
 //    Ready(Some(Ok(t)))
 //}
-

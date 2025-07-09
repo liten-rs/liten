@@ -1,7 +1,7 @@
 use std::{
   fmt::Debug,
   future::Future,
-  mem::{self, ManuallyDrop},
+  mem,
   pin::Pin,
   ptr::NonNull,
   task::{Context, Poll, Waker},
@@ -192,28 +192,6 @@ impl<V> Inner<V> {
 impl<V> Inner<V> {
   fn try_recv(&self) -> Result<Option<V>, OneshotError> {
     self.inner_try_recv(&mut self.0.lock().unwrap())
-  }
-
-  fn send_waker_poll(
-    &self,
-    recv_ctx: &mut Context<'_>,
-  ) -> Poll<Result<(), OneshotError>> {
-    let mut state = self.0.lock().unwrap();
-
-    match *state {
-      State::Init => unreachable!(),
-      State::ReceiverDropped => unreachable!(),
-      State::SenderDropped => Poll::Ready(Err(OneshotError::SenderDropped)),
-      State::Listening(_) => unreachable!(),
-      State::Sent(ref value, ref mut waker) => {
-        if value.is_none() {
-          return Poll::Ready(Ok(()));
-        }
-
-        *waker = Some(recv_ctx.waker().clone());
-        Poll::Pending
-      }
-    }
   }
 
   fn recv_poll(

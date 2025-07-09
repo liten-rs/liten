@@ -1,6 +1,5 @@
 mod raw;
 mod state;
-// mod waker;
 
 use std::{
   collections::{HashMap, VecDeque},

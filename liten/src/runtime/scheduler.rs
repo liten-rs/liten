@@ -1,14 +1,14 @@
-use std::future::IntoFuture;
+use std::future::Future;
 
 pub(crate) mod multi_threaded;
 pub(crate) mod single_threaded;
 
-pub(crate) mod waker;
+// pub(crate) mod waker;
 
 pub trait Scheduler {
-  fn block_on<F, R>(self, fut: F) -> R
+  fn block_on<F>(self, fut: F) -> F::Output
   where
-    F: IntoFuture<Output = R>;
+    F: Future;
 }
 
 //

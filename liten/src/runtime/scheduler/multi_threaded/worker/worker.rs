@@ -1,5 +1,5 @@
 use crate::{
-  runtime::scheduler::single_threaded::waker::create_task_waker,
+  runtime::waker::create_task_waker,
   sync::oneshot::{self, OneshotError, Receiver},
   task::{Task, TaskStore},
 };

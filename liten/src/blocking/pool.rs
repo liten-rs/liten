@@ -1,10 +1,7 @@
 use std::{
-  sync::{
-    atomic::AtomicBool,
-    OnceLock
-  },
+  sync::{atomic::AtomicBool, OnceLock},
   thread::ThreadId,
-  time::Duration
+  time::Duration,
 };
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError};

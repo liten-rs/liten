@@ -1,17 +1,10 @@
-mod main_executor;
 mod worker;
 
-use std::{future::IntoFuture, io, thread::available_parallelism};
+use std::{future::Future, thread::available_parallelism};
 
 use crate::{
   loom::sync::Arc,
-  runtime::{
-    scheduler::{
-      multi_threaded::{main_executor::GlobalExecutor, worker::shared::Shared},
-      Scheduler,
-    },
-    Runtime,
-  },
+  runtime::{scheduler::Scheduler, Runtime},
 };
 use worker::Workers;
 
@@ -41,19 +34,16 @@ impl Default for Multithreaded {
 }
 
 impl Scheduler for Multithreaded {
-  fn block_on<F, Res>(self, fut: F) -> Res
+  fn block_on<F>(self, fut: F) -> F::Output
   where
-    F: IntoFuture<Output = Res>,
+    F: Future,
   {
-    let driver = Driver::new().unwrap();
-
     let workers = Workers::new(Arc::new(self));
-    let handle = driver.handle(Shared::new(&workers));
 
     let mut shutdown = workers.as_shutdown_workers();
-    shutdown.fill_handle(workers.launch(handle.clone()));
+    shutdown.fill_handle(workers.launch());
 
-    let return_type = GlobalExecutor::block_on(fut);
+    let return_type = crate::future::block_on(fut);
 
     shutdown.shutdown();
     return_type
@@ -73,24 +63,24 @@ impl Runtime<Multithreaded> {
   }
 }
 
-#[derive(Debug, Clone)]
-pub struct Handle {
-  // pub io: events::Handle,
-  pub shared: Arc<Shared>,
-}
+// #[derive(Debug, Clone)]
+// pub struct Handle {
+//   // pub io: events::Handle,
+//   pub shared: Arc<Shared>,
+// }
+//
+// #[cfg(test)]
+// static_assertions::assert_impl_one!(Handle: Send);
 
-#[cfg(test)]
-static_assertions::assert_impl_one!(Handle: Send);
-
-pub struct Driver {
-  // io: events::Driver,
-}
-
-impl Driver {
-  pub fn new() -> io::Result<Self> {
-    Ok(Self { /*io: events::Driver::new()?*/ })
-  }
-  pub fn handle(&self, shared: Shared) -> Handle {
-    Handle { /*io: self.io.handle(),*/ shared: Arc::new(shared) }
-  }
-}
+// pub struct Driver {
+//   // io: events::Driver,
+// }
+//
+// impl Driver {
+//   pub fn new() -> io::Result<Self> {
+//     Ok(Self { /*io: events::Driver::new()?*/ })
+//   }
+//   pub fn handle(&self, shared: Shared) -> Handle {
+//     Handle { /*io: self.io.handle(),*/ shared: Arc::new(shared) }
+//   }
+// }

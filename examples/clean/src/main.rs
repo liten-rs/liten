@@ -1,12 +1,6 @@
-use std::{
-  thread,
-  time::Duration,
-};
+use std::{thread, time::Duration};
 
-use liten::{
-  blocking::unblock,
-  task,
-};
+use liten::{blocking::unblock, task};
 // use tracing_subscriber::fmt;
 //
 // static COUNT: AtomicU8 = AtomicU8::new(0);

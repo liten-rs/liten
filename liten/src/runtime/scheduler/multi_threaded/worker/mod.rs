@@ -8,15 +8,14 @@ use crate::{
   runtime::scheduler::multi_threaded::Multithreaded,
 };
 
-use crossbeam_deque::Stealer;
 use parking::Unparker;
 use worker::Worker;
 
-use crate::{context, sync::oneshot::Sender, task::Task};
+use crate::sync::oneshot::Sender;
 
-use super::Handle;
+// use super::Handle;
 
-pub mod shared;
+// pub mod shared;
 
 #[allow(clippy::module_inception)]
 pub mod worker;
@@ -81,13 +80,14 @@ pub struct Remote {
 }
 
 impl Remote {
-  pub fn from_stealer(
-    /*
-    stealer: Stealer<Task>, */ unparker: Unparker,
-  ) -> Self {
-    Remote { unparker }
-  }
+  // pub fn from_stealer(
+  //   /*
+  //   stealer: Stealer<Task>, */ unparker: Unparker,
+  // ) -> Self {
+  //   Remote { unparker }
+  // }
 
+  #[allow(unused)]
   pub fn unpark(&self) {
     self.unparker.unpark();
   }
@@ -116,14 +116,14 @@ impl Workers {
   }
 
   // FIXME: Here somewhere does the oneshot channel send so all the workers sleep.
-  pub fn launch(self, handle: Handle) -> Vec<JoinHandle<()>> {
+  pub fn launch(self /*handle: Handle*/) -> Vec<JoinHandle<()>> {
     let join_handles: Vec<JoinHandle<()>> = self
       .0
       .into_iter()
       .map(|mut worker| {
         let builder =
           Builder::new().name(format!("liten-worker-{}", worker.id()));
-        let another_handle = handle.clone();
+        // let another_handle = handle.clone();
         builder
           .spawn(move || {
             worker.launch();
