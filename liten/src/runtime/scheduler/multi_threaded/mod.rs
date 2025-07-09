@@ -5,20 +5,16 @@ use std::{future::Future, thread::available_parallelism};
 use crate::{
   loom::sync::Arc,
   runtime::{scheduler::Scheduler, Runtime},
+  task::TaskStore,
 };
 use worker::Workers;
 
 #[derive(Debug)]
 pub struct Multithreaded {
   threads: u16,
-  work_stealing: bool,
 }
 
 impl Multithreaded {
-  pub fn work_stealing(&self) -> bool {
-    self.work_stealing
-  }
-
   pub fn threads(&self) -> u16 {
     self.threads
   }
@@ -26,14 +22,15 @@ impl Multithreaded {
 
 impl Default for Multithreaded {
   fn default() -> Self {
-    Self {
-      threads: available_parallelism().unwrap().get() as u16,
-      work_stealing: false,
-    }
+    let threads = available_parallelism().unwrap().get() as u16;
+    Self { threads }
   }
 }
 
 impl Scheduler for Multithreaded {
+  fn schedule(task: crate::task::Task) {
+    TaskStore::get().task_enqueue(task);
+  }
   fn block_on<F>(self, fut: F) -> F::Output
   where
     F: Future,
@@ -55,32 +52,4 @@ impl Runtime<Multithreaded> {
     self.scheduler.threads = threads;
     self
   }
-
-  pub fn work_stealing(mut self, enabled: bool) -> Self {
-    assert!(!enabled, "Work stealing does not work currently :(");
-    self.scheduler.work_stealing = enabled;
-    self
-  }
 }
-
-// #[derive(Debug, Clone)]
-// pub struct Handle {
-//   // pub io: events::Handle,
-//   pub shared: Arc<Shared>,
-// }
-//
-// #[cfg(test)]
-// static_assertions::assert_impl_one!(Handle: Send);
-
-// pub struct Driver {
-//   // io: events::Driver,
-// }
-//
-// impl Driver {
-//   pub fn new() -> io::Result<Self> {
-//     Ok(Self { /*io: events::Driver::new()?*/ })
-//   }
-//   pub fn handle(&self, shared: Shared) -> Handle {
-//     Handle { /*io: self.io.handle(),*/ shared: Arc::new(shared) }
-//   }
-// }

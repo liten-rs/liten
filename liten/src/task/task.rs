@@ -40,7 +40,7 @@ impl TaskStore {
     })
   }
 
-  pub(super) fn task_enqueue(&self, task: Task) {
+  pub fn task_enqueue(&self, task: Task) {
     let mut _lock = self.0.lock().unwrap();
     _lock.data.push_front(task);
   }

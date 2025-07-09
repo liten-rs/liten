@@ -12,6 +12,9 @@ use crate::{
 pub struct SingleThreaded;
 
 impl Scheduler for SingleThreaded {
+  fn schedule(task: crate::task::Task) {
+    TaskStore::get().task_enqueue(task);
+  }
   fn block_on<F>(self, fut: F) -> F::Output
   where
     F: Future,

@@ -13,10 +13,6 @@ use worker::Worker;
 
 use crate::sync::oneshot::Sender;
 
-// use super::Handle;
-
-// pub mod shared;
-
 #[allow(clippy::module_inception)]
 pub mod worker;
 
@@ -80,13 +76,6 @@ pub struct Remote {
 }
 
 impl Remote {
-  // pub fn from_stealer(
-  //   /*
-  //   stealer: Stealer<Task>, */ unparker: Unparker,
-  // ) -> Self {
-  //   Remote { unparker }
-  // }
-
   #[allow(unused)]
   pub fn unpark(&self) {
     self.unparker.unpark();
@@ -104,7 +93,7 @@ pub struct Workers(Vec<Worker>);
 
 impl Workers {
   pub fn new(config: Arc<Multithreaded>) -> Self {
-    let worker_vec = (0..config.work_stealing().into())
+    let worker_vec = (0..config.threads().into())
       .map(|worker_id| Worker::new(worker_id /*config.clone()*/))
       .collect();
 
