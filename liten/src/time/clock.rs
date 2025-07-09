@@ -51,11 +51,11 @@ impl Clock {
     milliseconds: usize,
   ) -> Self {
     Self {
-      milliseconds: Wheel::new_with_position(milliseconds as usize),
-      seconds: Wheel::new_with_position(seconds as usize),
-      minutes: Wheel::new_with_position(minutes as usize),
-      hours: Wheel::new_with_position(hours as usize),
-      days: Wheel::new_with_position(days as usize),
+      milliseconds: Wheel::new_with_position(milliseconds),
+      seconds: Wheel::new_with_position(seconds),
+      minutes: Wheel::new_with_position(minutes),
+      hours: Wheel::new_with_position(hours),
+      days: Wheel::new_with_position(days),
 
       start_instant: Instant::now(),
     }
@@ -128,12 +128,12 @@ impl Clock {
 
     assert_eq!(resetted_counter, 0, "what to do?");
 
-    vec.into_iter().filter_map(|item| {
+    vec.into_iter().filter(|item| {
       if self.start_elapsed() >= item.timestamp() {
-        return Some(item);
+        true
       } else {
-        self.insert(item);
-        return None;
+        self.insert(*item);
+        false
       }
     })
   }

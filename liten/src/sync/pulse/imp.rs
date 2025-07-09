@@ -110,7 +110,7 @@ impl PulseReceiver {
     Self(inner)
   }
   pub fn wait(&self) -> WaitFuture<'_> {
-    WaitFuture(&self)
+    WaitFuture(self)
   }
 }
 

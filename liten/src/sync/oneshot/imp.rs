@@ -113,7 +113,7 @@ impl<V> Receiver<V> {
 
   pub fn try_get_sender(&self) -> Result<Sender<V>, OneshotError> {
     unsafe { self.0.as_ref() }.try_get_sender()?;
-    Ok(Sender(self.0.clone()))
+    Ok(Sender(self.0))
   }
 }
 

@@ -64,7 +64,7 @@ impl Semaphore {
 
   pub fn try_acquire(&self) -> Option<AcquireLock<'_>> {
     if self.inner_try_acquire() {
-      Some(AcquireLock::new(&self))
+      Some(AcquireLock::new(self))
     } else {
       None
     }

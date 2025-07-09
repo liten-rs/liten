@@ -63,7 +63,7 @@ impl TaskStore {
   pub fn move_cold_to_hot(&self) {
     let mut lock = self.0.lock().unwrap();
 
-    let testing = mem::replace(&mut lock.cold_to_hot, VecDeque::new());
+    let testing = mem::take(&mut lock.cold_to_hot);
 
     for task_id in testing {
       if let Some(task) = lock.cold.remove(&task_id) {

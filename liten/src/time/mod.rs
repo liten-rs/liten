@@ -126,7 +126,7 @@ impl TimeDriver {
 impl TimeDriver {
   fn get() -> &'static TimeDriver {
     static TIME_DRIVER: OnceLock<TimeDriver> = OnceLock::new();
-    TIME_DRIVER.get_or_init(|| TimeDriver::new())
+    TIME_DRIVER.get_or_init(TimeDriver::new)
   }
 
   pub fn insert(&self, duration: usize) -> TimerId {

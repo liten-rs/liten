@@ -43,10 +43,7 @@ impl<const T: usize, I> Wheel<T, I> {
       }
       self.current_slot = new_current_slot;
 
-      let thing = std::mem::replace(
-        self.slots.get_mut(new_current_slot).unwrap(),
-        Vec::new(),
-      );
+      let thing = std::mem::take(self.slots.get_mut(new_current_slot).unwrap());
 
       slots.extend(thing);
     }

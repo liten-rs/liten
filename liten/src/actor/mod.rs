@@ -68,9 +68,7 @@ impl ActorRunner {
       }
     });
 
-    let handle = ActorHandle::new(requester, task_handle);
-
-    handle
+    ActorHandle::new(requester, task_handle)
   }
 }
 
