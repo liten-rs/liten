@@ -15,6 +15,7 @@ use crate::loom::{
 
 pub(crate) struct BlockingPool {
   // Some for another job and None for shutdown
+  #[allow(clippy::type_complexity)]
   queue: (Sender<Box<dyn JobRun>>, Receiver<Box<dyn JobRun>>),
   thread_state: Arc<ThreadState>,
 }

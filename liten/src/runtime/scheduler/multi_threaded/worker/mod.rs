@@ -93,9 +93,7 @@ pub struct Workers(Vec<Worker>);
 
 impl Workers {
   pub fn new(config: Arc<Multithreaded>) -> Self {
-    let worker_vec = (0..config.threads().into())
-      .map(|worker_id| Worker::new(worker_id /*config.clone()*/))
-      .collect();
+    let worker_vec = (0..config.threads().into()).map(Worker::new).collect();
 
     Workers(worker_vec)
   }

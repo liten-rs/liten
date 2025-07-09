@@ -34,14 +34,9 @@ impl Scheduler for SingleThreaded {
 
     loop {
       TaskStore::get().move_cold_to_hot();
-      loop {
-        match TaskStore::get().task_dequeue() {
-          Some(task) => {
-            let waker = create_task_waker(unparker.clone(), task.id());
-            task.poll(&mut Context::from_waker(&waker));
-          }
-          None => break,
-        };
+      while let Some(task) = TaskStore::get().task_dequeue() {
+        let waker = create_task_waker(unparker.clone(), task.id());
+        task.poll(&mut Context::from_waker(&waker));
       }
 
       let waker = park_waker(parker.unparker());

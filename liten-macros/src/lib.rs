@@ -38,8 +38,6 @@ use syn::Token;
 /// # Note
 /// This macro is required for running async code at the top level, as Rust does not
 /// natively support async main functions.
-///
-
 #[proc_macro_attribute]
 pub fn main(_: TokenStream, function: TokenStream) -> TokenStream {
   let testing = parse_macro_input!(function as CallerFn);
@@ -75,8 +73,6 @@ pub fn main(_: TokenStream, function: TokenStream) -> TokenStream {
 /// # Note
 /// This macro not is required for running async code in tests. The runtime can be manually started, but Rust does not
 /// natively support async test functions.
-///
-
 #[proc_macro_attribute]
 pub fn test(_: TokenStream, function: TokenStream) -> TokenStream {
   let func = function.clone();

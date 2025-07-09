@@ -78,6 +78,9 @@ struct StateInner {
   dropped_receiver: AtomicBool,
 }
 
+#[cfg(test)]
+static_assertions::assert_impl_all!(StateInner: Send);
+
 impl Default for State {
   fn default() -> Self {
     State(Arc::new(StateInner {
