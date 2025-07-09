@@ -27,9 +27,9 @@ cfg_rt! {
   pub use liten_macros::{main, test};
 }
 
-#[cfg(feature = "sync")]
-pub mod sync;
-
+cfg_sync! {
+  pub mod sync;
+}
 pub mod task;
 
 cfg_time! {

@@ -16,18 +16,6 @@ macro_rules! get_ready {
   }};
 }
 
-macro_rules! assert_pending {
-  ($expr:expr) => {{
-    let mut pinned = std::pin::pin!($expr);
-    match pinned.as_mut().poll(&mut std::task::Context::from_waker(
-      &liten::testing_util::noop_waker(),
-    )) {
-      std::task::Poll::Ready(_) => unreachable!("was Poll::Ready(...)"),
-      std::task::Poll::Pending => pinned,
-    }
-  }};
-}
-
 const VALUE: u8 = 42;
 
 // ===== Basic Channel Tests =====
