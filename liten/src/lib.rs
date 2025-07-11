@@ -7,18 +7,20 @@ mod loom;
 
 pub mod future;
 
+pub(crate) mod data;
 #[doc(hidden)]
 pub mod testing_util;
 
 #[doc(hidden)]
-pub use liten_macros::internal_test;
+pub use liten_macros::{internal_test, runtime_test};
 
 cfg_blocking! {
   pub mod blocking;
 }
 
-#[cfg(feature = "fs")]
-pub mod fs;
+cfg_fs! {
+  pub mod fs;
+}
 
 pub mod io;
 
@@ -36,8 +38,9 @@ cfg_time! {
   pub mod time;
 }
 
-#[cfg(feature = "actor")]
-pub mod actor;
+cfg_actor! {
+  pub mod actor;
+}
 
 #[doc(hidden)]
 pub mod utils;

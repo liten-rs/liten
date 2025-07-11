@@ -129,8 +129,7 @@ impl BlockingPool {
 
           parker.park_timeout(Duration::from_secs(5));
 
-          let _ = self.thread_state.unparkers.remove(&thread::current().id()); // Ignore the option
-                                                                               // TODO: Park
+          let _ = self.thread_state.unparkers.remove(&thread::current().id());
         }
         Err(TryRecvError::Disconnected) => unreachable!(),
       };

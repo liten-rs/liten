@@ -1,3 +1,4 @@
+pub mod mpmc;
 pub mod mpsc;
 mod mutex;
 pub mod pulse;

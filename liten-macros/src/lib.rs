@@ -88,6 +88,13 @@ pub fn internal_test(_: TokenStream, function: TokenStream) -> TokenStream {
   InternalTestFn(testing).into_token_stream().into()
 }
 
+#[proc_macro_attribute]
+pub fn runtime_test(_: TokenStream, function: TokenStream) -> TokenStream {
+  let testing = parse_macro_input!(function as CallerFn);
+
+  RuntimeTestFn(testing).into_token_stream().into()
+}
+
 struct CallerFn {
   attrs: Vec<Attribute>,
   return_type: ReturnType,
@@ -100,6 +107,7 @@ struct MainFn(CallerFn);
 
 struct TestFn(CallerFn);
 struct InternalTestFn(CallerFn);
+struct RuntimeTestFn(CallerFn);
 
 impl Parse for CallerFn {
   fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
@@ -154,7 +162,7 @@ impl ToTokens for TestFn {
         #(#filtered_attrs)*
         fn #ident(#(#args),*) #return_type {
             liten::runtime::Runtime::single_threaded()
-                .block_on(async #block)
+                .block_on(async #block);
         }
     };
     tokens.extend(tokens_to_extend);
@@ -190,6 +198,56 @@ impl ToTokens for InternalTestFn {
         fn #ident(#(#args),*) #return_type #block
       }
     };
+    tokens.extend(tokens_to_extend);
+  }
+}
+
+impl ToTokens for RuntimeTestFn {
+  fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+    let CallerFn { attrs, return_type, block, ident, args } = &self.0;
+    let filtered_attrs =
+      attrs.iter().filter(|attr| !attr.path().is_ident("test"));
+
+    let tokens_to_extend = if cfg!(loom) {
+      quote::quote! {
+        #[cfg(loom)]
+        #[test]
+        #(#filtered_attrs)*
+        fn #ident(#(#args),*) #return_type {
+          loom::model(||
+            liten::runtime::Runtime::single_threaded()
+              .block_on(async #block);
+
+            liten::runtime::Runtime::multi_threaded()
+              .block_on(async #block)
+          )
+        }
+      }
+    } else {
+      quote::quote! {
+        #[test]
+        #(#filtered_attrs)*
+        fn #ident(#(#args),*) #return_type {
+            liten::runtime::Runtime::single_threaded()
+              .block_on(async #block);
+
+            liten::runtime::Runtime::multi_threaded()
+              .block_on(async #block)
+          }
+      }
+    };
+    // let tokens_to_extend = quote::quote! {
+    //     #[cfg(loom)]
+    //     #[test]
+    //     #(#filtered_attrs)*
+    //     fn #ident(#(#args),*) #return_type {
+    //         liten::runtime::Runtime::single_threaded()
+    //             .block_on(async #block);
+    //
+    //         liten::runtime::Runtime::multi_threaded()
+    //             .block_on(async #block);
+    //     }
+    // };
     tokens.extend(tokens_to_extend);
   }
 }

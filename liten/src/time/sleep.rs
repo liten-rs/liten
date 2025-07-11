@@ -1,14 +1,14 @@
 use super::{clock::TimerId, TimeDriver};
 use std::{future::Future, time::Duration};
 
-pub async fn sleep(duration: Duration) {
+pub fn sleep(duration: Duration) -> Sleep {
   let duration_millis = duration.as_millis() as usize;
 
   let driver = TimeDriver::get();
 
   let timer_id = driver.insert(duration_millis);
 
-  Sleep(timer_id).await
+  Sleep(timer_id)
 }
 
 pub struct Sleep(TimerId);

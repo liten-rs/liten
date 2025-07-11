@@ -1,5 +1,5 @@
 use std::{
-  future::{Future, IntoFuture},
+  future::Future,
   task::{Context, Poll},
 };
 
@@ -19,7 +19,7 @@ impl Scheduler for SingleThreaded {
   where
     F: Future,
   {
-    let mut fut = std::pin::pin!(fut.into_future());
+    let mut fut = std::pin::pin!(fut);
 
     let parker = parking::Parker::new();
     let unparker = parker.unparker();

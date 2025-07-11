@@ -10,9 +10,12 @@ use std::{
   task::{Context, Poll},
 };
 
-use crate::loom::sync::{
-  atomic::{AtomicUsize, Ordering},
-  Arc, Mutex,
+use crate::{
+  data::lockfree_queue::LFBoundedQueue,
+  loom::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex,
+  },
 };
 
 use thiserror::Error;
@@ -20,10 +23,13 @@ use thiserror::Error;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct TaskId(pub usize);
 
-pub(crate) struct TaskStore(Mutex<TaskStoreInner>);
+pub(crate) struct TaskStore {
+  field1: Mutex<TaskStoreInner>,
+  task_queue: LFBoundedQueue<Task>,
+}
 
 pub(crate) struct TaskStoreInner {
-  data: VecDeque<Task>,
+  // data: VecDeque<Task>,
   cold: HashMap<TaskId, Task>,
   cold_to_hot: VecDeque<TaskId>,
 }
@@ -31,43 +37,42 @@ pub(crate) struct TaskStoreInner {
 impl TaskStore {
   pub fn get() -> &'static Self {
     static TASK_STORE: OnceLock<TaskStore> = OnceLock::new();
-    TASK_STORE.get_or_init(|| {
-      TaskStore(Mutex::new(TaskStoreInner {
-        data: VecDeque::new(),
+    TASK_STORE.get_or_init(|| TaskStore {
+      task_queue: LFBoundedQueue::new(512),
+      field1: Mutex::new(TaskStoreInner {
         cold: HashMap::new(),
         cold_to_hot: VecDeque::new(),
-      }))
+      }),
     })
   }
 
   pub fn task_enqueue(&self, task: Task) {
-    let mut _lock = self.0.lock().unwrap();
-    _lock.data.push_front(task);
+    // For now
+    self.task_queue.push(task).expect("exceeded the 512 limit");
   }
 
   pub fn task_dequeue(&self) -> Option<Task> {
-    let mut _lock = self.0.lock().unwrap();
-    _lock.data.pop_back()
+    self.task_queue.pop()
   }
 
   fn insert_cold(&self, task: Task) {
-    self.0.lock().unwrap().cold.insert(task.id(), task);
+    self.field1.lock().unwrap().cold.insert(task.id(), task);
   }
 
   pub fn wake_task(&self, task_id: TaskId) {
-    let mut lock = self.0.lock().unwrap();
+    let mut lock = self.field1.lock().unwrap();
 
     lock.cold_to_hot.push_front(task_id);
   }
 
   pub fn move_cold_to_hot(&self) {
-    let mut lock = self.0.lock().unwrap();
+    let mut lock = self.field1.lock().unwrap();
 
     let testing = mem::take(&mut lock.cold_to_hot);
 
     for task_id in testing {
       if let Some(task) = lock.cold.remove(&task_id) {
-        lock.data.push_front(task);
+        self.task_enqueue(task);
       }
     }
   }

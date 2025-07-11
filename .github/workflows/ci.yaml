@@ -27,10 +27,4 @@ jobs:
           key: cargo-build-cache
 
       - name: Run tests
-        run: nix develop -c just test
-
-      - name: Run miri tests
-        run: nix develop -c just miri-test
-
-      - name: Run loom tests
-        run: nix develop -c just loom-test
+        run: nix develop -c just miri-test loom-test
