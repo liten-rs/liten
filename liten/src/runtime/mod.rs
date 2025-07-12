@@ -4,7 +4,8 @@ mod waker;
 #[cfg(feature = "blocking")]
 use crate::blocking::pool::BlockingPool;
 use crate::runtime::scheduler::{
-  multi_threaded::Multithreaded, single_threaded::SingleThreaded, Scheduler,
+  /*multi_threaded::Multithreaded,*/ single_threaded::SingleThreaded,
+  Scheduler,
 };
 #[cfg(feature = "time")]
 use crate::time::TimeDriver;
@@ -21,11 +22,11 @@ impl Runtime<SingleThreaded> {
   }
 }
 
-impl Runtime<Multithreaded> {
-  pub fn multi_threaded() -> Self {
-    Runtime::with_scheduler(Multithreaded::default())
-  }
-}
+// impl Runtime<Multithreaded> {
+//   pub fn multi_threaded() -> Self {
+//     Runtime::with_scheduler(Multithreaded::default())
+//   }
+// }
 
 impl<T> Runtime<T>
 where

@@ -19,7 +19,9 @@ impl Future for TestFuture {
   }
 }
 
-#[liten::runtime_test]
-async fn task_poll_pending_then_ready_integration() {
-  assert_eq!(spawn(TestFuture(Cell::new(0))).await.unwrap(), 99);
+#[test]
+fn task_poll_pending_then_ready_integration() {
+  liten::runtime::Runtime::single_threaded().block_on(async {
+    assert_eq!(spawn(TestFuture(Cell::new(0))).await.unwrap(), 99);
+  })
 }

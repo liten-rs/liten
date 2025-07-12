@@ -10,24 +10,27 @@ use std::{
 
 use thiserror::Error;
 
-pub struct PulseReceiver(State);
-pub struct PulseSender(State);
+pub struct PulseReceiver(Arc<State>);
 
-#[derive(Clone)]
-pub(super) struct State(Arc<StateInner>);
+unsafe impl Send for PulseReceiver {}
+unsafe impl Sync for PulseReceiver {}
+
+pub struct PulseSender(Arc<State>);
+
+unsafe impl Send for PulseSender {}
+unsafe impl Sync for PulseSender {}
 
 impl State {
   fn add_sender(&self) {
-    self.0.num_senders.fetch_add(1, Ordering::AcqRel);
+    self.num_senders.fetch_add(1, Ordering::AcqRel);
   }
 
   fn sub_sender(&self) {
-    self.0.num_senders.fetch_sub(1, Ordering::AcqRel);
+    self.num_senders.fetch_sub(1, Ordering::AcqRel);
   }
 
   fn drop_receiver(&self) {
     if self
-      .0
       .dropped_receiver
       .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
       .is_err()
@@ -36,13 +39,13 @@ impl State {
     }
   }
   fn send(&self) -> Result<bool, ReceiverDropped> {
-    if self.0.dropped_receiver.load(Ordering::Acquire) {
+    if self.dropped_receiver.load(Ordering::Acquire) {
       return Err(ReceiverDropped);
     }
 
-    self.0.pulse.store(true, Ordering::Relaxed);
+    self.pulse.store(true, Ordering::Relaxed);
 
-    if let Some(waker) = self.0.waker.take() {
+    if let Some(waker) = self.waker.take() {
       waker.wake();
       Ok(true)
     } else {
@@ -53,7 +56,7 @@ impl State {
   fn poll_wait(&self, cx: &Context) -> Poll<Result<(), SenderDropped>> {
     // Can't use weak here because if we do we don't know if it randomly fails or because value
     // is not true before.
-    match self.0.pulse.compare_exchange(
+    match self.pulse.compare_exchange(
       true,
       false,
       Ordering::AcqRel,
@@ -61,39 +64,39 @@ impl State {
     ) {
       Ok(_) => Poll::Ready(Ok(())),
       Err(_) => {
-        if self.0.num_senders.load(Ordering::Acquire) == 0 {
+        if self.num_senders.load(Ordering::Acquire) == 0 {
           return Poll::Ready(Err(SenderDropped));
         }
-        self.0.waker.set(Some(cx.waker().clone()));
+        self.waker.set(Some(cx.waker().clone()));
         Poll::Pending
       }
     }
   }
 }
 
-struct StateInner {
+pub(crate) struct State {
   pulse: AtomicBool,
   waker: Cell<Option<Waker>>,
   num_senders: AtomicUsize,
   dropped_receiver: AtomicBool,
 }
 
-#[cfg(test)]
-static_assertions::assert_impl_all!(StateInner: Send);
+unsafe impl Send for State {}
+unsafe impl Sync for State {}
 
 impl Default for State {
   fn default() -> Self {
-    State(Arc::new(StateInner {
+    State {
       pulse: AtomicBool::new(false),
       waker: Cell::new(None),
       dropped_receiver: AtomicBool::new(false),
       num_senders: AtomicUsize::new(0),
-    }))
+    }
   }
 }
 
 impl PulseSender {
-  pub(super) fn new(inner: State) -> Self {
+  pub(super) fn new(inner: Arc<State>) -> Self {
     inner.add_sender();
     Self(inner)
   }
@@ -109,7 +112,7 @@ impl Drop for PulseSender {
 }
 
 impl PulseReceiver {
-  pub(super) fn new(inner: State) -> Self {
+  pub(super) fn new(inner: Arc<State>) -> Self {
     Self(inner)
   }
   pub fn wait(&self) -> WaitFuture<'_> {

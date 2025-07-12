@@ -1,12 +1,12 @@
-use super::{mpsc, oneshot};
+use super::{mpmc, oneshot};
 
 #[derive(Clone)]
 pub struct Requester<Request, Response> {
-  sender: mpsc::Sender<RequestPayload<Request, Response>>,
+  sender: mpmc::Sender<RequestPayload<Request, Response>>,
 }
 
 pub struct Responder<Request, Response> {
-  receiver: mpsc::Receiver<RequestPayload<Request, Response>>,
+  receiver: mpmc::Receiver<RequestPayload<Request, Response>>,
 }
 
 pub struct RequestPayload<Req, Res> {
@@ -15,7 +15,7 @@ pub struct RequestPayload<Req, Res> {
 }
 
 pub fn channel<Req, Res>() -> (Requester<Req, Res>, Responder<Req, Res>) {
-  let (sender, receiver) = mpsc::unbounded();
+  let (sender, receiver) = mpmc::bounded(64);
 
   (Requester { sender }, Responder { receiver })
 }
@@ -28,13 +28,15 @@ impl<Req, Res> Responder<Req, Res> {
   }
 }
 
+unsafe impl<Req: Send, Res: Send> Send for Responder<Req, Res> {}
+unsafe impl<Req: Send, Res: Send> Send for Requester<Req, Res> {}
+
 impl<Req, Res> Requester<Req, Res> {
   pub async fn send(&self, request: Req) -> Option<Res> {
     let (sender, receiver) = oneshot::channel();
     self
       .sender
-      .send(RequestPayload { respond_to: sender, value: request })
-      .await
+      .try_send(RequestPayload { respond_to: sender, value: request })
       .ok()?;
 
     // TODO timeout
@@ -45,7 +47,7 @@ impl<Req, Res> Requester<Req, Res> {
     let (sender, _) = oneshot::channel();
     self
       .sender
-      .force_send(RequestPayload { respond_to: sender, value: request })
+      .try_send(RequestPayload { respond_to: sender, value: request })
       .ok()?;
     Some(())
   }
@@ -57,16 +59,14 @@ mod tests {
 
   #[crate::internal_test]
   fn request_response_roundtrip() {
-    crate::future::block_on(async {
+    crate::runtime::Runtime::single_threaded().block_on(async {
       let (req, mut resp) = channel::<u32, u32>();
 
       // Spawn the responder in a separate task
-      let responder_handle = std::thread::spawn(move || {
-        crate::future::block_on(async {
-          let (val, sender) = resp.recv().await.unwrap();
-          assert_eq!(val, 42);
-          sender.send(val + 1).unwrap();
-        });
+      let responder_handle = crate::task::spawn(async move {
+        let (val, sender) = resp.recv().await.unwrap();
+        assert_eq!(val, 42);
+        sender.send(val + 1).unwrap();
       });
 
       // Send request and await response
@@ -74,17 +74,15 @@ mod tests {
       assert_eq!(result, Some(43));
 
       // Wait for responder to finish
-      responder_handle.join().unwrap();
+      responder_handle.await.unwrap();
     });
   }
 
-  #[crate::internal_test]
+  #[test]
   fn drop_responder() {
-    crate::future::block_on(async {
-      let (req, resp) = channel::<u32, u32>();
-      drop(resp);
-      let result = req.send(1).await;
-      assert_eq!(result, None);
-    });
+    let (req, resp) = channel::<u32, u32>();
+    drop(resp);
+    let result = crate::future::block_on(req.send(1));
+    assert_eq!(result, None);
   }
 }

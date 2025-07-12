@@ -2,7 +2,7 @@ mod raw;
 mod state;
 
 use std::{
-  collections::{HashMap, VecDeque},
+  collections::HashMap,
   future::Future,
   mem,
   pin::Pin,
@@ -11,7 +11,7 @@ use std::{
 };
 
 use crate::{
-  data::lockfree_queue::LFBoundedQueue,
+  data::lockfree_queue::QueueBounded,
   loom::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc, Mutex,
@@ -25,23 +25,22 @@ pub(crate) struct TaskId(pub usize);
 
 pub(crate) struct TaskStore {
   field1: Mutex<TaskStoreInner>,
-  task_queue: LFBoundedQueue<Task>,
+  task_queue: QueueBounded<Task>,
 }
 
 pub(crate) struct TaskStoreInner {
-  // data: VecDeque<Task>,
   cold: HashMap<TaskId, Task>,
-  cold_to_hot: VecDeque<TaskId>,
+  cold_to_hot: Vec<TaskId>,
 }
 
 impl TaskStore {
   pub fn get() -> &'static Self {
     static TASK_STORE: OnceLock<TaskStore> = OnceLock::new();
     TASK_STORE.get_or_init(|| TaskStore {
-      task_queue: LFBoundedQueue::new(512),
+      task_queue: QueueBounded::with_capacity(256),
       field1: Mutex::new(TaskStoreInner {
         cold: HashMap::new(),
-        cold_to_hot: VecDeque::new(),
+        cold_to_hot: Vec::new(),
       }),
     })
   }
@@ -62,7 +61,7 @@ impl TaskStore {
   pub fn wake_task(&self, task_id: TaskId) {
     let mut lock = self.field1.lock().unwrap();
 
-    lock.cold_to_hot.push_front(task_id);
+    lock.cold_to_hot.push(task_id);
   }
 
   pub fn move_cold_to_hot(&self) {

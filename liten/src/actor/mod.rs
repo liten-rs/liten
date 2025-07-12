@@ -40,33 +40,36 @@ impl ActorRunner {
 
     let task_handle = task::spawn(async move {
       'outer: loop {
-        let raw_req = responder.recv().await;
-
-        let Some((req, sender)) = raw_req else {
+        let Some((req, sender)) = responder.recv().await else {
           // Handle is dropped, this should exit.
           break;
         };
-
-        let Some(message) = req else {
-          // Shutdown signal
-          let _ = sender.send(None);
-          break;
-        };
-
-        loop {
-          let result = match service.handle(&message).await {
-            ActorResult::Result(out) => out,
-            ActorResult::Retry => continue,
-          };
-          if sender.send(Some(result)).is_err() {
-            // Handle is dropped, this should exit.
-            break 'outer;
-          } else {
-            break;
-          };
-        }
       }
     });
+    //     let Some((req, sender)) = responder.recv().await else {
+    //       // Handle is dropped, this should exit.
+    //       break;
+    //     };
+    //
+    //     let Some(message) = req else {
+    //       // Shutdown signal
+    //       let _ = sender.send(None);
+    //       break;
+    //     };
+    //
+    //     loop {
+    //       let result = match service.handle(&message).await {
+    //         ActorResult::Result(out) => out,
+    //         ActorResult::Retry => continue,
+    //       };
+    //       if sender.send(Some(result)).is_err() {
+    //         // Handle is dropped, this should exit.
+    //         break 'outer;
+    //       } else {
+    //         break;
+    //       };
+    //     }
+    // });
 
     ActorHandle::new(requester, task_handle)
   }

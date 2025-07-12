@@ -49,7 +49,7 @@ pub enum OneshotError {
 // TODO: Get rid of Arc
 pub struct Sender<V>(NonNull<Inner<V>>);
 
-unsafe impl<V> Send for Sender<V> where V: Send {}
+unsafe impl<V: Send> Send for Sender<V> {}
 
 impl<V> Sender<V> {
   pub(crate) fn new(arc_inner: NonNull<Inner<V>>) -> Self {
@@ -100,7 +100,7 @@ impl<V> Drop for Sender<V> {
 /// ```
 pub struct Receiver<V>(NonNull<Inner<V>>);
 
-unsafe impl<V> Send for Receiver<V> where V: Send {}
+unsafe impl<V: Send> Send for Receiver<V> {}
 
 impl<V> Receiver<V> {
   pub(crate) fn new(arc_inner: NonNull<Inner<V>>) -> Self {

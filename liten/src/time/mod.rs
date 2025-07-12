@@ -44,7 +44,7 @@ impl TimeDriver {
     let parker = Parker::new();
 
     let time_driver_inner = TimeDriverInner {
-      clock: clock,
+      clock,
       last_advance: Instant::now(),
       shutdown_signal: false,
       background_handle: None,

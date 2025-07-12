@@ -79,7 +79,7 @@ pub trait FutureExt: Future {
       Self: Sized + Send,
     {
       Or::new(
-       self.map(|value| Ok(value)),
+       self.map(Ok),
        Map::new(crate::time::sleep(duration), |_| Err(timeout::Timeout))
       )
     }

@@ -1,15 +1,19 @@
 use std::{
   future::Future,
   pin::Pin,
+  sync::atomic::AtomicU8,
   task::{Context, Poll, Waker},
-  time::Duration,
 };
 
 use indexmap::IndexMap;
 
+#[cfg(feature = "time")]
+use crate::future::FutureExt;
+#[cfg(feature = "time")]
+use std::time::Duration;
+
 use crate::{
-  data::lockfree_queue::{LFBoundedQueue, QueueFull},
-  future::FutureExt,
+  data::lockfree_queue::{QueueBounded, QueueFull},
   loom::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc, Mutex,
@@ -18,20 +22,29 @@ use crate::{
 
 pub fn bounded<T>(capacity: usize) -> (Sender<T>, Receiver<T>) {
   let inner = Arc::new(Inner {
-    queue: LFBoundedQueue::new(capacity),
+    queue: QueueBounded::with_capacity(capacity),
     recv_wakers: Mutex::new(IndexMap::new()),
+    sender_count: AtomicUsize::new(1),
+    receiver_count: AtomicUsize::new(1),
   });
 
   (Sender(inner.clone()), Receiver(inner))
 }
 
 struct Inner<T> {
-  queue: LFBoundedQueue<T>,
+  queue: QueueBounded<T>,
   recv_wakers: Mutex<IndexMap<usize, Waker>>,
+  sender_count: AtomicUsize,
+  receiver_count: AtomicUsize,
 }
 
 impl<T> Inner<T> {
   pub fn try_send(&self, item: T) -> Result<(), QueueFull> {
+    // Check if all receivers have been dropped
+    if self.receiver_count.load(Ordering::Acquire) == 0 {
+      return Err(QueueFull);
+    }
+    
     // Do wakers and shit
     self.queue.push(item)?;
 
@@ -54,6 +67,11 @@ impl<T> Inner<T> {
     match self.try_recv() {
       Some(value) => Poll::Ready(Ok(value)),
       None => {
+        // Check if all senders have been dropped
+        if self.sender_count.load(Ordering::Acquire) == 0 {
+          return Poll::Ready(Err(()));
+        }
+        
         let _ = self
           .recv_wakers
           .lock()
@@ -63,10 +81,32 @@ impl<T> Inner<T> {
       }
     }
   }
+
+  pub fn increment_sender_count(&self) {
+    self.sender_count.fetch_add(1, Ordering::Acquire);
+  }
+
+  pub fn decrement_sender_count(&self) {
+    self.sender_count.fetch_sub(1, Ordering::Acquire);
+  }
+
+  pub fn increment_receiver_count(&self) {
+    self.receiver_count.fetch_add(1, Ordering::Acquire);
+  }
+
+  pub fn decrement_receiver_count(&self) {
+    self.receiver_count.fetch_sub(1, Ordering::Acquire);
+  }
 }
 
-#[derive(Clone)]
 pub struct Sender<T>(Arc<Inner<T>>);
+
+impl<T> Clone for Sender<T> {
+  fn clone(&self) -> Self {
+    self.0.increment_sender_count();
+    Sender(self.0.clone())
+  }
+}
 
 impl<T> Sender<T> {
   pub fn try_send(&self, value: T) -> Result<(), QueueFull> {
@@ -74,8 +114,20 @@ impl<T> Sender<T> {
   }
 }
 
-#[derive(Clone)]
+impl<T> Drop for Sender<T> {
+  fn drop(&mut self) {
+    self.0.decrement_sender_count();
+  }
+}
+
 pub struct Receiver<T>(Arc<Inner<T>>);
+
+impl<T> Clone for Receiver<T> {
+  fn clone(&self) -> Self {
+    self.0.increment_receiver_count();
+    Receiver(self.0.clone())
+  }
+}
 
 impl<T> Receiver<T> {
   pub fn recv(&self) -> RecvFuture<'_, T> {
@@ -96,6 +148,12 @@ impl<T> Receiver<T> {
   }
 }
 
+impl<T> Drop for Receiver<T> {
+  fn drop(&mut self) {
+    self.0.decrement_receiver_count();
+  }
+}
+
 pub struct RecvFuture<'a, V>(&'a Receiver<V>, usize);
 
 impl<V> Future for RecvFuture<'_, V> {
@@ -108,7 +166,7 @@ impl<V> Future for RecvFuture<'_, V> {
 
 impl<A> Drop for RecvFuture<'_, A> {
   fn drop(&mut self) {
-    let _ = self.0 .0.recv_wakers.lock().unwrap().remove(&self.1);
+    let _ = self.0 .0.recv_wakers.lock().unwrap().shift_remove(&self.1);
   }
 }
 

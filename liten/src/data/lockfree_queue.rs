@@ -18,7 +18,7 @@ struct Cell<T> {
 
 #[cfg_attr(test, derive(Debug))]
 #[derive(Clone)]
-pub struct LFBoundedQueue<T>(Arc<LFBoundedQueueInner<T>>);
+pub struct QueueBounded<T>(Arc<LFBoundedQueueInner<T>>);
 
 #[cfg_attr(test, derive(Debug))]
 struct LFBoundedQueueInner<T> {
@@ -33,26 +33,22 @@ struct LFBoundedQueueInner<T> {
 #[error("Queue is full")]
 pub struct QueueFull;
 
-unsafe impl<T: Send> Send for LFBoundedQueueInner<T> {}
-unsafe impl<T: Sync> Sync for LFBoundedQueueInner<T> {}
+unsafe impl<T: Send> Send for QueueBounded<T> {}
+unsafe impl<T: Send> Sync for QueueBounded<T> {}
 unsafe impl<T: Send> Send for Cell<T> {}
-unsafe impl<T: Sync> Sync for Cell<T> {}
+unsafe impl<T: Send> Sync for Cell<T> {}
 
-impl<T> LFBoundedQueue<T> {
-  pub fn new(capacity: usize) -> Self {
-    assert!(
-      capacity >= 2 && (capacity & (capacity - 1)) == 0,
-      "Capacity must be a power of two and >= 2"
-    );
-    let buffer = (0..capacity)
+impl<T> QueueBounded<T> {
+  pub fn with_capacity(capacity: usize) -> Self {
+    let buffer: Vec<Cell<T>> = (0..capacity)
       .map(|i| Cell {
         sequence: AtomicUsize::new(i),
         data: UnsafeCell::new(MaybeUninit::uninit()),
       })
-      .collect::<Vec<_>>()
-      .into_boxed_slice();
+      .collect();
+
     Self(Arc::new(LFBoundedQueueInner {
-      buffer,
+      buffer: buffer.into_boxed_slice(),
       buffer_mask: capacity - 1,
       enqueue_pos: AtomicUsize::new(0),
       dequeue_pos: AtomicUsize::new(0),
@@ -131,7 +127,7 @@ mod tests {
 
   #[crate::internal_test]
   fn testing() {
-    let test = super::LFBoundedQueue::<u8>::new(8);
+    let test = super::QueueBounded::<u8>::with_capacity(8);
 
     let test_1 = test.clone();
     let test_2 = test.clone();
