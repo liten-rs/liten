@@ -193,7 +193,7 @@ fn channel_double_send_panics() {
   // Second send should panic due to mem::forget
   // Note: We can't actually test this because sender is moved in send()
   // The mem::forget behavior is tested in channel_mem_forget_prevents_drop
-  let _ = receiver;
+  drop(receiver);
 }
 
 #[liten::internal_test]

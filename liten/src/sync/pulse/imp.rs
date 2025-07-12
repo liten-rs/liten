@@ -208,7 +208,7 @@ mod tests {
       let (s, r) = pulse();
       drop(s);
       let result = crate::future::block_on(r.wait());
-      assert!(matches!(result, Err(_)));
+      assert!(result.is_err());
     }
   }
 }

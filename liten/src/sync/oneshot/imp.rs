@@ -148,13 +148,7 @@ impl<V: PartialEq> PartialEq for State<V> {
       State::Init => matches!(other, State::Init),
       State::SenderDropped => matches!(other, State::SenderDropped),
       State::ReceiverDropped => matches!(other, State::ReceiverDropped),
-      State::Listening(_) => {
-        if let State::Listening(_) = other {
-          true
-        } else {
-          false
-        }
-      }
+      State::Listening(_) => matches!(other, State::Listening(_)),
       State::Sent(value1, _waker) => {
         if let State::Sent(value2, _) = other {
           value1 == value2
@@ -175,7 +169,7 @@ impl<V> std::fmt::Debug for State<V> {
       Self::ReceiverDropped => f.write_str("State::ReceiverDropped"),
       Self::Sent(_, _) => f.write_str("State::Sent(...)"),
       Self::Listening(waker) => {
-        f.write_fmt(format_args!("State::Listening({:?})", waker))
+        f.write_fmt(format_args!("State::Listening({waker:?})"))
       }
     }
   }

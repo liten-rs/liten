@@ -97,11 +97,8 @@ where
 {
   let store = task::TaskStore::get();
   let (task, handle) = task::Task::new(fut);
-  // , |task| {
-  store.task_enqueue(task);
-  // });
 
-  // crate::context::with_context(|ctx| ctx.handle().state().push_task(task));
+  store.task_enqueue(task);
 
   handle
 }

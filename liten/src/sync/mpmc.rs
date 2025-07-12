@@ -1,7 +1,6 @@
 use std::{
   future::Future,
   pin::Pin,
-  sync::atomic::AtomicU8,
   task::{Context, Poll, Waker},
 };
 
@@ -44,7 +43,7 @@ impl<T> Inner<T> {
     if self.receiver_count.load(Ordering::Acquire) == 0 {
       return Err(QueueFull);
     }
-    
+
     // Do wakers and shit
     self.queue.push(item)?;
 
@@ -71,7 +70,7 @@ impl<T> Inner<T> {
         if self.sender_count.load(Ordering::Acquire) == 0 {
           return Poll::Ready(Err(()));
         }
-        
+
         let _ = self
           .recv_wakers
           .lock()
