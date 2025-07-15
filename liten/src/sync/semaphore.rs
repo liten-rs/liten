@@ -4,42 +4,20 @@ use std::{
   task::{Context, Poll, Waker},
 };
 
-use dashmap::DashMap;
+use crossbeam_queue::SegQueue;
 
 use crate::loom::sync::atomic::{AtomicUsize, Ordering};
 
-struct WakersState {
-  list: DashMap<usize, Waker>,
-  next_lock_id: AtomicUsize,
-}
-
-impl WakersState {
-  fn new() -> Self {
-    Self { next_lock_id: AtomicUsize::new(0), list: DashMap::new() }
-  }
-  fn set_waker(&self, id: usize, waker: Waker) {
-    self.list.insert(id, waker);
-  }
-
-  fn take_waker(&self, id: usize) -> Option<Waker> {
-    self.list.remove(&id).map(|entry| entry.1)
-  }
-}
-
 pub struct Semaphore {
   limit: AtomicUsize,
-  waiters: WakersState,
+  waiters: SegQueue<Waker>,
 }
 
 impl Semaphore {
   pub fn new(size: usize) -> Self {
     assert!(size != 0, "Semaphore::new: 'size' cannot be 0.");
 
-    Self { limit: AtomicUsize::new(size), waiters: WakersState::new() }
-  }
-
-  fn issue_next_waiter_id(&self) -> usize {
-    self.waiters.next_lock_id.fetch_add(1, Ordering::AcqRel)
+    Self { limit: AtomicUsize::new(size), waiters: SegQueue::new() }
   }
 
   fn inner_try_acquire(&self) -> bool {
@@ -71,13 +49,12 @@ impl Semaphore {
   }
 
   pub fn acquire(&self) -> AcquireFuture<'_> {
-    AcquireFuture { semaphore: self, waiter_id: self.issue_next_waiter_id() }
+    AcquireFuture { semaphore: self }
   }
 }
 
 pub struct AcquireFuture<'a> {
   semaphore: &'a Semaphore,
-  waiter_id: usize,
 }
 
 impl<'a> Future for AcquireFuture<'a> {
@@ -85,9 +62,9 @@ impl<'a> Future for AcquireFuture<'a> {
 
   fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
     if self.semaphore.inner_try_acquire() {
-      Poll::Ready(AcquireLock::new(self.semaphore).with_waker(self.waiter_id))
+      Poll::Ready(AcquireLock::new(self.semaphore))
     } else {
-      self.semaphore.waiters.set_waker(self.waiter_id, cx.waker().clone());
+      self.semaphore.waiters.push(cx.waker().clone());
 
       Poll::Pending
     }
@@ -96,17 +73,17 @@ impl<'a> Future for AcquireFuture<'a> {
 
 pub struct AcquireLock<'a> {
   semaphore: &'a Semaphore,
-  waker_id: Option<usize>,
+  // waker_id: Option<usize>,
 }
 
 impl<'a> AcquireLock<'a> {
   fn new(semaphore: &'a Semaphore) -> Self {
-    Self { waker_id: None, semaphore }
+    Self { semaphore }
   }
-  fn with_waker(mut self, waker: usize) -> Self {
-    self.waker_id = Some(waker);
-    self
-  }
+  // fn with_waker(mut self, waker: usize) -> Self {
+  //   self.waker_id = Some(waker);
+  //   self
+  // }
   pub fn release(self) {
     drop(self);
   }
@@ -119,12 +96,8 @@ impl Drop for AcquireLock<'_> {
     semaphore.limit.fetch_add(1, Ordering::AcqRel);
 
     // If a future was used.
-    if let Some(waiter_id) = self.waker_id {
-      if let Some(waker) = self.semaphore.waiters.take_waker(waiter_id) {
-        waker.wake();
-      } else {
-        // AcquireFuture didn't need to poll, so do nothing
-      }
+    while let Some(waker) = self.semaphore.waiters.pop() {
+      waker.wake();
     }
   }
 }

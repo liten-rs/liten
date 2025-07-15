@@ -6,21 +6,21 @@ use std::{
   task::{Context, Poll},
 };
 
-use parking::Parker;
+use crate::loom::thread;
 
 pub fn block_on<Fut>(fut: Fut) -> Fut::Output
 where
   Fut: Future,
 {
-  let parker = Parker::new();
+  let parker = thread::current();
   let mut pinned = std::pin::pin!(fut);
 
   loop {
-    let runtime_waker = park_waker(parker.unparker());
+    let runtime_waker = park_waker(parker.clone());
     match pinned.as_mut().poll(&mut Context::from_waker(&runtime_waker)) {
       Poll::Ready(value) => return value,
       Poll::Pending => {
-        parker.park();
+        thread::park();
       }
     };
   }

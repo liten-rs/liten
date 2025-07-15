@@ -1,13 +1,11 @@
 use std::mem::ManuallyDrop;
 use std::task::{RawWaker, RawWakerVTable, Waker};
 
-use parking::Unparker;
-
-use crate::loom::sync::Arc;
+use crate::loom::{sync::Arc, thread::Thread};
 use crate::task::{TaskId, TaskStore};
 
 pub struct TaskWakerData {
-  unparker: Unparker,
+  unparker: Thread,
   task_id: TaskId,
 }
 
@@ -18,7 +16,7 @@ static TASK_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
   task_waker_drop,
 );
 
-pub fn create_task_waker(unparker: Unparker, task_id: TaskId) -> Waker {
+pub fn create_task_waker(unparker: Thread, task_id: TaskId) -> Waker {
   let state = Arc::into_raw(Arc::new(TaskWakerData { unparker, task_id }));
   unsafe { Waker::new(state as *const (), &TASK_WAKER_VTABLE) }
 }

@@ -9,36 +9,30 @@ use crate::future::FutureExt;
 #[cfg(feature = "time")]
 use std::time::Duration;
 
-use indexmap::IndexMap;
+use crossbeam_queue::{ArrayQueue, SegQueue};
 
-use crate::{
-  data::lockfree_queue::{QueueBounded, QueueFull},
-  loom::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc, Mutex,
-  },
-};
+use crate::loom::sync::Arc;
 
 pub fn bounded<T>(capacity: usize) -> (Sender<T>, Receiver<T>) {
   let inner = Arc::new(Inner {
-    queue: QueueBounded::with_capacity(capacity),
-    recv_wakers: Mutex::new(IndexMap::new()),
+    queue: ArrayQueue::new(capacity),
+    recv_wakers: SegQueue::new(),
   });
 
   (Sender(inner.clone()), Receiver(inner))
 }
 
 struct Inner<T> {
-  queue: QueueBounded<T>,
-  recv_wakers: Mutex<IndexMap<usize, Waker>>,
+  queue: ArrayQueue<T>,
+  recv_wakers: SegQueue<Waker>,
 }
 
 impl<T> Inner<T> {
-  pub fn try_send(&self, item: T) -> Result<(), QueueFull> {
+  pub fn try_send(&self, item: T) -> Result<(), T> {
     // Do wakers and shit
     self.queue.push(item)?;
 
-    if let Some((_, waker)) = self.recv_wakers.lock().unwrap().pop() {
+    if let Some(waker) = self.recv_wakers.pop() {
       waker.wake();
     }
 
@@ -49,19 +43,11 @@ impl<T> Inner<T> {
     self.queue.pop()
   }
 
-  pub fn poll_recv(
-    &self,
-    future_id: usize,
-    cx: &mut Context,
-  ) -> Poll<Result<T, ()>> {
+  pub fn poll_recv(&self, cx: &mut Context) -> Poll<Result<T, ()>> {
     match self.try_recv() {
       Some(value) => Poll::Ready(Ok(value)),
       None => {
-        let _ = self
-          .recv_wakers
-          .lock()
-          .unwrap()
-          .insert(future_id, cx.waker().clone());
+        self.recv_wakers.push(cx.waker().clone());
         Poll::Pending
       }
     }
@@ -72,7 +58,7 @@ impl<T> Inner<T> {
 pub struct Sender<T>(Arc<Inner<T>>);
 
 impl<T> Sender<T> {
-  pub fn try_send(&self, value: T) -> Result<(), QueueFull> {
+  pub fn try_send(&self, value: T) -> Result<(), T> {
     self.0.try_send(value)
   }
 }
@@ -81,8 +67,7 @@ pub struct Receiver<T>(Arc<Inner<T>>);
 
 impl<T> Receiver<T> {
   pub fn recv(&self) -> RecvFuture<'_, T> {
-    static FUTURE_MEMORY: AtomicUsize = AtomicUsize::new(0);
-    RecvFuture(self, FUTURE_MEMORY.fetch_add(1, Ordering::Acquire))
+    RecvFuture(self)
   }
 
   cfg_time! {
@@ -98,19 +83,13 @@ impl<T> Receiver<T> {
   }
 }
 
-pub struct RecvFuture<'a, V>(&'a Receiver<V>, usize);
+pub struct RecvFuture<'a, V>(&'a Receiver<V>);
 
 impl<V> Future for RecvFuture<'_, V> {
   type Output = Result<V, ()>;
 
   fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-    self.0 .0.poll_recv(self.1, cx)
-  }
-}
-
-impl<A> Drop for RecvFuture<'_, A> {
-  fn drop(&mut self) {
-    let _ = self.0 .0.recv_wakers.lock().unwrap().swap_remove(&self.1);
+    self.0 .0.poll_recv(cx)
   }
 }
 

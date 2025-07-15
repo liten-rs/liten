@@ -3,17 +3,15 @@ mod waker;
 
 #[cfg(feature = "blocking")]
 use crate::blocking::pool::BlockingPool;
-use crate::runtime::scheduler::{
-  /*multi_threaded::Multithreaded,*/ single_threaded::SingleThreaded,
-  Scheduler,
-};
+use crate::runtime::scheduler::{single_threaded::SingleThreaded, Scheduler};
 #[cfg(feature = "time")]
 use crate::time::TimeDriver;
 
 pub mod scheduler;
 
-pub struct Runtime<S: scheduler::Scheduler> {
-  scheduler: S,
+#[derive(Default)]
+pub struct Runtime<S> {
+  scheduler: *const S,
 }
 
 impl Runtime<SingleThreaded> {
@@ -22,25 +20,19 @@ impl Runtime<SingleThreaded> {
   }
 }
 
-// impl Runtime<Multithreaded> {
-//   pub fn multi_threaded() -> Self {
-//     Runtime::with_scheduler(Multithreaded::default())
-//   }
-// }
-
-impl<T> Runtime<T>
+impl<S> Runtime<S>
 where
-  T: Scheduler,
+  S: Scheduler,
 {
-  pub fn with_scheduler(scheduler: T) -> Self {
-    Runtime { scheduler }
+  pub fn with_scheduler(scheduler: S) -> Self {
+    Runtime { scheduler: Box::into_raw(Box::new(scheduler)) }
   }
-
   pub fn block_on<F>(self, fut: F) -> F::Output
   where
     F: Future,
   {
-    let to_return = self.scheduler.block_on(fut);
+    let scheduler = unsafe { &*(self.scheduler) };
+    let to_return = scheduler.block_on(fut);
 
     #[cfg(feature = "time")]
     TimeDriver::shutdown();

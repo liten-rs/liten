@@ -1,81 +1,23 @@
 mod raw;
 mod state;
+mod store;
+pub use store::TaskStore;
 
 use std::{
-  collections::HashMap,
   future::Future,
-  mem,
   pin::Pin,
-  sync::OnceLock,
   task::{Context, Poll},
 };
 
-use crate::{
-  data::lockfree_queue::QueueBounded,
-  loom::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc, Mutex,
-  },
+use crate::loom::sync::{
+  atomic::{AtomicUsize, Ordering},
+  Arc,
 };
 
 use thiserror::Error;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub(crate) struct TaskId(pub usize);
-
-pub(crate) struct TaskStore {
-  field1: Mutex<TaskStoreInner>,
-  task_queue: QueueBounded<Task>,
-}
-
-pub(crate) struct TaskStoreInner {
-  cold: HashMap<TaskId, Task>,
-  cold_to_hot: Vec<TaskId>,
-}
-
-impl TaskStore {
-  pub fn get() -> &'static Self {
-    static TASK_STORE: OnceLock<TaskStore> = OnceLock::new();
-    TASK_STORE.get_or_init(|| TaskStore {
-      task_queue: QueueBounded::with_capacity(256),
-      field1: Mutex::new(TaskStoreInner {
-        cold: HashMap::new(),
-        cold_to_hot: Vec::new(),
-      }),
-    })
-  }
-
-  pub fn task_enqueue(&self, task: Task) {
-    // For now
-    self.task_queue.push(task).expect("exceeded the 512 limit");
-  }
-
-  pub fn task_dequeue(&self) -> Option<Task> {
-    self.task_queue.pop()
-  }
-
-  fn insert_cold(&self, task: Task) {
-    self.field1.lock().unwrap().cold.insert(task.id(), task);
-  }
-
-  pub fn wake_task(&self, task_id: TaskId) {
-    let mut lock = self.field1.lock().unwrap();
-
-    lock.cold_to_hot.push(task_id);
-  }
-
-  pub fn move_cold_to_hot(&self) {
-    let mut lock = self.field1.lock().unwrap();
-
-    let testing = mem::take(&mut lock.cold_to_hot);
-
-    for task_id in testing {
-      if let Some(task) = lock.cold.remove(&task_id) {
-        self.task_enqueue(task);
-      }
-    }
-  }
-}
+pub struct TaskId(pub usize);
 
 static CURRENT_TASK_ID: AtomicUsize = AtomicUsize::new(0);
 

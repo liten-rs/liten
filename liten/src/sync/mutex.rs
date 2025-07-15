@@ -2,10 +2,12 @@ use std::{
   cell::UnsafeCell,
   ops::{Deref, DerefMut},
   panic::{RefUnwindSafe, UnwindSafe},
-  thread,
 };
 
-use crate::loom::sync::atomic::{AtomicBool, Ordering};
+use crate::loom::{
+  sync::atomic::{AtomicBool, Ordering},
+  thread,
+};
 
 use super::semaphore;
 use thiserror::Error;

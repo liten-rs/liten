@@ -11,9 +11,12 @@
 
 #![allow(clippy::module_inception)]
 mod task;
+
+#[cfg(feature = "runtime")]
+use std::future::Future;
+
 pub use task::*;
 mod yield_now;
-use std::future::Future;
 
 /// Spawns a new asynchronous task.
 ///
@@ -95,10 +98,9 @@ where
   F: Future + Send + 'static,
   F::Output: Send,
 {
-  let store = task::TaskStore::get();
   let (task, handle) = task::Task::new(fut);
 
-  store.task_enqueue(task);
+  task::TaskStore::get().task_enqueue(task);
 
   handle
 }

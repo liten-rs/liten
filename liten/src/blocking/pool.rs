@@ -1,14 +1,13 @@
-use std::{sync::OnceLock, time::Duration};
+use std::{collections::HashMap, sync::OnceLock, time::Duration};
 
-use crossbeam_channel::{Receiver, Sender, TryRecvError};
-use dashmap::DashMap;
+use crate::sync::mpmc;
 use parking::{Parker, Unparker};
 use private::JobRun;
 
 use crate::loom::{
   sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
-    Arc,
+    Arc, Mutex,
   },
   thread,
 };
@@ -16,7 +15,7 @@ use crate::loom::{
 pub(crate) struct BlockingPool {
   // Some for another job and None for shutdown
   #[allow(clippy::type_complexity)]
-  queue: (Sender<Box<dyn JobRun>>, Receiver<Box<dyn JobRun>>),
+  queue: (mpmc::Sender<Box<dyn JobRun>>, mpmc::Receiver<Box<dyn JobRun>>),
   thread_state: Arc<ThreadState>,
 }
 
@@ -26,7 +25,7 @@ struct ThreadState {
   threads_busy: AtomicUsize,
   max_threads: usize,
 
-  unparkers: DashMap<thread::ThreadId, Unparker>,
+  unparkers: Mutex<HashMap<thread::ThreadId, Unparker>>,
   shutting_down: AtomicBool,
 }
 
@@ -60,19 +59,21 @@ impl BlockingPool {
         threads_busy: AtomicUsize::new(0),
         threads_running: AtomicUsize::new(0),
         shutting_down: AtomicBool::new(false),
-        unparkers: DashMap::new(),
+        unparkers: Mutex::new(HashMap::new()),
       }),
-      queue: crossbeam_channel::bounded(500),
+      queue: mpmc::bounded(500),
     });
 
     blocking
   }
 
+  #[allow(dead_code)]
+  #[cfg(feature = "blocking")]
   pub(crate) fn shutdown() {
     let thing = Self::get();
     thing.thread_state.shutting_down.store(true, Ordering::Release);
 
-    thing.thread_state.unparkers.retain(|_, value| {
+    thing.thread_state.unparkers.lock().unwrap().retain(|_, value| {
       value.unpark();
       false
     });
@@ -116,22 +117,19 @@ impl BlockingPool {
         break;
       }
       match self.queue.1.try_recv() {
-        Ok(mut job) => {
+        Ok(Some(mut job)) => {
           self.thread_state.threads_busy.fetch_add(1, Ordering::AcqRel);
           job.run();
           self.thread_state.threads_busy.fetch_sub(1, Ordering::AcqRel);
         }
-        Err(TryRecvError::Empty) => {
-          self
-            .thread_state
-            .unparkers
-            .insert(thread::current().id(), parker.unparker());
+        Ok(None) => {
+          let mut unparkers = self.thread_state.unparkers.lock().unwrap();
 
+          unparkers.insert(thread::current().id(), parker.unparker());
           parker.park_timeout(Duration::from_secs(5));
-
-          let _ = self.thread_state.unparkers.remove(&thread::current().id());
+          let _ = unparkers.remove(&thread::current().id());
         }
-        Err(TryRecvError::Disconnected) => unreachable!(),
+        Err(mpmc::RecvError::Closed) => unreachable!(),
       };
     }
     _guard.disactivate();
@@ -145,7 +143,8 @@ impl BlockingPool {
   {
     if !self.thread_state.shutting_down.load(Ordering::Acquire) {
       self.add_thread();
-      self.queue.0.send(Box::new(job)).unwrap();
+      // TODO: Retry
+      let _ = self.queue.0.try_send(Box::new(job));
     }
   }
 }

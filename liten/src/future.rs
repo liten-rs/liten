@@ -2,19 +2,18 @@ pub(crate) mod block_on;
 pub mod map;
 pub mod or;
 mod util;
+
+#[cfg(feature = "time")]
+pub mod timeout;
+
 pub use block_on::block_on;
 
-cfg_time! {
-  use std::time::Duration;
-  pub mod timeout;
-}
+#[cfg(feature = "runtime")]
+use crate::task::{self, TaskHandle};
 
 use std::future::Future;
 
-use crate::{
-  future::{map::Map, or::Or},
-  task::{self, TaskHandle},
-};
+use crate::future::{map::Map, or::Or};
 
 /// Extension traits and utilities for working with [`Future`]s.
 ///
@@ -44,16 +43,18 @@ use crate::{
 /// # }
 /// ```
 pub trait FutureExt: Future {
-  /// Spawns the future on the runtime. See [crate::task]
-  fn spawn(self) -> TaskHandle<Self::Output>
-  where
-    Self: Sized + Send + 'static,
-    Self::Output: Send,
-  {
-    task::spawn(self)
+  cfg_rt! {
+    /// Spawns the future on the runtime. See [crate::task]
+    fn spawn(self) -> TaskHandle<Self::Output>
+    where
+      Self: Sized + Send + 'static,
+      Self::Output: Send,
+    {
+      task::spawn(self)
+    }
   }
 
-  /// Start awaiting the future but only before the timeout, after it cancels.
+  /// Modify the final output of the future.
   fn map<Fun: FnOnce(Self::Output) -> R, R>(self, fun: Fun) -> Map<Self, Fun>
   where
     Self: Sized,
@@ -61,7 +62,7 @@ pub trait FutureExt: Future {
     Map::new(self, fun)
   }
 
-  /// Start awaiting the future but only before the timeout, after it cancels.
+  /// Returns the future which is done first.
   fn or<F2: Future, Out>(self, fut: F2) -> Or<Self, F2, Out>
   where
     Self: Sized,
@@ -73,7 +74,7 @@ pub trait FutureExt: Future {
     /// Start awaiting the future but only before the timeout, after it cancels.
     fn timeout(
       self,
-      duration: Duration,
+      duration: std::time::Duration,
     ) -> impl Future<Output = Result<Self::Output, timeout::Timeout>>
     where
       Self: Sized + Send,

@@ -32,6 +32,10 @@ pub struct TimeDriverInner {
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 impl TimeDriver {
+  fn get() -> &'static TimeDriver {
+    static TIME_DRIVER: OnceLock<TimeDriver> = OnceLock::new();
+    TIME_DRIVER.get_or_init(TimeDriver::new)
+  }
   fn new() -> TimeDriver {
     let (days, hours, minutes, seconds, milliseconds) =
       utils::breakdown_milliseconds(
@@ -124,11 +128,6 @@ impl TimeDriver {
 }
 
 impl TimeDriver {
-  fn get() -> &'static TimeDriver {
-    static TIME_DRIVER: OnceLock<TimeDriver> = OnceLock::new();
-    TIME_DRIVER.get_or_init(TimeDriver::new)
-  }
-
   pub fn insert(&self, duration: usize) -> TimerId {
     let timestamp = self.start_elapsed() + duration;
     let timer = TimerId::new(timestamp);
