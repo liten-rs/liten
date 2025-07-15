@@ -1,3 +1,3 @@
 [workspace]
-members = [ "liten", "liten-macros", "examples/clean", "examples/testing", "liten"]
+members = [ "liten", "liten-macros", "examples/clean", "examples/testing", "liten", "examples/io-uring-testing"]
 resolver = "3"
