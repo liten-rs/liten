@@ -10,6 +10,7 @@ pub struct Timeout;
 mod tests {
   use std::future::ready;
   use std::time::Duration;
+  use super::Timeout;
 
   #[crate::internal_test]
   #[cfg(feature = "time")]
@@ -37,4 +38,19 @@ mod tests {
   //     .is_err());
   //   })
   // }
+
+  cfg_time! {
+    #[crate::internal_test]
+    fn future_timeout_fires_on_sleep() {
+        crate::runtime::Runtime::single_threaded().block_on(async {
+            use crate::future::FutureExt;
+            use crate::time::sleep;
+            use std::time::Duration;
+
+            // This future never completes
+            let result = std::future::pending::<Result<(), Timeout>>().timeout(Duration::from_millis(100)).await;
+            assert_eq!(result, Err(Timeout));
+        })
+    }
+  }
 }

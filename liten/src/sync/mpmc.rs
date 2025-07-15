@@ -478,7 +478,7 @@ mod tests {
       let (_send, receiver) = super::bounded::<i32>(10);
 
       // Try to receive with timeout
-      let result = receiver.recv_timeout(Duration::from_millis(10)).await;
+      let result = receiver.recv_timeout(Duration::from_millis(15)).await;
       assert_eq!(result, Err(Timeout)); // Should timeout
     });
   }

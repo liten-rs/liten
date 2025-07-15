@@ -101,28 +101,41 @@ impl TimeDriver {
   }
 
   fn background_thread(&self, parker: Parker) {
-    loop {
-      let lock = self.0.lock().unwrap();
+    const FUDGE_MS: usize = 10; // Try 5ms, tune as needed
 
+    loop {
+      self.jump();
+
+      let lock = self.0.lock().unwrap();
       let nearest = lock.clock.peek_nearest_timer();
+      let shutdown = lock.shutdown_signal;
       drop(lock);
+
+      if shutdown {
+        break;
+      }
 
       match nearest {
         Some(delta_time_to_next_thing) => {
-          // There is one
-          let instant = Instant::now()
-            + Duration::from_millis(delta_time_to_next_thing as u64);
+          let sleep_ms = if delta_time_to_next_thing > FUDGE_MS {
+            delta_time_to_next_thing - FUDGE_MS
+          } else {
+            delta_time_to_next_thing
+          };
+          let instant = Instant::now() + Duration::from_millis(sleep_ms as u64);
           parker.park_deadline(instant);
+
+          // Busy-wait for the last few ms
+          let target = Instant::now() + Duration::from_millis(FUDGE_MS as u64);
+          while Instant::now() < target {
+            std::hint::spin_loop();
+          }
         }
         None => {
           // No timers currently waiting...
           parker.park();
         }
       }
-      if self.0.lock().unwrap().shutdown_signal {
-        break;
-      }
-      self.jump();
     }
   }
 }
