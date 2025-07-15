@@ -59,19 +59,40 @@ impl Future for Sleep {
   }
 }
 
-#[crate::internal_test]
-fn sleep_test() {
-  crate::runtime::Runtime::single_threaded().block_on(async {
-    sleep(Duration::from_millis(0)).await;
-  })
-}
+#[cfg(test)]
+mod tests {
+  use std::{
+    future::pending,
+    time::{Duration, Instant},
+  };
 
-#[crate::internal_test]
-fn interval_test() {
-  crate::runtime::Runtime::single_threaded().block_on(async {
-    let inter = interval(Duration::from_millis(0));
+  use crate::{
+    future::{timeout::Timeout, FutureExt},
+    time::{interval, sleep},
+  };
 
-    inter.tick().await;
-    inter.tick().await;
-  })
+  #[crate::internal_test]
+  fn sleep_test() {
+    crate::runtime::Runtime::single_threaded().block_on(async {
+      let fut1 = pending::<Result<(), Timeout>>();
+      let instant = Instant::now();
+      let result = fut1
+        .or::<_, Result<(), Timeout>>(
+          sleep(Duration::from_millis(10)).map(|_| Err(Timeout)),
+        )
+        .await;
+      let instant2 = Instant::now();
+      panic!("{:#?} {:?}", result, instant2 - instant);
+    })
+  }
+
+  #[crate::internal_test]
+  fn interval_test() {
+    crate::runtime::Runtime::single_threaded().block_on(async {
+      let inter = interval(Duration::from_millis(0));
+
+      inter.tick().await;
+      inter.tick().await;
+    })
+  }
 }
