@@ -33,6 +33,7 @@
             cargo-nextest
             mdbook
             cargo-watch
+            cargo-hack
 
             just
             bacon

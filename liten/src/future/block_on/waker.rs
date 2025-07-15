@@ -1,14 +1,12 @@
 use std::mem::ManuallyDrop;
 use std::task::{RawWaker, RawWakerVTable, Waker};
 
-use parking::Unparker;
-
-use crate::loom::sync::Arc;
+use crate::loom::{sync::Arc, thread};
 
 static RUNTIME_WAKER_VTABLE: RawWakerVTable =
   RawWakerVTable::new(waker_clone, waker_wake, waker_wake_by_ref, waker_drop);
 
-pub fn park_waker(unparker: Unparker) -> Waker {
+pub fn park_waker(unparker: thread::Thread) -> Waker {
   let state = Arc::into_raw(Arc::new(RuntimeWakerData(unparker)));
   unsafe { Waker::new(state as *const (), &RUNTIME_WAKER_VTABLE) }
 }
@@ -37,4 +35,4 @@ unsafe fn waker_drop(data: *const ()) {
 }
 
 // Waker implementation to notify the runtime
-struct RuntimeWakerData(Unparker);
+struct RuntimeWakerData(thread::Thread);

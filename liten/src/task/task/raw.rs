@@ -25,7 +25,6 @@ impl RawTask {
     F: Future<Output = ()> + 'static,
   {
     Self {
-      // id: TaskId::new(),
       raw: Box::into_raw(Box::new(future)) as *mut (),
       vtable: TaskVTable { poll_fn: poll_fn::<F>, drop_fn: drop_fn::<F> },
     }

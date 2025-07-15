@@ -19,7 +19,7 @@ pub mod worker;
 pub struct WorkerShutdown {
   #[allow(unused)]
   worker_id: usize,
-  signal_sender: Sender<()>, // pub temp
+  signal_sender: Sender<()>,
   unparker: Unparker,
   handle: OnceLock<JoinHandle<()>>,
 }

@@ -38,16 +38,6 @@ macro_rules! cfg_sync {
     }
 }
 
-// macro_rules! cfg_actor {
-//    ($($item:item)*) => {
-//        $(
-//             #[cfg(feature = "actor")]
-//             #[cfg_attr(docsrs, doc(cfg(feature = "actor")))]
-//             $item
-//         )*
-//     }
-// }
-
 macro_rules! cfg_fs {
    ($($item:item)*) => {
        $(

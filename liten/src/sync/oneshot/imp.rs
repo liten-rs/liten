@@ -111,10 +111,10 @@ impl<V> Receiver<V> {
     unsafe { self.0.as_ref() }.try_recv()
   }
 
-  pub fn try_get_sender(&self) -> Result<Sender<V>, OneshotError> {
-    unsafe { self.0.as_ref() }.try_get_sender()?;
-    Ok(Sender(self.0))
-  }
+  // pub fn try_get_sender(&self) -> Result<Sender<V>, OneshotError> {
+  //   unsafe { self.0.as_ref() }.try_get_sender()?;
+  //   Ok(Sender(self.0))
+  // }
 }
 
 impl<V> Drop for Receiver<V> {
@@ -236,19 +236,19 @@ impl<V> Inner<V> {
       State::SenderDropped | State::Sent(_, _) => unreachable!(),
     }
   }
-  pub fn try_get_sender(&self) -> Result<(), OneshotError> {
-    let mut state = self.0.lock().unwrap();
-    match *state {
-      State::Init => Err(OneshotError::SenderNotDropped),
-      State::SenderDropped => {
-        *state = State::Init;
-        Ok(())
-      }
-      State::Sent(_, _) => Err(OneshotError::SenderNotDropped),
-      State::Listening(_) => Err(OneshotError::SenderNotDropped),
-      State::ReceiverDropped => Err(OneshotError::SenderNotDropped),
-    }
-  }
+  // pub fn try_get_sender(&self) -> Result<(), OneshotError> {
+  //   let mut state = self.0.lock().unwrap();
+  //   match *state {
+  //     State::Init => Err(OneshotError::SenderNotDropped),
+  //     State::SenderDropped => {
+  //       *state = State::Init;
+  //       Ok(())
+  //     }
+  //     State::Sent(_, _) => Err(OneshotError::SenderNotDropped),
+  //     State::Listening(_) => Err(OneshotError::SenderNotDropped),
+  //     State::ReceiverDropped => Err(OneshotError::SenderNotDropped),
+  //   }
+  // }
   // Returns if should drop
   fn drop_channel_sender(&self) -> bool {
     let mut state = self.0.lock().unwrap();

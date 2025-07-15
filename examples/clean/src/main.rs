@@ -1,9 +1,5 @@
-use std::{thread, time::Duration};
+use liten::runtime::Runtime;
 
-use liten::{blocking::unblock, task};
-
-#[liten::main]
-async fn main() {
-  task::spawn(async {});
-  unblock(|| thread::sleep(Duration::from_millis(500))).await;
+fn main() {
+  Runtime::single_threaded().block_on(async {})
 }

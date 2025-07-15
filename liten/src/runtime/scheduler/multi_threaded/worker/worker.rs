@@ -38,9 +38,9 @@ impl Worker {
     &self.parker
   }
 
-  pub fn get_shutdown_sender(&self) -> oneshot::Sender<()> {
-    self.shutdown_receiver.try_get_sender().unwrap()
-  }
+  // pub fn get_shutdown_sender(&self) -> oneshot::Sender<()> {
+  //   self.shutdown_receiver.try_get_sender().unwrap()
+  // }
 
   // pub fn stealer(&self) -> Stealer<Task> {
   //   self.hot.stealer()

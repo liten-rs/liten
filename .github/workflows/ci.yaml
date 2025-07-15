@@ -28,3 +28,6 @@ jobs:
 
       - name: Run tests
         run: nix develop -c just miri-test loom-test
+
+      - name: Check flags
+        run: nix develop -c cargo hack check --each-features --no-dev-deps

@@ -40,17 +40,11 @@ pub(crate) mod sync {
   }
 }
 
-pub(crate) mod thread {
-  #[cfg(loom)]
-  pub use loom::thread::{
-    current, park, spawn, Builder, JoinHandle, Thread, ThreadId,
-  };
+#[cfg(loom)]
+pub use loom::thread;
 
-  #[cfg(not(loom))]
-  pub use std::thread::{
-    current, park, spawn, Builder, JoinHandle, Thread, ThreadId,
-  };
-}
+#[cfg(not(loom))]
+pub use std::thread;
 
 #[cfg(loom)]
 pub use loom::thread_local;

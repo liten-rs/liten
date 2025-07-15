@@ -1,5 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![doc = include_str!("../../book/src/SUMMARY.md")]
+#![doc = include_str!("../../book/src/introduction.md")]
 
 #[macro_use]
 mod macros;
@@ -37,10 +37,6 @@ pub mod task;
 cfg_time! {
   pub mod time;
 }
-
-// cfg_actor! {
-//   pub mod actor;
-// }
 
 #[doc(hidden)]
 pub mod utils;
