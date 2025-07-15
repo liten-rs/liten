@@ -8,9 +8,9 @@ pub struct Timeout;
 
 #[cfg(test)]
 mod tests {
+  use super::Timeout;
   use std::future::ready;
   use std::time::Duration;
-  use super::Timeout;
 
   #[crate::internal_test]
   #[cfg(feature = "time")]
@@ -44,7 +44,6 @@ mod tests {
     fn future_timeout_fires_on_sleep() {
         crate::runtime::Runtime::single_threaded().block_on(async {
             use crate::future::FutureExt;
-            use crate::time::sleep;
             use std::time::Duration;
 
             // This future never completes

@@ -192,7 +192,6 @@ mod tests {
   use crate::join;
   use crate::runtime::Runtime;
   use crate::task;
-  use std::time::Duration;
 
   // Basic Enqueue and Dequeue Operations
   #[crate::internal_test]
@@ -472,6 +471,8 @@ mod tests {
   #[cfg(feature = "time")]
   #[crate::internal_test]
   fn test_recv_timeout() {
+    use std::time::Duration;
+
     Runtime::single_threaded().block_on(async {
       use crate::future::timeout::Timeout;
 
@@ -486,6 +487,8 @@ mod tests {
   #[cfg(feature = "time")]
   #[crate::internal_test]
   fn test_recv_timeout_with_data() {
+    use std::time::Duration;
+
     Runtime::single_threaded().block_on(async {
       let (sender, receiver) = super::bounded(10);
 
