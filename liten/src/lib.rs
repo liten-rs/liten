@@ -32,6 +32,7 @@ cfg_rt! {
 cfg_sync! {
   pub mod sync;
 }
+
 pub mod task;
 
 cfg_time! {

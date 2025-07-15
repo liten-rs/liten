@@ -1,3 +1,4 @@
+//! Asynchronous aware Semaphore
 use std::{
   future::Future,
   pin::Pin,
