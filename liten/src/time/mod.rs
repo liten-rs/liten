@@ -187,7 +187,7 @@ mod tests {
   #[crate::internal_test]
   fn timer_insert_and_poll_integration() {
     let driver = TimeDriver::get();
-    let timer_id = driver.insert(1000);
+    let timer_id = driver.insert(10000);
     let waker = dummy_waker();
     let mut cx = Context::from_waker(&waker);
     let poll = driver.poll(&mut cx, timer_id);
