@@ -195,7 +195,7 @@ mod tests {
   use std::time::Duration;
 
   // Basic Enqueue and Dequeue Operations
-  #[test]
+  #[crate::internal_test]
   fn test_single_item_enqueue_dequeue() {
     Runtime::single_threaded().block_on(async {
       let (sender, receiver) = super::bounded(10);
@@ -209,7 +209,7 @@ mod tests {
     });
   }
 
-  #[test]
+  #[crate::internal_test]
   fn test_multiple_items_fifo_order() {
     Runtime::single_threaded().block_on(async {
       let (sender, receiver) = super::bounded(10);
@@ -230,7 +230,7 @@ mod tests {
   }
 
   // Empty Queue Behavior
-  #[test]
+  #[crate::internal_test]
   fn test_empty_queue_try_recv() {
     Runtime::single_threaded().block_on(async {
       let (_s, receiver) = super::bounded::<i32>(10);
@@ -241,7 +241,7 @@ mod tests {
     });
   }
 
-  #[test]
+  #[crate::internal_test]
   fn test_empty_queue_recv_blocks() {
     Runtime::single_threaded().block_on(async {
       let (sender, receiver) = super::bounded::<i32>(10);
@@ -259,7 +259,7 @@ mod tests {
   }
 
   // Full Queue Behavior
-  #[test]
+  #[crate::internal_test]
   fn test_full_queue_behavior() {
     Runtime::single_threaded().block_on(async {
       let (sender, _r) = super::bounded(2);
@@ -275,7 +275,7 @@ mod tests {
   }
 
   // Performance Tests
-  #[test]
+  #[crate::internal_test]
   #[cfg(not(miri))]
   fn test_throughput_measurement() {
     Runtime::single_threaded().block_on(async {
@@ -330,7 +330,7 @@ mod tests {
 
   // Stress Tests
 
-  #[test]
+  #[crate::internal_test]
   fn test_long_running_continuous_operation() {
     Runtime::single_threaded().block_on(async {
       let (sender, receiver) = super::bounded(100);
@@ -366,7 +366,7 @@ mod tests {
   }
 
   // Edge Cases
-  #[test]
+  #[crate::internal_test]
   fn test_channel_closed_when_all_senders_dropped() {
     Runtime::single_threaded().block_on(async {
       let (sender, receiver) = super::bounded::<i32>(10);
@@ -387,7 +387,7 @@ mod tests {
     });
   }
 
-  #[test]
+  #[crate::internal_test]
   fn test_channel_closed_when_all_receivers_dropped() {
     Runtime::single_threaded().block_on(async {
       let (sender, receiver) = super::bounded::<i32>(10);
@@ -400,7 +400,7 @@ mod tests {
     });
   }
 
-  #[test]
+  #[crate::internal_test]
   fn test_multiple_senders_and_receivers() {
     Runtime::single_threaded().block_on(async {
       let (sender1, receiver1) = super::bounded(10);
@@ -423,7 +423,7 @@ mod tests {
   }
 
   // Thread Safety Tests
-  #[test]
+  #[crate::internal_test]
   fn test_concurrent_clone_and_drop() {
     Runtime::single_threaded().block_on(async {
       let (sender, receiver) = super::bounded(100);
@@ -470,7 +470,7 @@ mod tests {
 
   // Timeout Tests (if time feature is enabled)
   #[cfg(feature = "time")]
-  #[test]
+  #[crate::internal_test]
   fn test_recv_timeout() {
     Runtime::single_threaded().block_on(async {
       use crate::future::timeout::Timeout;
@@ -484,7 +484,7 @@ mod tests {
   }
 
   #[cfg(feature = "time")]
-  #[test]
+  #[crate::internal_test]
   fn test_recv_timeout_with_data() {
     Runtime::single_threaded().block_on(async {
       let (sender, receiver) = super::bounded(10);
@@ -499,7 +499,7 @@ mod tests {
   }
 
   // Original test for backward compatibility
-  #[test]
+  #[crate::internal_test]
   fn test_basic_concurrent_operations() {
     Runtime::single_threaded().block_on(async {
       let (sender, receiver) = super::bounded(128);

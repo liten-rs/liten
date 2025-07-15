@@ -1,7 +1,7 @@
 use super::{clock::TimerId, TimeDriver};
 use std::{
   future::Future,
-  pin::{self, Pin},
+  pin::Pin,
   task::{Context, Poll},
   time::Duration,
 };
