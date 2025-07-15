@@ -1,3 +1,4 @@
+//! Multiple procuder, single consumer queue.
 use std::{
   future::Future,
   pin::Pin,

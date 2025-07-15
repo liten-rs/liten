@@ -1,3 +1,4 @@
+//! Multiple procuder, Multiple consumer queue.
 use std::{
   future::Future,
   pin::Pin,
@@ -191,7 +192,7 @@ mod tests {
   use crate::join;
   use crate::runtime::Runtime;
   use crate::task;
-  use std::time::{Duration, Instant};
+  use std::time::Duration;
 
   // Basic Enqueue and Dequeue Operations
   #[test]
@@ -278,6 +279,8 @@ mod tests {
   #[cfg(not(miri))]
   fn test_throughput_measurement() {
     Runtime::single_threaded().block_on(async {
+      use std::time::Instant;
+
       let (sender, receiver) = super::bounded(100000);
       let num_items = 100_000;
       let num_producers = 4;

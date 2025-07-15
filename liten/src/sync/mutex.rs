@@ -1,3 +1,4 @@
+//! Asynchronous-aware Mutex.
 use std::{
   cell::UnsafeCell,
   ops::{Deref, DerefMut},

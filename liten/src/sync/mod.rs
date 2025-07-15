@@ -1,9 +1,12 @@
 pub mod mpmc;
 pub mod mpsc;
+pub mod oneshot;
+
 mod mutex;
+pub use mutex::*;
+
 pub mod pulse;
 pub mod request;
+
 mod semaphore;
-pub use mutex::*;
 pub use semaphore::*;
-pub mod oneshot;

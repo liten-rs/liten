@@ -1,3 +1,5 @@
+//! A once-only send value channel.
+
 use std::ptr::NonNull;
 
 pub use imp::*;
