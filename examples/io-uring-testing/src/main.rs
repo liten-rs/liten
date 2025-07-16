@@ -41,11 +41,22 @@ fn io_uring_background_thread(state: IoUringState) {
     // let addr: *mut u8;
     let (entry, mem) = match item.operation {
       IoUringOperation::Read(read) => {
+        println!("Creating read operation for fd: {}, len: {}", read.fd, read.len);
+        
         let mut mem = Vec::with_capacity(read.len as usize);
 
         for _ in 0..read.len as usize {
           mem.push(0);
         }
+
+        println!("Buffer created, ptr: {:?}, len: {}", mem.as_mut_ptr(), mem.len());
+        
+        // Check if the file descriptor is valid
+        println!("File descriptor: {}, is valid: {}", read.fd, read.fd >= 0);
+        
+        // Check memory alignment
+        let ptr = mem.as_mut_ptr() as usize;
+        println!("Buffer alignment: ptr={}, aligned_4k={}", ptr, ptr % 4096 == 0);
 
         let entry = opcode::Read::new(
           types::Fd(read.fd),
@@ -76,10 +87,37 @@ fn io_uring_background_thread(state: IoUringState) {
     }
     println!("nice");
 
-    submitter.submit_and_wait(1).unwrap();
+    // Submit the request and wait for completion
+    println!("Submitting request and waiting for completion...");
+    
+    // Try with a timeout first to see if it's just slow
+    let submit_result = match submitter.submit_and_wait_timeout(1, std::time::Duration::from_secs(5)) {
+        Ok(result) => {
+            println!("Submit and wait with timeout succeeded: {:?}", result);
+            Ok(result)
+        }
+        Err(e) => {
+            println!("Submit and wait with timeout failed: {:?}", e);
+            // Fall back to regular submit_and_wait
+            let result = submitter.submit_and_wait(1);
+            println!("Submit and wait result: {:?}", result);
+            result
+        }
+    };
+    submit_result.unwrap();
 
-    println!("nice");
-    let value = completion.next().unwrap();
+    println!("Getting completion...");
+    // Get the completion that was just submitted
+    let value = match completion.next() {
+        Some(v) => {
+            println!("Got completion: {:?}", v);
+            v
+        }
+        None => {
+            println!("No completion available!");
+            panic!("No completion available");
+        }
+    };
 
     println!("nice");
     let id = value.user_data();
