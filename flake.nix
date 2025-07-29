@@ -34,6 +34,7 @@
             mdbook
             cargo-watch
             cargo-hack
+            cargo-expand
 
             just
             bacon

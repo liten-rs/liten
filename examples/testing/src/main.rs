@@ -5,6 +5,12 @@ use std::error::Error;
 // use tracing_subscriber::fmt;
 
 fn main() -> Result<(), Box<dyn Error>> {
+  let testing = 32;
+  let pointer: *const i32 = &testing;
+
+  let address = pointer as u64;
+
+  let address = address as *const i32;
   Ok(())
   // subscriber::set_global_default(fmt().with_max_level(Level::TRACE).finish())?;
   // liten::runtime::Runtime::builder().block_on(async {
