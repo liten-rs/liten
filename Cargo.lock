@@ -197,6 +197,7 @@ dependencies = [
 name = "io-uring-testing"
 version = "0.1.0"
 dependencies = [
+ "futures-task",
  "io-uring",
 ]
 
