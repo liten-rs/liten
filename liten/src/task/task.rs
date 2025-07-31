@@ -121,6 +121,15 @@ impl<Out> TaskHandle<Out> {
   fn new(state: Arc<state::TaskResultState<Out>>) -> Self {
     Self { state }
   }
+
+  cfg_rt! {
+    pub fn rejoin(self) -> Result<Out, TaskHandleError>
+    where
+      Out: 'static,
+    {
+      crate::runtime::Runtime::single_threaded().block_on(self)
+    }
+  }
 }
 
 #[derive(Error, Debug, PartialEq)]

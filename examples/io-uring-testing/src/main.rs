@@ -2,14 +2,19 @@
 use io_uring::IoUring;
 use io_uring::squeue::Entry;
 use io_uring::types::Fd;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::io::{self, Error};
-use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
+use std::fs::File;
+use std::io;
+use std::marker::PhantomData;
+use std::mem;
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
 use std::path::Path;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
+use std::time::Duration;
 
 pub struct Write {
   fd: RawFd,
@@ -42,7 +47,7 @@ impl Operation for Write {
 
 // Things that implement this trait represent a command that can be executed using io-uring.
 pub trait Operation {
-  type Output;
+  type Output: Sized;
   fn create_entry(&mut self) -> io_uring::squeue::Entry;
   // This is guarranteed after this has completed and only fire ONCE.
   fn result(&mut self) -> Self::Output;
@@ -51,11 +56,11 @@ pub trait Operation {
 pub struct Read {
   fd: RawFd,
   buf: Option<Vec<u8>>,
-  offset: u64,
+  offset: i64,
 }
 
 impl Read {
-  pub fn new(fd: i32, length: u32, offset: u64) -> Self {
+  pub fn new(fd: i32, length: u32, offset: i64) -> Self {
     let mut mem = Vec::with_capacity(length as usize);
 
     for _ in 0..length as usize {
@@ -74,7 +79,7 @@ impl Operation for Read {
         buf.as_mut_ptr(),
         buf.len() as u32,
       )
-      .offset(self.offset)
+      .offset(self.offset as u64)
       .build()
     } else {
       unreachable!()
@@ -92,44 +97,35 @@ pub struct Driver(Arc<Mutex<DriverInner>>);
 
 struct DriverInner {
   inner: IoUring,
-  wakers: HashMap<OperationId, OpRegistration>,
+  wakers: HashMap<OperationId, RefCell<OpRegistration>>,
 }
 
-pub struct OperationProgress<'a, T> {
+pub struct OperationProgress<T> {
   driver: Driver,
   id: OperationId,
-  op: &'a mut T,
+  _m: PhantomData<T>,
 }
 
-impl<'a, T> OperationProgress<'a, T> {
-  pub fn new(driver: Driver, id: u64, op: &'a mut T) -> Self {
-    Self { driver, id, op }
+impl<T> OperationProgress<T> {
+  pub fn new(driver: Driver, id: u64) -> Self {
+    Self { driver, id, _m: PhantomData }
   }
 }
 
-impl<'a, T> Future for OperationProgress<'a, T>
+impl<T> Future for OperationProgress<T>
 where
   T: Operation,
 {
-  type Output = (Option<T::Output>, i32);
+  type Output = io::Result<(T::Output, i32)>;
 
-  fn poll(
-    mut self: Pin<&mut Self>,
-    cx: &mut Context<'_>,
-  ) -> Poll<Self::Output> {
+  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
     let is_done = self
       .driver
       .registration_is_done(self.id)
       .expect("Polled OperationProgress when not even registered");
 
     if is_done {
-      let num = self
-        .driver
-        .registration_result(self.id)
-        .expect("Polled OperationProgress when not even registered");
-
-      let result = (if num < 0 { None } else { Some(self.op.result()) }, num);
-      Poll::Ready(result)
+      Poll::Ready(self.driver.registration_result::<T>(self.id))
     } else {
       self.driver.registration_register_waker(self.id, cx.waker().clone());
       Poll::Pending
@@ -137,17 +133,32 @@ where
   }
 }
 
-#[derive(Default)]
+impl<T> Drop for OperationProgress<T> {
+  fn drop(&mut self) {
+    let _lock = self.driver.0.lock().unwrap();
+    let value = _lock.wakers.get(&self.id).unwrap();
+    value.borrow_mut().status = OpRegistrationStatus::Cancelling;
+  }
+}
+
 pub struct OpRegistration {
-  waker_registered: Option<Waker>,
-  ret: AtomicI32,
-  is_done: AtomicBool,
+  op: *const (),
+  status: OpRegistrationStatus,
+}
+
+pub enum OpRegistrationStatus {
+  Waiting { registered_waker: Cell<Option<Waker>> },
+  Cancelling,
+  Done { ret: i32 },
 }
 
 impl OpRegistration {
   pub fn wake_registered(&self) {
-    if let Some(ref waker) = self.waker_registered {
-      waker.wake_by_ref();
+    if let OpRegistrationStatus::Waiting { ref registered_waker } = self.status
+    {
+      if let Some(waker) = registered_waker.take() {
+        waker.wake_by_ref();
+      }
     }
   }
 }
@@ -174,41 +185,38 @@ impl Driver {
   where
     T: AsRef<Path>,
   {
-    let testing =
-      self.submit(Write::new(fd.as_raw_fd(), buf.into(), offset)).await;
+    let (_, ret) =
+      self.submit(Write::new(fd.as_raw_fd(), buf.into(), offset)).await?;
 
-    match testing.0 {
-      Some(_) => Ok(testing.1),
-      None => Err(Error::last_os_error()),
-    }
+    Ok(ret)
   }
 
   pub async fn read(
     &self,
     fd: BorrowedFd<'_>,
     length: u32,
-    offset: u64,
+    offset: i64,
   ) -> io::Result<Vec<u8>> {
-    let (option_output, ret) =
-      self.submit(Read::new(fd.as_raw_fd(), length, offset)).await;
+    let (buf, _) =
+      self.submit(Read::new(fd.as_raw_fd(), length, offset)).await?;
 
-    match option_output {
-      Some(output) => Ok(output),
-      None => Err(Error::from_raw_os_error(ret)),
-    }
+    return Ok(buf);
   }
 
-  pub async fn submit<T>(&self, mut op: T) -> (Option<T::Output>, i32)
+  pub async fn submit<T>(&self, mut op: T) -> io::Result<(T::Output, i32)>
   where
     T: Operation,
   {
     let entry = op.create_entry();
-    let operation_id = self.queue_submit(entry);
+    let boxed = Box::new(op);
 
-    OperationProgress::new(self.clone(), operation_id, &mut op).await
+    let operation_id =
+      self.queue_submit(entry, Box::into_raw(boxed) as *const _);
+
+    OperationProgress::<T>::new(self.clone(), operation_id).await
   }
 
-  fn queue_submit(&self, entry: Entry) -> u64 {
+  fn queue_submit(&self, entry: Entry, op: *const ()) -> u64 {
     let operation_id = Self::next_id();
     let entry = entry.user_data(operation_id);
 
@@ -218,7 +226,15 @@ impl Driver {
       _lock.inner.submission().push(&entry).expect("unwrapping for now");
     }
 
-    _lock.wakers.insert(operation_id, OpRegistration::default());
+    _lock.wakers.insert(
+      operation_id,
+      RefCell::new(OpRegistration {
+        op,
+        status: OpRegistrationStatus::Waiting {
+          registered_waker: Cell::new(None),
+        },
+      }),
+    );
 
     _lock.inner.submission().sync();
     _lock.inner.submit().unwrap();
@@ -231,11 +247,34 @@ impl Driver {
     for entry in iter {
       let operation_id = entry.user_data();
 
-      if let Some(op_registration) = _lock.wakers.get(&operation_id) {
-        op_registration.is_done.store(true, Ordering::SeqCst);
-        op_registration.ret.store(entry.result(), Ordering::SeqCst);
-        op_registration.wake_registered();
-      }
+      let op_registration = _lock
+        .wakers
+        .get(&operation_id)
+        .expect("entry in completion queue doesnt exist in store.");
+
+      let old_value = mem::replace(
+        &mut op_registration.borrow_mut().status,
+        OpRegistrationStatus::Done { ret: entry.result() },
+      );
+      let waker: Option<Waker> = match old_value {
+        OpRegistrationStatus::Waiting { ref registered_waker } => {
+          registered_waker.take().map(|x| x.clone())
+        }
+        OpRegistrationStatus::Cancelling => {
+          let reg = _lock.wakers.remove(&operation_id).unwrap();
+          let ptr = reg.borrow().op as *mut dyn Operation;
+
+          let _ = Box::from_raw(ptr);
+          Some(futures_task::noop_waker())
+        }
+        OpRegistrationStatus::Done { .. } => {
+          unreachable!("already processed entry")
+        }
+      };
+
+      if let Some(waker) = waker {
+        waker.wake(); // Now check from future.
+      };
     }
   }
 
@@ -245,22 +284,49 @@ impl Driver {
   /// - Some(false) if not done
   pub fn registration_is_done(&self, id: u64) -> Option<bool> {
     let _lock = self.0.lock().unwrap();
-    let registration = _lock.wakers.get(&id)?;
-    Some(registration.is_done.load(Ordering::SeqCst))
+    let registration = _lock.wakers.get(&id)?.borrow();
+    Some(matches!(registration.status, OpRegistrationStatus::Done { .. }))
   }
 
-  pub fn registration_result(&self, id: u64) -> Option<i32> {
+  pub fn registration_result<T: Operation>(
+    &self,
+    id: u64,
+  ) -> io::Result<(T::Output, i32)> {
     let mut _lock = self.0.lock().unwrap();
-    let testing = _lock.wakers.remove(&id)?;
-    Some(testing.ret.load(Ordering::SeqCst))
+    let op_registration =
+      _lock.wakers.remove(&id).expect("op registration doesn't exist");
+    let op_registration = op_registration.borrow();
+
+    let mut value = *unsafe { Box::from_raw(op_registration.op as *mut T) };
+
+    let OpRegistrationStatus::Done { ret } = op_registration.status else {
+      panic!("op registration is not done");
+    };
+
+    if ret < 0 {
+      Err(io::Error::from_raw_os_error(ret))
+    } else {
+      Ok((value.result(), ret))
+    }
   }
 
-  pub fn registration_set_done(&self, id: u64) -> Option<()> {
-    let _lock = self.0.lock().unwrap();
-    let testing = _lock.wakers.get(&id)?;
-    testing.is_done.store(true, Ordering::SeqCst);
-    Some(())
-  }
+  // pub fn registration_set_done(&self, id: u64) -> Option<()> {
+  //   let _lock = self.0.lock().unwrap();
+  //   let testing = _lock.wakers.get(&id)?.borrow();
+  //
+  //       testing.status = OpRegistrationStatus::Done {};
+  //
+  //   // match testing.status {
+  //   //   OpRegistrationStatus::Waiting {..} => {
+  //   //   },
+  //
+  //   // waker_registered.replace(Some(waker));
+  //   // }
+  //   // _ => unreachable!(),
+  //   // }
+  //   // testing.is_done.store(true, Ordering::SeqCst);
+  //   Some(())
+  // }
 
   pub fn registration_register_waker(
     &self,
@@ -268,10 +334,32 @@ impl Driver {
     waker: Waker,
   ) -> Option<()> {
     let mut _lock = self.0.lock().unwrap();
-    let reg = _lock.wakers.get_mut(&id)?;
-    reg.waker_registered.replace(waker);
+    let mut reg = _lock.wakers.get(&id)?.borrow_mut();
+
+    match reg.status {
+      OpRegistrationStatus::Waiting { ref mut registered_waker } => {
+        registered_waker.replace(Some(waker));
+      }
+      _ => panic!("cannot register waker when not waiting status"),
+    }
     Some(())
   }
 }
 
-fn main() {}
+fn main() {
+  let driver = Driver::new();
+
+  let file = File::open("./README.md").unwrap();
+  let mut fut = driver.read(file.as_fd(), 3, -1);
+
+  driver.poll_entries();
+  std::thread::sleep(Duration::from_secs(1));
+  let result = unsafe { Pin::new_unchecked(&mut fut) }
+    .poll(&mut Context::from_waker(&futures_task::noop_waker()));
+  dbg!(&result);
+
+  // let result = unsafe { Pin::new_unchecked(&mut fut) }
+  //   .poll(&mut Context::from_waker(&futures_task::noop_waker()));
+
+  // println!("{:#?}", String::from_utf8(result.));
+}
