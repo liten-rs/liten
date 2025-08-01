@@ -137,13 +137,16 @@ impl<T> Drop for OperationProgress<T> {
   fn drop(&mut self) {
     let _lock = self.driver.0.lock().unwrap();
     let value = _lock.wakers.get(&self.id).unwrap();
-    value.borrow_mut().status = OpRegistrationStatus::Cancelling;
+    if let OpRegistrationStatus::Waiting {..} = value.borrow().status {
+      value.borrow_mut().status = OpRegistrationStatus::Cancelling;
+    }
   }
 }
 
 pub struct OpRegistration {
   op: *const (),
   status: OpRegistrationStatus,
+  drop_fn: fn(*const ()), // Function to properly drop the operation
 }
 
 pub enum OpRegistrationStatus {
@@ -208,15 +211,14 @@ impl Driver {
     T: Operation,
   {
     let entry = op.create_entry();
-    let boxed = Box::new(op);
 
     let operation_id =
-      self.queue_submit(entry, Box::into_raw(boxed) as *const _);
+      self.queue_submit::<T>(entry, op);
 
     OperationProgress::<T>::new(self.clone(), operation_id).await
   }
 
-  fn queue_submit(&self, entry: Entry, op: *const ()) -> u64 {
+  fn queue_submit<T: Operation>(&self, entry: Entry, op: T) -> u64 {
     let operation_id = Self::next_id();
     let entry = entry.user_data(operation_id);
 
@@ -226,13 +228,21 @@ impl Driver {
       _lock.inner.submission().push(&entry).expect("unwrapping for now");
     }
 
+    // SAFETY: This function will be called with the same type T that was used to create the pointer
+    fn drop_op<T>(ptr: *const ()) {
+      unsafe {
+        let _ = Box::from_raw(ptr as *mut T);
+      }
+    }
+
     _lock.wakers.insert(
       operation_id,
       RefCell::new(OpRegistration {
-        op,
+        op: Box::into_raw(Box::new(op)) as *const (),
         status: OpRegistrationStatus::Waiting {
           registered_waker: Cell::new(None),
         },
+        drop_fn: drop_op::<T>,
       }),
     );
 
@@ -258,23 +268,33 @@ impl Driver {
       );
       let waker: Option<Waker> = match old_value {
         OpRegistrationStatus::Waiting { ref registered_waker } => {
-          registered_waker.take().map(|x| x.clone())
+          if let Some(waker) = registered_waker.take() {
+            Some(waker.clone())
+          } else {
+            // If there isn't a waker, it means that the operation was done before polling of any future.
+            // Also the future hasn't been dropped because the operation hasn't been cancelled.
+            // So the value needs to be available for when the future is polled.
+
+            None
+          }
         }
         OpRegistrationStatus::Cancelling => {
           let reg = _lock.wakers.remove(&operation_id).unwrap();
-          let ptr = reg.borrow().op as *mut dyn Operation;
-
-          let _ = Box::from_raw(ptr);
+          let reg_borrow = reg.borrow();
+          // SAFETY: The drop_fn was created with the same type T that was used to create the pointer
+          (reg_borrow.drop_fn)(reg_borrow.op);
           Some(futures_task::noop_waker())
         }
         OpRegistrationStatus::Done { .. } => {
-          unreachable!("already processed entry")
+          unreachable!("already processed entry");
         }
       };
 
       if let Some(waker) = waker {
         waker.wake(); // Now check from future.
-      };
+      } else {
+        
+      }
     }
   }
 
@@ -297,11 +317,13 @@ impl Driver {
       _lock.wakers.remove(&id).expect("op registration doesn't exist");
     let op_registration = op_registration.borrow();
 
-    let mut value = *unsafe { Box::from_raw(op_registration.op as *mut T) };
-
     let OpRegistrationStatus::Done { ret } = op_registration.status else {
       panic!("op registration is not done");
     };
+
+    // SAFETY: The pointer was created with Box::into_raw in queue_submit with a concrete type T
+    // We can safely cast it back to the concrete type T
+    let mut value = unsafe { Box::from_raw(op_registration.op as *mut T) };
 
     if ret < 0 {
       Err(io::Error::from_raw_os_error(ret))
