@@ -1,6 +1,6 @@
-use std::{io, mem::MaybeUninit, net::SocketAddr, os::fd::RawFd};
+use std::{io, mem::MaybeUninit, os::fd::RawFd};
 
-use socket2::{Domain, SockAddr, Type};
+use socket2::{Domain, SockAddr, SockAddrStorage, Type};
 
 use crate::io::Driver;
 
@@ -11,10 +11,10 @@ pub struct Socket {
 impl Socket {
   pub async fn new(addr: Domain, ty: Type) -> io::Result<Self> {
     let fd = Driver::socket(addr.into(), ty.into(), 0).await?;
-
     Ok(Self { fd })
   }
 
+  // FIXME: i think something wrong here?
   pub async fn bind(&self, addr: SockAddr) -> io::Result<()> {
     Driver::bind(self.fd, addr).await
   }
@@ -23,17 +23,13 @@ impl Socket {
     Driver::listen(self.fd, 128).await
   }
 
-  pub async fn accept(&self) -> io::Result<(RawFd, SocketAddr)> {
-    let mut storage: MaybeUninit<libc::sockaddr_storage> =
-      MaybeUninit::uninit();
+  pub async fn accept(&self) -> io::Result<(RawFd, SockAddr)> {
+    let mut storage: MaybeUninit<SockAddrStorage> = MaybeUninit::uninit();
     let mut len = size_of_val(&storage) as libc::socklen_t;
     let fd =
       Driver::accept(self.fd, storage.as_mut_ptr() as *mut _, &mut len).await?;
 
-    let addr = unsafe {
-      crate::io::utils::net::socket_addr_from_c(storage.as_ptr(), len as usize)
-    }?;
-    Ok((fd, addr))
+    Ok((fd, unsafe { SockAddr::new(storage.assume_init(), len) }))
   }
 
   pub async fn send(&self, buf: Vec<u8>) -> io::Result<i32> {
@@ -44,7 +40,7 @@ impl Socket {
     Driver::recv(self.fd, len, None).await
   }
 
-  pub async fn connect(&self, addr: SocketAddr) -> io::Result<RawFd> {
+  pub async fn connect(&self, addr: SockAddr) -> io::Result<RawFd> {
     Driver::connect(self.fd, addr).await
   }
 }

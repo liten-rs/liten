@@ -1,10 +1,10 @@
-use std::{error::Error, future::ready};
+use std::error::Error;
 
-use liten::task;
+use liten::io::fs::read_to_string;
 
-fn main() -> Result<(), Box<dyn Error>> {
-  let task = task::spawn(ready(1));
-
-  assert!(task.rejoin()? == 1);
+#[liten::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+  let result = read_to_string("./README.md").await?;
+  println!("{result}");
   Ok(())
 }

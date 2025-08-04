@@ -1,19 +1,20 @@
-use std::{mem::MaybeUninit, net::SocketAddr, os::fd::RawFd};
+use std::{mem::MaybeUninit, os::fd::RawFd};
 
 use io_uring::types::Fd;
+use socket2::SockAddrStorage;
 
 use super::Operation;
 
 pub struct Accept {
   fd: RawFd,
-  addr: *mut MaybeUninit<libc::sockaddr_storage>,
+  addr: *mut MaybeUninit<SockAddrStorage>,
   len: *mut libc::socklen_t,
 }
 
 impl Accept {
   pub fn new(
     fd: RawFd,
-    addr: *mut MaybeUninit<libc::sockaddr_storage>,
+    addr: *mut MaybeUninit<SockAddrStorage>,
     len: *mut libc::socklen_t,
   ) -> Self {
     Self { fd, addr, len }

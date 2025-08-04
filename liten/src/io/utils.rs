@@ -1,4 +1,5 @@
 pub mod net {
+  #![allow(unused)]
   use std::{
     io::{self, ErrorKind},
     mem,
