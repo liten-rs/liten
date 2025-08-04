@@ -11,7 +11,7 @@ pub struct Listen {
 
 impl Listen {
   pub fn new(fd: RawFd, backlog: i32) -> Self {
-    assert!(backlog < 0);
+    assert!(dbg!(backlog) < 0);
     Self { fd, backlog }
   }
 }

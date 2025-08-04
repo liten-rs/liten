@@ -1,9 +1,5 @@
 use std::{
-  fs::OpenOptions,
-  io,
-  os::fd::{AsFd, AsRawFd},
-  path::Path,
-  string::FromUtf8Error,
+  fs::OpenOptions, io, os::fd::AsRawFd, path::Path, string::FromUtf8Error,
 };
 
 use thiserror::Error;
@@ -17,7 +13,6 @@ pub async fn read<P: AsRef<Path>>(path: P) -> io::Result<Vec<u8>> {
   let mut chunks = Some(Vec::from([0; CHUNK_SIZE]));
 
   loop {
-    // TODO: maybe pass in chunks to write to for my app to read so no allocation???.
     let (vec_, bytes_read) =
       super::Driver::read(file.as_raw_fd(), chunks.unwrap(), -1).await?;
 

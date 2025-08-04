@@ -17,13 +17,8 @@ impl Bind {
 impl Operation for Bind {
   type Output = (); // The file descriptor comes from the other end.
   fn create_entry(&self) -> io_uring::squeue::Entry {
-    let storage = self.addr.as_ptr();
-    io_uring::opcode::Bind::new(
-      Fd(self.fd),
-      storage as *const libc::sockaddr,
-      self.addr.len(),
-    )
-    .build()
+    let storage = self.addr.as_ptr().cast::<libc::sockaddr>();
+    io_uring::opcode::Bind::new(Fd(self.fd), storage, self.addr.len()).build()
   }
   fn result(&mut self) -> Self::Output {
     ()

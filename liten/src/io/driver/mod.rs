@@ -6,8 +6,7 @@ use std::{
   io,
   marker::PhantomData,
   mem::{self, MaybeUninit},
-  net::SocketAddr,
-  os::fd::{BorrowedFd, RawFd},
+  os::fd::RawFd,
   pin::Pin,
   sync::{Arc, OnceLock},
   task::{Context, Poll, Waker},
@@ -15,7 +14,7 @@ use std::{
 mod op;
 
 use io_uring::IoUring;
-use socket2::SockAddr;
+use socket2::{SockAddr, SockAddrStorage};
 
 use crate::loom::sync::{
   atomic::{AtomicU64, Ordering},
@@ -195,9 +194,9 @@ impl Driver {
 
   op_with_ret!(op::Socket,  fn socket(domain: i32, ty: i32, proto: i32) -> RawFd);
   op_with_ret!(op::Bind, fn bind(fd: RawFd, addr: socket2::SockAddr) -> ());
-  op_with_ret!(op::Accept,  fn accept(fd: RawFd, addr: *mut MaybeUninit<libc::sockaddr_storage>, len: *mut libc::socklen_t) -> RawFd);
+  op_with_ret!(op::Accept,  fn accept(fd: RawFd, addr: *mut MaybeUninit<SockAddrStorage>, len: *mut libc::socklen_t) -> RawFd);
   op_with_ret!(op::Listen, fn listen(fd: RawFd, backlog: i32) -> ());
-  op_with_ret!(op::Connect, fn connect(fd: RawFd, addr: SocketAddr) -> RawFd);
+  op_with_ret!(op::Connect, fn connect(fd: RawFd, addr: SockAddr) -> RawFd);
 
   op_with_ret!(op::Send, fn send(fd: RawFd, buf: Vec<u8>, flags: Option<i32>));
   op_with_value!(op::Recv, fn recv(fd: RawFd, len: u32, flags: Option<i32>));
