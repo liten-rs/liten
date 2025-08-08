@@ -32,7 +32,7 @@ fn main() {
         let mut buf = [0; 4];
         match stream.read(&mut buf) {
           Ok(n) => {
-            let response = String::from_utf8_lossy(&buf[..n]);
+            let _response = String::from_utf8_lossy(&buf[..n]);
           }
           Err(e) => {
             error.fetch_add(1, Ordering::Relaxed);
@@ -49,7 +49,7 @@ fn main() {
   }
 
   // Wait for all threads to complete
-  for (inter, handle) in handles.into_iter().enumerate() {
+  for handle in handles.into_iter() {
     let _ = handle.join();
     // println!("inter: {inter}");
   }

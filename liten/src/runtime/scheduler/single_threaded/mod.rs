@@ -5,7 +5,6 @@ use std::{
 
 use crate::{
   future::block_on::park_waker,
-  io::Driver,
   loom::thread,
   runtime::{scheduler::Scheduler, waker::create_task_waker},
   task::TaskStore,
@@ -42,7 +41,8 @@ impl Scheduler for SingleThreaded {
         return value;
       }
 
-      Driver::get().maybe_submit();
+      #[cfg(feature = "io")]
+      lio::Driver::tick();
 
       thread::park();
     }

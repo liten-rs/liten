@@ -1,72 +1,33 @@
 // TODO: Safe shutdown
 use std::{
-  cell::{Cell, RefCell},
   collections::HashMap,
-  future::Future,
   io,
-  marker::PhantomData,
   mem::{self, MaybeUninit},
   os::fd::RawFd,
-  pin::Pin,
-  sync::{atomic::AtomicBool, Arc, OnceLock},
-  task::{Context, Poll, Waker},
+  sync::OnceLock,
+  task::Waker,
 };
 
 #[macro_use]
 pub(crate) mod macros;
 
 mod op;
+mod op_progress;
+mod op_registration;
 
 use io_uring::IoUring;
 use socket2::{SockAddr, SockAddrStorage};
 
-use crate::loom::sync::{
-  atomic::{AtomicU64, Ordering},
-  Mutex,
+use crate::{
+  io::driver::{
+    op_progress::OperationProgress,
+    op_registration::{OpRegistration, OpRegistrationStatus},
+  },
+  loom::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc, Mutex,
+  },
 };
-
-pub struct OperationProgress<T> {
-  id: OperationId,
-  _m: PhantomData<T>,
-}
-
-impl<T> OperationProgress<T> {
-  pub fn new(id: u64) -> Self {
-    Self { id, _m: PhantomData }
-  }
-  pub fn detatch(self) {
-    Driver::get().detatch(self.id);
-  }
-}
-
-impl<T> Future for OperationProgress<T>
-where
-  T: op::Operation,
-{
-  type Output = T::Result;
-
-  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-    let is_done = Driver::get()
-      .check_registration::<T>(self.id, cx.waker().clone())
-      .expect("Polled OperationProgress when not even registered");
-
-    match is_done {
-      CheckRegistrationResult::WakerSet => Poll::Pending,
-      CheckRegistrationResult::Value(result) => Poll::Ready(result),
-    }
-  }
-}
-
-impl<T> Drop for OperationProgress<T> {
-  fn drop(&mut self) {
-    let mut _lock = Driver::get().0.wakers.lock().unwrap();
-    if let Some(value) = _lock.get_mut(&self.id) {
-      if let OpRegistrationStatus::Waiting { .. } = value.status {
-        value.status = OpRegistrationStatus::Cancelling;
-      }
-    }
-  }
-}
 
 pub struct Driver(Arc<DriverInner>);
 struct DriverInner {
@@ -74,75 +35,7 @@ struct DriverInner {
   has_done_work: AtomicBool,
 
   submission_guard: Mutex<()>,
-  wakers: Mutex<HashMap<OperationId, OpRegistration>>,
-}
-
-type OperationId = u64;
-
-pub struct OpRegistration {
-  op: *const (),
-  status: OpRegistrationStatus,
-  drop_fn: fn(*const ()), // Function to properly drop the operation
-}
-
-impl OpRegistration {
-  pub fn new<T>(op: T) -> Self {
-    fn drop_op<T>(ptr: *const ()) {
-      unsafe {
-        let _ = Box::from_raw(ptr as *mut T);
-      }
-    }
-
-    OpRegistration {
-      op: Box::into_raw(Box::new(op)) as *const (),
-      status: OpRegistrationStatus::Waiting {
-        registered_waker: Cell::new(None),
-      },
-      drop_fn: drop_op::<T>,
-    }
-  }
-}
-
-impl std::fmt::Debug for OpRegistration {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("OpRegistration")
-      .field("op", &"*const ()")
-      .field("status", &self.status)
-      .field("drop_fn", &"fn(*const())")
-      .finish()
-  }
-}
-impl std::fmt::Debug for OpRegistrationStatus {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      Self::Waiting { registered_waker } => f
-        .debug_struct("OpRegistrationStatus::Waiting")
-        .field(
-          "registered_waker (is some)",
-          &unsafe { &*registered_waker.as_ptr() }.is_some(),
-        )
-        .finish(),
-      Self::Cancelling => {
-        f.debug_struct("OpRegistrationStatus::Cancelling").finish()
-      }
-      Self::Detatched => {
-        f.debug_struct("OpRegistrationStatus::Detatched").finish()
-      }
-      Self::Done { ret } => {
-        f.debug_struct("OpRegistrationStatus::Done").field("ret", &ret).finish()
-      }
-    }
-  }
-}
-
-unsafe impl Send for OpRegistration {}
-unsafe impl Sync for OpRegistration {}
-
-pub enum OpRegistrationStatus {
-  Waiting { registered_waker: Cell<Option<Waker>> },
-  Cancelling,
-  Done { ret: i32 },
-  Detatched,
+  wakers: Mutex<HashMap<u64, OpRegistration>>,
 }
 
 /// Public facing apis
@@ -151,7 +44,7 @@ impl Driver {
   impl_op!(op::Read, fn read(fd: RawFd, mem: Vec<u8>, offset: i64));
   impl_op!(op::Truncate,  fn truncate(fd: RawFd, len: u64));
 
-  impl_op!(op::Socket,  fn socket(domain: i32, ty: i32, proto: i32));
+  impl_op!(op::Socket,  fn socket(domain: socket2::Domain, ty: socket2::Type, proto: Option<socket2::Protocol>));
 
   // Seems to be a problem with this? value returned is always "called `Result::unwrap()` on an `Err` value: Os { code: -22, kind: Uncategorized, message: "Unknown error -22" }"
   impl_op!(op::Bind, fn bind(fd: RawFd, addr: socket2::SockAddr));
@@ -161,19 +54,20 @@ impl Driver {
   impl_op!(op::Connect, fn connect(fd: RawFd, addr: SockAddr));
 
   impl_op!(op::Send, fn send(fd: RawFd, buf: Vec<u8>, flags: Option<i32>));
-  impl_op!(op::Recv, fn recv(fd: RawFd, len: u32, flags: Option<i32>));
+  impl_op!(op::Recv, fn recv(fd: RawFd, buf: Vec<u8>, flags: Option<i32>));
   impl_op!(op::Close, fn close(fd: RawFd));
 
   impl_op!(op::Tee, fn tee(fd_in: RawFd, fd_out: RawFd, size: u32));
 
-  pub fn maybe_submit(&self) {
-    if self
+  pub fn tick() {
+    let driver = Driver::get();
+    if driver
       .0
       .has_done_work
       .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
       .is_ok()
     {
-      self.0.inner.submit();
+      let _ = driver.0.inner.submit();
     }
   }
 
@@ -202,14 +96,9 @@ impl Driver {
           );
           let waker: Option<Waker> = match old_value {
             OpRegistrationStatus::Waiting { ref registered_waker } => {
-              if let Some(waker) = registered_waker.take() {
-                Some(waker.clone())
-              } else {
-                None
-              }
+              registered_waker.take()
             }
-            OpRegistrationStatus::Cancelling
-            | OpRegistrationStatus::Detatched => {
+            OpRegistrationStatus::Cancelling => {
               let reg = wakers.remove(&operation_id).unwrap();
 
               // Dropping the operation.
@@ -250,8 +139,8 @@ impl Driver {
     })
   }
 
-  pub fn detatch(&self, id: u64) -> Option<()> {
-    let mut _lock = self.0.wakers.lock().unwrap();
+  pub fn detatch(id: u64) -> Option<()> {
+    let mut _lock = Driver::get().0.wakers.lock().unwrap();
     let thing = _lock.get_mut(&id)?;
 
     thing.status = OpRegistrationStatus::Cancelling;
@@ -263,11 +152,11 @@ impl Driver {
     NEXT.fetch_add(1, Ordering::AcqRel)
   }
 
-  pub fn submit<T>(&self, op: T) -> OperationProgress<T>
+  pub fn submit<T>(op: T) -> OperationProgress<T>
   where
     T: op::Operation,
   {
-    let operation_id = self.queue_submit::<T>(op);
+    let operation_id = Self::get().queue_submit::<T>(op);
     OperationProgress::<T>::new(operation_id)
   }
 
@@ -322,7 +211,7 @@ impl Driver {
         registered_waker.replace(Some(waker));
         CheckRegistrationResult::WakerSet
       }
-      OpRegistrationStatus::Cancelling | OpRegistrationStatus::Detatched => {
+      OpRegistrationStatus::Cancelling => {
         unreachable!("wtf to do here?");
       }
     })

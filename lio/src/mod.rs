@@ -4,13 +4,9 @@ use std::{
   io,
   mem::{self, MaybeUninit},
   os::fd::RawFd,
-  sync::{
-    Arc, Mutex, OnceLock,
-    atomic::{AtomicBool, AtomicU64, Ordering},
-  },
+  sync::OnceLock,
   task::Waker,
 };
-pub type BufResult<T, B> = (std::io::Result<T>, B);
 
 #[macro_use]
 pub(crate) mod macros;
@@ -23,8 +19,14 @@ use io_uring::IoUring;
 use socket2::{SockAddr, SockAddrStorage};
 
 use crate::{
-  op_progress::OperationProgress,
-  op_registration::{OpRegistration, OpRegistrationStatus},
+  io::driver::{
+    op_progress::OperationProgress,
+    op_registration::{OpRegistration, OpRegistrationStatus},
+  },
+  loom::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+  },
 };
 
 pub struct Driver(Arc<DriverInner>);
@@ -36,27 +38,27 @@ struct DriverInner {
   wakers: Mutex<HashMap<u64, OpRegistration>>,
 }
 
-impl_op!(op::Write, fn write(fd: RawFd, buf: Vec<u8>, offset: u64));
-impl_op!(op::Read, fn read(fd: RawFd, mem: Vec<u8>, offset: u64));
-impl_op!(op::Truncate,  fn truncate(fd: RawFd, len: u64));
-
-impl_op!(op::Socket,  fn socket(domain: socket2::Domain, ty: socket2::Type, proto: Option<socket2::Protocol>));
-
-// Seems to be a problem with this? value returned is always "called `Result::unwrap()` on an `Err` value: Os { code: -22, kind: Uncategorized, message: "Unknown error -22" }"
-impl_op!(op::Bind, fn bind(fd: RawFd, addr: socket2::SockAddr));
-
-impl_op!(op::Accept,  fn accept(fd: RawFd, addr: *mut MaybeUninit<SockAddrStorage>, len: *mut libc::socklen_t));
-impl_op!(op::Listen, fn listen(fd: RawFd, backlog: i32));
-impl_op!(op::Connect, fn connect(fd: RawFd, addr: SockAddr));
-
-impl_op!(op::Send, fn send(fd: RawFd, buf: Vec<u8>, flags: Option<i32>));
-impl_op!(op::Recv, fn recv(fd: RawFd, buf: Vec<u8>, flags: Option<i32>));
-impl_op!(op::Close, fn close(fd: RawFd));
-
-impl_op!(op::Tee, fn tee(fd_in: RawFd, fd_out: RawFd, size: u32));
-
 /// Public facing apis
 impl Driver {
+  impl_op!(op::Write, fn write(fd: RawFd, buf: Vec<u8>, offset: u64));
+  impl_op!(op::Read, fn read(fd: RawFd, mem: Vec<u8>, offset: i64));
+  impl_op!(op::Truncate,  fn truncate(fd: RawFd, len: u64));
+
+  impl_op!(op::Socket,  fn socket(domain: socket2::Domain, ty: socket2::Type, proto: Option<socket2::Protocol>));
+
+  // Seems to be a problem with this? value returned is always "called `Result::unwrap()` on an `Err` value: Os { code: -22, kind: Uncategorized, message: "Unknown error -22" }"
+  impl_op!(op::Bind, fn bind(fd: RawFd, addr: socket2::SockAddr));
+
+  impl_op!(op::Accept,  fn accept(fd: RawFd, addr: *mut MaybeUninit<SockAddrStorage>, len: *mut libc::socklen_t));
+  impl_op!(op::Listen, fn listen(fd: RawFd, backlog: i32));
+  impl_op!(op::Connect, fn connect(fd: RawFd, addr: SockAddr));
+
+  impl_op!(op::Send, fn send(fd: RawFd, buf: Vec<u8>, flags: Option<i32>));
+  impl_op!(op::Recv, fn recv(fd: RawFd, buf: Vec<u8>, flags: Option<i32>));
+  impl_op!(op::Close, fn close(fd: RawFd));
+
+  impl_op!(op::Tee, fn tee(fd_in: RawFd, fd_out: RawFd, size: u32));
+
   pub fn tick() {
     let driver = Driver::get();
     if driver
@@ -67,46 +69,6 @@ impl Driver {
     {
       let _ = driver.0.inner.submit();
     }
-  }
-
-  fn submit<T>(op: T) -> OperationProgress<T>
-  where
-    T: op::Operation,
-  {
-    let operation_id = Self::get().queue_submit::<T>(op);
-    OperationProgress::<T>::new(operation_id)
-  }
-}
-
-impl Driver {
-  fn next_id() -> u64 {
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    NEXT.fetch_add(1, Ordering::AcqRel)
-  }
-
-  pub(crate) fn get() -> &'static Driver {
-    static DRIVER: OnceLock<Driver> = OnceLock::new();
-
-    DRIVER.get_or_init(|| {
-      let driver = Driver(Arc::new(DriverInner {
-        inner: IoUring::new(256).unwrap(),
-        wakers: Mutex::new(HashMap::default()),
-        submission_guard: Mutex::new(()),
-        has_done_work: AtomicBool::new(false),
-      }));
-
-      driver.background();
-
-      driver
-    })
-  }
-  pub(crate) fn detatch(&self, id: u64) -> Option<()> {
-    let mut _lock = Driver::get().0.wakers.lock().unwrap();
-    let thing = _lock.get_mut(&id)?;
-
-    thing.status = OpRegistrationStatus::Cancelling;
-
-    Some(())
   }
 
   pub fn background(&self) {
@@ -157,6 +119,47 @@ impl Driver {
       }
     });
   }
+}
+
+impl Driver {
+  pub fn get() -> &'static Driver {
+    static DRIVER: OnceLock<Driver> = OnceLock::new();
+
+    DRIVER.get_or_init(|| {
+      let driver = Driver(Arc::new(DriverInner {
+        inner: IoUring::new(256).unwrap(),
+        wakers: Mutex::new(HashMap::default()),
+        submission_guard: Mutex::new(()),
+        has_done_work: AtomicBool::new(false),
+      }));
+
+      driver.background();
+
+      driver
+    })
+  }
+
+  fn detatch(&self, id: u64) -> Option<()> {
+    let mut _lock = Driver::get().0.wakers.lock().unwrap();
+    let thing = _lock.get_mut(&id)?;
+
+    thing.status = OpRegistrationStatus::Cancelling;
+
+    Some(())
+  }
+
+  fn next_id() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    NEXT.fetch_add(1, Ordering::AcqRel)
+  }
+
+  fn submit<T>(op: T) -> OperationProgress<T>
+  where
+    T: op::Operation,
+  {
+    let operation_id = Self::get().queue_submit::<T>(op);
+    OperationProgress::<T>::new(operation_id)
+  }
 
   fn queue_submit<T: op::Operation>(&self, op: T) -> u64 {
     let operation_id = Self::next_id();
@@ -181,7 +184,7 @@ impl Driver {
     operation_id
   }
 
-  fn check_registration<T: op::Operation>(
+  pub fn check_registration<T: op::Operation>(
     &self,
     id: u64,
     waker: Waker,
