@@ -17,12 +17,10 @@ impl Tee {
 }
 
 impl Operation for Tee {
-  type Output = (); // The file descriptor comes from the other end.
   fn create_entry(&self) -> io_uring::squeue::Entry {
     io_uring::opcode::Tee::new(Fd(self.fd_in), Fd(self.fd_out), self.size)
       .build()
   }
-  fn result(&mut self) -> Self::Output {
-    ()
-  }
+
+  impl_result!(());
 }

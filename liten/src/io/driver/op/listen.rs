@@ -11,17 +11,14 @@ pub struct Listen {
 
 impl Listen {
   pub fn new(fd: RawFd, backlog: i32) -> Self {
-    assert!(dbg!(backlog) < 0);
+    assert!(backlog > 0);
     Self { fd, backlog }
   }
 }
 
 impl Operation for Listen {
-  type Output = ();
+  impl_result!(());
   fn create_entry(&self) -> io_uring::squeue::Entry {
     io_uring::opcode::Listen::new(Fd(self.fd), self.backlog).build()
-  }
-  fn result(&mut self) -> Self::Output {
-    ()
   }
 }

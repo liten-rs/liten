@@ -1,6 +1,8 @@
-use std::os::fd::RawFd;
+use std::{io, os::fd::RawFd};
 
 use io_uring::types::Fd;
+
+use crate::io::BufResult;
 
 use super::Operation;
 
@@ -22,21 +24,23 @@ impl Recv {
 }
 
 impl Operation for Recv {
-  type Output = Vec<u8>;
   fn create_entry(&self) -> io_uring::squeue::Entry {
-    if let Some(ref buf) = self.buf {
-      io_uring::opcode::Recv::new(
-        Fd(self.fd),
-        buf.as_ptr() as *mut _,
-        buf.len() as u32,
-      )
-      .flags(self.flags)
-      .build()
-    } else {
-      unreachable!()
-    }
+    io_uring::opcode::Recv::new(
+      Fd(self.fd),
+      self.buf.as_ref().unwrap().as_ptr() as *mut _,
+      self.buf.as_ref().unwrap().len() as u32,
+    )
+    .flags(self.flags)
+    .build()
   }
-  fn result(&mut self) -> Self::Output {
-    self.buf.take().expect("ran Recv::result more than once.")
+  type Output = i32;
+  type Result = BufResult<Self::Output, io::Error, Vec<u8>>;
+  fn result(&mut self, _ret: io::Result<i32>) -> Self::Result {
+    let buf = self.buf.take().expect("ran Recv::result more than once.");
+
+    match _ret {
+      Ok(ret) => (Ok(ret), buf),
+      Err(err) => (Err(err), buf),
+    }
   }
 }

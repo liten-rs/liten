@@ -4,24 +4,28 @@ use std::{
 
 use thiserror::Error;
 
+use crate::io::BufResult;
+
 const CHUNK_SIZE: usize = 20; // 4KB
 
 pub async fn read<P: AsRef<Path>>(path: P) -> io::Result<Vec<u8>> {
   let file = OpenOptions::new().read(true).open(path)?;
 
   let mut buffer = Vec::new();
-  let mut chunks = Some(Vec::from([0; CHUNK_SIZE]));
+  let mut chunks = Vec::from([0; CHUNK_SIZE]);
 
   loop {
-    let (vec_, bytes_read) =
-      super::Driver::read(file.as_raw_fd(), chunks.unwrap(), -1).await?;
+    let (result, vector) =
+      super::Driver::read(file.as_raw_fd(), chunks, -1).await;
+
+    let bytes_read = result?;
 
     if bytes_read == 0 {
       break; // End of file
     }
-    buffer.extend_from_slice(&vec_[0..bytes_read as usize]);
+    buffer.extend_from_slice(&vector[0..bytes_read as usize]);
 
-    chunks = Some(vec_);
+    chunks = vector;
   }
 
   Ok(buffer)
@@ -53,4 +57,24 @@ pub async fn read_to_string<P: AsRef<Path>>(
   let file_contents = read(path).await?;
 
   Ok(String::from_utf8(file_contents)?)
+}
+
+pub async fn write<P: AsRef<Path>>(
+  path: P,
+  data: Vec<u8>,
+) -> BufResult<(), io::Error, Vec<u8>> {
+  let file =
+    match OpenOptions::new().create(true).write(true).truncate(true).open(path)
+    {
+      Ok(file) => file,
+      Err(err) => return (Err(err), data),
+    };
+
+  let (result, vector) = super::Driver::write(file.as_raw_fd(), data, 0).await;
+
+  if let Err(err) = result {
+    return (Err(err), vector);
+  };
+
+  (Ok(()), vector)
 }

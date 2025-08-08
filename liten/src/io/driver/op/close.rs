@@ -15,11 +15,8 @@ impl Close {
 }
 
 impl Operation for Close {
-  type Output = ();
+  impl_result!(());
   fn create_entry(&self) -> io_uring::squeue::Entry {
     io_uring::opcode::Close::new(Fd(self.fd)).build()
-  }
-  fn result(&mut self) -> Self::Output {
-    ()
   }
 }

@@ -1,6 +1,6 @@
 // TODO: Safe shutdown
 use std::{
-  cell::Cell,
+  cell::{Cell, RefCell},
   collections::HashMap,
   future::Future,
   io,
@@ -8,9 +8,13 @@ use std::{
   mem::{self, MaybeUninit},
   os::fd::RawFd,
   pin::Pin,
-  sync::{Arc, OnceLock},
+  sync::{atomic::AtomicBool, Arc, OnceLock},
   task::{Context, Poll, Waker},
 };
+
+#[macro_use]
+pub(crate) mod macros;
+
 mod op;
 
 use io_uring::IoUring;
@@ -30,26 +34,25 @@ impl<T> OperationProgress<T> {
   pub fn new(id: u64) -> Self {
     Self { id, _m: PhantomData }
   }
+  pub fn detatch(self) {
+    Driver::get().detatch(self.id);
+  }
 }
 
 impl<T> Future for OperationProgress<T>
 where
   T: op::Operation,
 {
-  type Output = io::Result<(T::Output, i32)>;
+  type Output = T::Result;
 
   fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
     let is_done = Driver::get()
-      .registration_is_done(self.id)
+      .check_registration::<T>(self.id, cx.waker().clone())
       .expect("Polled OperationProgress when not even registered");
 
-    if is_done {
-      Poll::Ready(Driver::get().registration_result::<T>(self.id))
-    } else {
-      // FIXME: Can get done between calling registration_is_done and
-      // registration_register_waker
-      Driver::get().registration_register_waker(self.id, cx.waker().clone());
-      Poll::Pending
+    match is_done {
+      CheckRegistrationResult::WakerSet => Poll::Pending,
+      CheckRegistrationResult::Value(result) => Poll::Ready(result),
     }
   }
 }
@@ -68,6 +71,7 @@ impl<T> Drop for OperationProgress<T> {
 pub struct Driver(Arc<DriverInner>);
 struct DriverInner {
   inner: IoUring,
+  has_done_work: AtomicBool,
 
   submission_guard: Mutex<()>,
   wakers: Mutex<HashMap<OperationId, OpRegistration>>,
@@ -121,6 +125,9 @@ impl std::fmt::Debug for OpRegistrationStatus {
       Self::Cancelling => {
         f.debug_struct("OpRegistrationStatus::Cancelling").finish()
       }
+      Self::Detatched => {
+        f.debug_struct("OpRegistrationStatus::Detatched").finish()
+      }
       Self::Done { ret } => {
         f.debug_struct("OpRegistrationStatus::Done").field("ret", &ret).finish()
       }
@@ -135,74 +142,40 @@ pub enum OpRegistrationStatus {
   Waiting { registered_waker: Cell<Option<Waker>> },
   Cancelling,
   Done { ret: i32 },
-}
-
-macro_rules! op_with_ret {
-  ($operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> ()) => {
-    pub fn $name($($arg: $arg_ty),*) -> impl Future<Output = io::Result<()>> {
-      let operation_progress = Driver::get().submit(<$operation>::new($($arg),*));
-      async move {
-        let (_, _) = operation_progress.await?;
-        Ok(())
-      }
-    }
-  };
-
-  ($operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $return_alias:ident) => {
-    pub fn $name($($arg: $arg_ty),*) -> impl Future<Output = io::Result<$return_alias>> {
-      let operation_progress = Driver::get().submit(<$operation>::new($($arg),*));
-      async move {
-        let (_, ret) = operation_progress.await?;
-        Ok(ret)
-      }
-    }
-  };
-  ($operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* )) => {
-    pub fn $name($($arg: $arg_ty),*) -> impl Future<Output = io::Result<i32>> {
-      let operation_progress = Driver::get().submit(<$operation>::new($($arg),*));
-      async move {
-        let (_, ret) = operation_progress.await?;
-        Ok(ret)
-      }
-    }
-  };
-}
-
-macro_rules! op_with_value {
-  ($operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* )) => {
-    pub fn $name($($arg: $arg_ty),*) -> impl Future<Output = io::Result<<$operation as op::Operation>::Output>> {
-      let operation_progress = Driver::get().submit(<$operation>::new($($arg),*));
-      async move {
-        let (value, _) = operation_progress.await?;
-        Ok(value)
-      }
-    }
-  };
-
-  ($operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> both) => {
-    pub fn $name($($arg: $arg_ty),*) -> impl Future<Output = io::Result<(<$operation as op::Operation>::Output, i32)>> {
-      let operation_progress = Driver::get().submit(<$operation>::new($($arg),*));
-      async move { operation_progress.await }
-    }
-  };
+  Detatched,
 }
 
 /// Public facing apis
 impl Driver {
-  op_with_ret!(op::Write, fn write(fd: RawFd, buf: Box<[u8]>, offset: u64));
-  op_with_value!(op::Read, fn read(fd: RawFd, mem: Vec<u8>, offset: i64) -> both);
+  impl_op!(op::Write, fn write(fd: RawFd, buf: Vec<u8>, offset: u64));
+  impl_op!(op::Read, fn read(fd: RawFd, mem: Vec<u8>, offset: i64));
+  impl_op!(op::Truncate,  fn truncate(fd: RawFd, len: u64));
 
-  op_with_ret!(op::Socket,  fn socket(domain: i32, ty: i32, proto: i32) -> RawFd);
-  op_with_ret!(op::Bind, fn bind(fd: RawFd, addr: socket2::SockAddr) -> ());
-  op_with_ret!(op::Accept,  fn accept(fd: RawFd, addr: *mut MaybeUninit<SockAddrStorage>, len: *mut libc::socklen_t) -> RawFd);
-  op_with_ret!(op::Listen, fn listen(fd: RawFd, backlog: i32) -> ());
-  op_with_ret!(op::Connect, fn connect(fd: RawFd, addr: SockAddr) -> RawFd);
+  impl_op!(op::Socket,  fn socket(domain: i32, ty: i32, proto: i32));
 
-  op_with_ret!(op::Send, fn send(fd: RawFd, buf: Vec<u8>, flags: Option<i32>));
-  op_with_value!(op::Recv, fn recv(fd: RawFd, len: u32, flags: Option<i32>));
-  op_with_ret!(op::Close, fn close(fd: RawFd) -> ());
+  // Seems to be a problem with this? value returned is always "called `Result::unwrap()` on an `Err` value: Os { code: -22, kind: Uncategorized, message: "Unknown error -22" }"
+  impl_op!(op::Bind, fn bind(fd: RawFd, addr: socket2::SockAddr));
 
-  op_with_ret!(op::Tee, fn tee(fd_in: RawFd, fd_out: RawFd, size: u32));
+  impl_op!(op::Accept,  fn accept(fd: RawFd, addr: *mut MaybeUninit<SockAddrStorage>, len: *mut libc::socklen_t));
+  impl_op!(op::Listen, fn listen(fd: RawFd, backlog: i32));
+  impl_op!(op::Connect, fn connect(fd: RawFd, addr: SockAddr));
+
+  impl_op!(op::Send, fn send(fd: RawFd, buf: Vec<u8>, flags: Option<i32>));
+  impl_op!(op::Recv, fn recv(fd: RawFd, len: u32, flags: Option<i32>));
+  impl_op!(op::Close, fn close(fd: RawFd));
+
+  impl_op!(op::Tee, fn tee(fd_in: RawFd, fd_out: RawFd, size: u32));
+
+  pub fn maybe_submit(&self) {
+    if self
+      .0
+      .has_done_work
+      .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+      .is_ok()
+    {
+      self.0.inner.submit();
+    }
+  }
 
   pub fn background(&self) {
     let driver = self.0.clone();
@@ -235,7 +208,8 @@ impl Driver {
                 None
               }
             }
-            OpRegistrationStatus::Cancelling => {
+            OpRegistrationStatus::Cancelling
+            | OpRegistrationStatus::Detatched => {
               let reg = wakers.remove(&operation_id).unwrap();
 
               // Dropping the operation.
@@ -267,12 +241,22 @@ impl Driver {
         inner: IoUring::new(256).unwrap(),
         wakers: Mutex::new(HashMap::default()),
         submission_guard: Mutex::new(()),
+        has_done_work: AtomicBool::new(false),
       }));
 
       driver.background();
 
       driver
     })
+  }
+
+  pub fn detatch(&self, id: u64) -> Option<()> {
+    let mut _lock = self.0.wakers.lock().unwrap();
+    let thing = _lock.get_mut(&id)?;
+
+    thing.status = OpRegistrationStatus::Cancelling;
+
+    Some(())
   }
   fn next_id() -> u64 {
     static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -305,59 +289,49 @@ impl Driver {
 
     _lock.insert(operation_id, OpRegistration::new(op));
 
-    self.0.inner.submit().unwrap();
+    self.0.has_done_work.store(true, Ordering::SeqCst);
+
     operation_id
   }
 
-  /// Returns:
-  /// - None if not found
-  /// - Some(true) if is done
-  /// - Some(false) if not done
-  pub fn registration_is_done(&self, id: u64) -> Option<bool> {
-    let _lock = self.0.wakers.lock().unwrap();
-    let registration = _lock.get(&id)?;
-    Some(matches!(registration.status, OpRegistrationStatus::Done { .. }))
-  }
-
-  pub fn registration_result<T: op::Operation>(
-    &self,
-    id: u64,
-  ) -> io::Result<(T::Output, i32)> {
-    let mut _lock = self.0.wakers.lock().unwrap();
-    let op_registration =
-      _lock.get(&id).expect("op registration doesn't exist");
-
-    let OpRegistrationStatus::Done { ret } = op_registration.status else {
-      panic!("op registration is not done");
-    };
-
-    let op_registration = _lock.remove(&id).expect("what");
-
-    // SAFETY: The pointer was created with Box::into_raw in queue_submit with a concrete type T
-    // We can safely cast it back to the concrete type T
-    let mut value = unsafe { Box::from_raw(op_registration.op as *mut T) };
-
-    if ret < 0 {
-      Err(io::Error::from_raw_os_error(ret))
-    } else {
-      Ok((value.result(), ret))
-    }
-  }
-
-  pub fn registration_register_waker(
+  pub fn check_registration<T: op::Operation>(
     &self,
     id: u64,
     waker: Waker,
-  ) -> Option<()> {
+  ) -> Option<CheckRegistrationResult<T::Result>> {
     let mut _lock = self.0.wakers.lock().unwrap();
-    let reg = _lock.get_mut(&id)?;
+    let op_registration = _lock.get_mut(&id)?;
 
-    match reg.status {
+    Some(match op_registration.status {
+      OpRegistrationStatus::Done { ret } => {
+        let op_registration = _lock.remove(&id).expect("what");
+
+        // SAFETY: The pointer was created with Box::into_raw in queue_submit with a concrete type T
+        // We can safely cast it back to the concrete type T
+        let mut value = unsafe { Box::from_raw(op_registration.op as *mut T) };
+
+        let raw_ret = if ret < 0 {
+          Err(io::Error::from_raw_os_error(ret))
+        } else {
+          Ok(ret)
+        };
+
+        CheckRegistrationResult::Value(value.result(raw_ret))
+      }
       OpRegistrationStatus::Waiting { ref mut registered_waker } => {
         registered_waker.replace(Some(waker));
+        CheckRegistrationResult::WakerSet
       }
-      _ => panic!("cannot register waker when not waiting status"),
-    }
-    Some(())
+      OpRegistrationStatus::Cancelling | OpRegistrationStatus::Detatched => {
+        unreachable!("wtf to do here?");
+      }
+    })
   }
+}
+
+pub(crate) enum CheckRegistrationResult<V> {
+  /// Waker has been registered and future should return Poll::Pending
+  WakerSet,
+  /// Value has been returned and future should poll anymore.
+  Value(V),
 }

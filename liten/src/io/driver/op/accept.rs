@@ -22,17 +22,14 @@ impl Accept {
 }
 
 impl Operation for Accept {
-  type Output = (); // The file descriptor comes from the other end.
+  impl_result!(fd);
+
   fn create_entry(&self) -> io_uring::squeue::Entry {
-    // let (addr, len) = net_utils::socket_addr_to_c(&self.addr);
     return io_uring::opcode::Accept::new(
       Fd(self.fd),
       self.addr as *mut libc::sockaddr,
       self.len,
     )
     .build();
-  }
-  fn result(&mut self) -> Self::Output {
-    ()
   }
 }

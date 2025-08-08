@@ -8,14 +8,16 @@ use std::{
 use crossbeam_queue::{ArrayQueue, SegQueue};
 use thiserror::Error;
 
-#[cfg(feature = "time")]
 use crate::future::FutureExt;
 #[cfg(feature = "time")]
 use std::time::Duration;
 
-use crate::loom::sync::{
-  atomic::{AtomicUsize, Ordering},
-  Arc,
+use crate::{
+  future::Stream,
+  loom::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+  },
 };
 
 pub fn bounded<T>(capacity: usize) -> (Sender<T>, Receiver<T>) {
@@ -168,6 +170,18 @@ impl<T> Receiver<T> {
     {
       self.recv().timeout(duration).await
     }
+  }
+}
+
+impl<T> Stream for Receiver<T> {
+  type Item = T;
+  fn next(&self) -> impl Future<Output = Option<Self::Item>> {
+    self.recv().map(|x| match x {
+      Ok(value) => Some(value),
+      Err(err) => match err {
+        RecvError::Closed => None,
+      },
+    })
   }
 }
 
