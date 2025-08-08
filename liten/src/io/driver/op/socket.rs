@@ -1,3 +1,5 @@
+use std::os::fd::RawFd;
+
 use super::Operation;
 
 pub struct Socket {
@@ -13,11 +15,8 @@ impl Socket {
 }
 
 impl Operation for Socket {
-  type Output = (); // The file descriptor comes from the other end.
   fn create_entry(&self) -> io_uring::squeue::Entry {
     io_uring::opcode::Socket::new(self.domain, self.ty, self.proto).build()
   }
-  fn result(&mut self) -> Self::Output {
-    ()
-  }
+  impl_result!(fd);
 }

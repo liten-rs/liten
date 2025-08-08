@@ -1,38 +1,33 @@
-use std::{
-  ffi::c_void,
-  io::Error,
-  mem,
-  net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+use std::time::Duration;
+
+use liten::{
+  future::{FutureExt, Stream},
+  io::net::socket::{TcpListener, TcpStream},
 };
 
-use liten::runtime::Runtime;
-use socket2::SockAddr;
+#[liten::main]
+async fn main() {
+  let listener = TcpListener::bind("127.0.0.1:8084").await.unwrap();
+  println!("Server listening on 127.0.0.1:8081");
 
-fn main() {
-  Runtime::single_threaded().block_on(async {
-    let tesing = liten::io::net::socket::Socket::new(
-      socket2::Domain::IPV4,
-      socket2::Type::STREAM,
-    )
-    .await
-    .unwrap();
+  while let Some(Ok((socket, _))) = listener.next().await {
+    liten::task::spawn(async move {
+      if let Err(e) = handle_connection(socket).await {
+        println!("Error handling connection: {}", e);
+      }
+    });
+  }
+}
 
-    let addr: SocketAddr = "[::1]:12345".parse().unwrap();
-    tesing.bind(addr.into()).await.unwrap();
-    tesing.listen().await.unwrap();
+async fn handle_connection(
+  socket: TcpStream,
+) -> Result<(), Box<dyn std::error::Error>> {
+  // Read data from the socket
+  let (n, buf) = socket.read(4).await?;
 
-    let (fd, sock) = tesing.accept().await.unwrap();
+  // Send a response back to the client
+  let response = vec![1, 2, 3, 4];
+  socket.write(Vec::from(response)).await?;
 
-    dbg!(fd, sock);
-
-    // let result =
-    //   tesing.connect(SockAddr::unix("/tmp/testing").unwrap()).await.unwrap();
-    //
-    // dbg!(
-    //   unsafe {
-    //     libc::send(result, Vec::from([1, 2]).as_ptr() as *const c_void, 2, 0)
-    //   },
-    //   Error::last_os_error()
-    // );
-  })
+  Ok(())
 }

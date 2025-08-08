@@ -77,7 +77,7 @@ pub trait FutureExt: Future {
       duration: std::time::Duration,
     ) -> impl Future<Output = Result<Self::Output, timeout::Timeout>>
     where
-      Self: Sized + Send,
+      Self: Sized,
     {
       Or::new(
        self.map(Ok),
@@ -88,3 +88,8 @@ pub trait FutureExt: Future {
 }
 
 impl<F: Future> FutureExt for F {}
+
+pub trait Stream {
+  type Item: Sized;
+  fn next(&self) -> impl Future<Output = Option<Self::Item>>;
+}

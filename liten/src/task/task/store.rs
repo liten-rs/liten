@@ -24,7 +24,7 @@ impl TaskStore {
 
     // Not using get here since TaskStore isn't something that should be a choosen api.
     TASK_STORE.get_or_init(|| TaskStore {
-      task_queue: ArrayQueue::new(512),
+      task_queue: ArrayQueue::new(2048),
       field1: Mutex::new(TaskStoreInner {
         cold: HashMap::new(),
         cold_to_hot: Vec::new(),

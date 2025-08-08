@@ -15,12 +15,20 @@ impl Bind {
 }
 
 impl Operation for Bind {
-  type Output = (); // The file descriptor comes from the other end.
+  impl_result!(());
+
   fn create_entry(&self) -> io_uring::squeue::Entry {
-    let storage = self.addr.as_ptr().cast::<libc::sockaddr>();
-    io_uring::opcode::Bind::new(Fd(self.fd), storage, self.addr.len()).build()
-  }
-  fn result(&mut self) -> Self::Output {
-    ()
+    // syscall!(bind(
+    //   socket.as_raw_fd(),
+    //   sockaddr_ptr.cast::<libc::sockaddr>(),
+    //   addr.len() as _,
+    // ))?;
+    let storage = self.addr.as_ptr();
+    io_uring::opcode::Bind::new(
+      Fd(self.fd),
+      storage.cast::<libc::sockaddr>(),
+      self.addr.len() as _,
+    )
+    .build()
   }
 }

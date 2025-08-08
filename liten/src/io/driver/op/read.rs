@@ -1,6 +1,8 @@
-use std::os::fd::RawFd;
+use std::{io, os::fd::RawFd};
 
 use io_uring::types::Fd;
+
+use crate::io::BufResult;
 
 use super::Operation;
 
@@ -17,7 +19,6 @@ impl Read {
 }
 
 impl Operation for Read {
-  type Output = Vec<u8>;
   fn create_entry(&self) -> io_uring::squeue::Entry {
     if let Some(ref buf) = self.buf {
       io_uring::opcode::Read::new(
@@ -31,7 +32,14 @@ impl Operation for Read {
       unreachable!()
     }
   }
-  fn result(&mut self) -> Self::Output {
-    self.buf.take().expect("ran Read::result more than once.")
+  type Output = i32;
+  type Result = BufResult<Self::Output, io::Error, Vec<u8>>;
+  fn result(&mut self, _ret: io::Result<i32>) -> Self::Result {
+    let buf = self.buf.take().expect("ran Recv::result more than once.");
+
+    match _ret {
+      Ok(ret) => (Ok(ret), buf),
+      Err(err) => (Err(err), buf),
+    }
   }
 }
