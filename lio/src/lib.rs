@@ -73,7 +73,7 @@ impl Driver {
   where
     T: op::Operation,
   {
-    let operation_id = Self::get().queue_submit::<T>(op);
+    let operation_id = Self::get().push::<T>(op);
     OperationProgress::<T>::new(operation_id)
   }
 }
@@ -158,7 +158,7 @@ impl Driver {
     });
   }
 
-  fn queue_submit<T: op::Operation>(&self, op: T) -> u64 {
+  fn push<T: op::Operation>(&self, op: T) -> u64 {
     let operation_id = Self::next_id();
     let entry = op.create_entry().user_data(operation_id);
 

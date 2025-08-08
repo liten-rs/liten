@@ -22,7 +22,6 @@ macro_rules! impl_result {
 
 macro_rules! impl_op {
   ($operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* )) => {
-    #[allow(dead_code)]
     pub fn $name($($arg: $arg_ty),*) -> op_progress::OperationProgress<$operation> {
       Driver::submit(<$operation>::new($($arg),*))
     }

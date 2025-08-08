@@ -16,9 +16,6 @@ impl UnwindSafe for RawTask {}
 unsafe impl Sync for RawTask {}
 unsafe impl Send for RawTask {}
 
-#[cfg(test)]
-static_assertions::assert_impl_all!(RawTask: Send, Sync);
-
 impl RawTask {
   pub(super) fn from_future<F>(future: F) -> RawTask
   where
