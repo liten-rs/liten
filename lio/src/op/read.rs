@@ -2,31 +2,35 @@ use std::{io, os::fd::RawFd};
 
 use io_uring::types::Fd;
 
-use crate::io::BufResult;
+use crate::BufResult;
 
 use super::Operation;
 
-pub struct Recv {
+pub struct Read {
   fd: RawFd,
   buf: Option<Vec<u8>>,
-  flags: i32,
+  offset: u64,
 }
 
-impl Recv {
-  pub fn new(fd: RawFd, buf: Vec<u8>, flags: Option<i32>) -> Self {
-    Self { fd, buf: Some(buf), flags: flags.unwrap_or(0) }
+impl Read {
+  pub fn new(fd: RawFd, mem: Vec<u8>, offset: u64) -> Self {
+    Self { fd, buf: Some(mem), offset }
   }
 }
 
-impl Operation for Recv {
+impl Operation for Read {
   fn create_entry(&self) -> io_uring::squeue::Entry {
-    io_uring::opcode::Recv::new(
-      Fd(self.fd),
-      self.buf.as_ref().unwrap().as_ptr() as *mut _,
-      self.buf.as_ref().unwrap().len() as u32,
-    )
-    .flags(self.flags)
-    .build()
+    if let Some(ref buf) = self.buf {
+      io_uring::opcode::Read::new(
+        Fd(self.fd),
+        buf.as_ptr() as *mut _,
+        buf.len() as u32,
+      )
+      .offset(self.offset)
+      .build()
+    } else {
+      unreachable!()
+    }
   }
   type Output = i32;
   type Result = BufResult<Self::Output, Vec<u8>>;

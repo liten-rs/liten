@@ -1,4 +1,3 @@
-#![feature(associated_type_defaults)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc = include_str!("../../book/src/introduction.md")]
 
@@ -24,7 +23,9 @@ cfg_fs! {
 }
 
 #[cfg(unix)]
-pub mod io;
+cfg_io! {
+  pub mod io;
+}
 
 cfg_rt! {
   pub mod runtime;
@@ -43,3 +44,7 @@ cfg_time! {
 
 #[doc(hidden)]
 pub mod utils;
+
+cfg_compat! {
+  pub mod compat;
+}

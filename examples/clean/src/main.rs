@@ -1,9 +1,6 @@
-use std::time::Duration;
-
-use liten::{
-  future::{FutureExt, Stream},
-  io::net::socket::{TcpListener, TcpStream},
-};
+use liten::future::Stream;
+use liten::io::net::tcp::{TcpListener, TcpStream};
+use liten::io::{AsyncReadExt, AsyncWriteExt};
 
 #[liten::main]
 async fn main() {
@@ -20,14 +17,17 @@ async fn main() {
 }
 
 async fn handle_connection(
-  socket: TcpStream,
+  mut socket: TcpStream,
 ) -> Result<(), Box<dyn std::error::Error>> {
   // Read data from the socket
-  let (n, buf) = socket.read(4).await?;
+  let (_n, _buf) = socket.read_all(Vec::from([0, 0, 0, 0])).await;
+  _n?;
 
   // Send a response back to the client
   let response = vec![1, 2, 3, 4];
-  socket.write(Vec::from(response)).await?;
+  let (result, _buf) = socket.write_all(response).await;
+
+  result?;
 
   Ok(())
 }

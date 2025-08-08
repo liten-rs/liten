@@ -1,4 +1,4 @@
-use std::{io, os::fd::RawFd};
+use std::os::fd::RawFd;
 
 use io_uring::types::Fd;
 
@@ -32,7 +32,7 @@ impl Operation for Send {
 
   type Output = i32;
 
-  type Result = BufResult<Self::Output, io::Error, Vec<u8>>;
+  type Result = BufResult<Self::Output, Vec<u8>>;
 
   fn result(&mut self, _ret: std::io::Result<i32>) -> Self::Result {
     let buf = self.buf.take().expect("ran Recv::result more than once.");

@@ -57,6 +57,7 @@ fn test_multiple_days() {
 #[test]
 fn test_mixed_values() {
   // 1 day, 2 hours, 3 minutes, 4 seconds, 5 milliseconds
+  #[allow(clippy::identity_op)]
   let total = 1 * 86_400_000 + 2 * 3_600_000 + 3 * 60_000 + 4 * 1000 + 5;
   assert_eq!(breakdown_milliseconds(total), (1, 2, 3, 4, 5));
 }

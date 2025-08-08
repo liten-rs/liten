@@ -1,10 +1,7 @@
-use std::os::fd::RawFd;
-
-use io_uring::types::Fd;
-
-use crate::io::BufResult;
-
 use super::Operation;
+use crate::BufResult;
+use io_uring::types::Fd;
+use std::os::fd::RawFd;
 
 pub struct Write {
   fd: RawFd,

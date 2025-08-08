@@ -27,7 +27,7 @@ pub struct Interval {
 impl Interval {
   pub fn tick(&self) -> IntervalFut {
     IntervalFut {
-      current_sleep: Sleep(TimeDriver::get().insert(self.interval_ms as usize)),
+      current_sleep: Sleep(TimeDriver::get().insert(self.interval_ms)),
     }
   }
 }

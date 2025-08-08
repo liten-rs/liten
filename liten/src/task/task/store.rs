@@ -34,7 +34,8 @@ impl TaskStore {
 
   pub fn task_enqueue(&self, task: Task) {
     // For now
-    assert!(!self.task_queue.push(task).is_err(), "exceeded the 512 limit");
+    let result = self.task_queue.push(task);
+    assert!(result.is_ok(), "exceeded the 2048 limit");
   }
 
   pub fn task_dequeue(&self) -> Option<Task> {

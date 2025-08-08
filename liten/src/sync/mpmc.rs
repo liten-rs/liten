@@ -360,7 +360,7 @@ mod tests {
       // Spawn continuous consumer
       let consumer_handle = task::spawn(async move {
         let mut received = 0;
-        if let Ok(_) = receiver.recv().await {
+        if receiver.recv().await.is_ok() {
           received += 1;
         }
         received

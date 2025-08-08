@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use liten::future::FutureExt;
 use tokio::{
   io::{AsyncReadExt, AsyncWriteExt},
   net::{TcpListener, TcpStream},
@@ -32,7 +31,7 @@ async fn handle_connection(
 ) -> Result<(), Box<dyn std::error::Error>> {
   // Read data from the socket
   let mut thing = vec![0, 0, 0, 0];
-  let n = socket.read_exact(&mut thing).await?;
+  let _n = socket.read_exact(&mut thing).await?;
 
   // Send a response back to the client
   let response = b"Hello, client!";
