@@ -73,7 +73,7 @@ impl Socket {
   }
 
   pub async fn listen(&self, backlog: i32) -> io::Result<()> {
-    // Once WSL moves to 6.11+ when bind is supported.
+    // Once WSL moves to 6.11+ when listen is supported.
     // lio::listen(fd, backlog).await?;
     //
     // Instead of this:
