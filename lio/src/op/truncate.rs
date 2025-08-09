@@ -16,9 +16,15 @@ impl Truncate {
 }
 
 impl Operation for Truncate {
-  fn create_entry(&self) -> io_uring::squeue::Entry {
-    io_uring::opcode::Ftruncate::new(Fd(self.fd), self.size).build()
-  }
-
   impl_result!(());
+
+  os_linux! {
+    const OPCODE: u8 = io_uring::opcode::Ftruncate::CODE;
+    fn create_entry(&self) -> io_uring::squeue::Entry {
+      io_uring::opcode::Ftruncate::new(Fd(self.fd), self.size).build()
+    }
+    fn run_blocking(&self) -> std::io::Result<i32> {
+      syscall!(ftruncate(self.fd, self.size as i64))
+    }
+  }
 }

@@ -17,26 +17,38 @@ impl Write {
 }
 
 impl Operation for Write {
-  fn create_entry(&self) -> io_uring::squeue::Entry {
-    io_uring::opcode::Write::new(
-      Fd(self.fd),
-      self.buf.as_ref().unwrap().as_ptr(),
-      self.buf.as_ref().unwrap().len() as u32,
-    )
-    .offset(self.offset)
-    .build()
-  }
-
   type Output = i32;
-
   type Result = BufResult<Self::Output, Vec<u8>>;
 
-  fn result(&mut self, _ret: std::io::Result<i32>) -> Self::Result {
-    let buf = self.buf.take().expect("ran Recv::result more than once.");
+  os_linux! {
+    const OPCODE: u8 = io_uring::opcode::Write::CODE;
+    fn create_entry(&self) -> io_uring::squeue::Entry {
+      io_uring::opcode::Write::new(
+        Fd(self.fd),
+        self.buf.as_ref().unwrap().as_ptr(),
+        self.buf.as_ref().unwrap().len() as u32,
+      )
+      .offset(self.offset)
+      .build()
+    }
 
-    match _ret {
-      Ok(ret) => (Ok(ret), buf),
-      Err(err) => (Err(err), buf),
+    fn run_blocking(&self) -> std::io::Result<i32> {
+      syscall!(pwrite(
+        self.fd,
+        self.buf.as_ref().unwrap().as_ptr() as *const _,
+        self.buf.as_ref().unwrap().len() as usize,
+        self.offset as i64
+      ))
+      .map(|u| u as i32)
+    }
+
+    fn result(&mut self, _ret: std::io::Result<i32>) -> Self::Result {
+      let buf = self.buf.take().expect("ran Recv::result more than once.");
+
+      match _ret {
+        Ok(ret) => (Ok(ret), buf),
+        Err(err) => (Err(err), buf),
+      }
     }
   }
 }

@@ -16,7 +16,13 @@ impl Close {
 
 impl Operation for Close {
   impl_result!(());
-  fn create_entry(&self) -> io_uring::squeue::Entry {
-    io_uring::opcode::Close::new(Fd(self.fd)).build()
+  os_linux! {
+    const OPCODE: u8 = io_uring::opcode::Close::CODE;
+    fn run_blocking(&self) -> std::io::Result<i32> {
+      syscall!(close(self.fd))
+    }
+    fn create_entry(&self) -> io_uring::squeue::Entry {
+      io_uring::opcode::Close::new(Fd(self.fd)).build()
+    }
   }
 }

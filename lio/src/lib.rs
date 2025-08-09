@@ -1,6 +1,7 @@
 // TODO: Safe shutdown
 use std::{
   collections::HashMap,
+  ffi::CString,
   io,
   mem::{self, MaybeUninit},
   os::fd::RawFd,
@@ -52,6 +53,7 @@ impl_op!(op::Connect, fn connect(fd: RawFd, addr: SockAddr));
 impl_op!(op::Send, fn send(fd: RawFd, buf: Vec<u8>, flags: Option<i32>));
 impl_op!(op::Recv, fn recv(fd: RawFd, buf: Vec<u8>, flags: Option<i32>));
 impl_op!(op::Close, fn close(fd: RawFd));
+impl_op!(op::OpenAt, fn openat(fd: RawFd, path: CString, flags: i32));
 
 impl_op!(op::Tee, fn tee(fd_in: RawFd, fd_out: RawFd, size: u32));
 
@@ -73,8 +75,12 @@ impl Driver {
   where
     T: op::Operation,
   {
-    let operation_id = Self::get().push::<T>(op);
-    OperationProgress::<T>::new(operation_id)
+    if T::supported() {
+      let operation_id = Self::get().push::<T>(op);
+      OperationProgress::<T>::new_async(operation_id)
+    } else {
+      OperationProgress::<T>::new_sync(op)
+    }
   }
 }
 

@@ -1,4 +1,4 @@
-use std::os::fd::RawFd;
+use std::{io, os::fd::RawFd};
 
 use io_uring::types::Fd;
 
@@ -20,26 +20,34 @@ impl Send {
 }
 
 impl Operation for Send {
-  fn create_entry(&self) -> io_uring::squeue::Entry {
-    io_uring::opcode::Send::new(
-      Fd(self.fd),
-      self.buf.as_ref().unwrap().as_ptr(),
-      self.buf.as_ref().unwrap().len() as u32,
-    )
-    .flags(self.flags)
-    .build()
-  }
-
   type Output = i32;
-
   type Result = BufResult<Self::Output, Vec<u8>>;
 
-  fn result(&mut self, _ret: std::io::Result<i32>) -> Self::Result {
-    let buf = self.buf.take().expect("ran Recv::result more than once.");
+  os_linux! {
+    const OPCODE: u8 = io_uring::opcode::Send::CODE;
+    fn create_entry(&self) -> io_uring::squeue::Entry {
+      io_uring::opcode::Send::new(
+        Fd(self.fd),
+        self.buf.as_ref().unwrap().as_ptr(),
+        self.buf.as_ref().unwrap().len() as u32,
+      )
+      .flags(self.flags)
+      .build()
+    }
 
-    match _ret {
-      Ok(ret) => (Ok(ret), buf),
-      Err(err) => (Err(err), buf),
+
+    fn run_blocking(&self) -> io::Result<i32> {
+      let buf = self.buf.as_ref().unwrap();
+      syscall!(send(self.fd, buf.as_ptr() as *mut _, buf.len(), 0))
+        .map(|t| t as i32)
+    }
+    fn result(&mut self, _ret: std::io::Result<i32>) -> Self::Result {
+      let buf = self.buf.take().expect("ran Recv::result more than once.");
+
+      match _ret {
+        Ok(ret) => (Ok(ret), buf),
+        Err(err) => (Err(err), buf),
+      }
     }
   }
 }

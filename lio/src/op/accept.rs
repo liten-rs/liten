@@ -22,14 +22,26 @@ impl Accept {
 }
 
 impl Operation for Accept {
-  impl_result!(fd);
+  type Output = RawFd;
+  type Result = std::io::Result<Self::Output>;
 
-  fn create_entry(&self) -> io_uring::squeue::Entry {
-    io_uring::opcode::Accept::new(
-      Fd(self.fd),
-      self.addr as *mut libc::sockaddr,
-      self.len,
-    )
-    .build()
+  fn result(&mut self, res: std::io::Result<i32>) -> Self::Result {
+    res
+  }
+
+  os_linux! {
+    const OPCODE: u8 = io_uring::opcode::Accept::CODE;
+    fn run_blocking(&self) -> std::io::Result<i32> {
+      syscall!(accept(self.fd, self.addr as *mut libc::sockaddr, self.len))
+    }
+
+    fn create_entry(&self) -> io_uring::squeue::Entry {
+      io_uring::opcode::Accept::new(
+        Fd(self.fd),
+        self.addr as *mut libc::sockaddr,
+        self.len,
+      )
+      .build()
+    }
   }
 }

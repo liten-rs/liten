@@ -18,7 +18,14 @@ impl Listen {
 
 impl Operation for Listen {
   impl_result!(());
-  fn create_entry(&self) -> io_uring::squeue::Entry {
-    io_uring::opcode::Listen::new(Fd(self.fd), self.backlog).build()
+
+  os_linux! {
+    const OPCODE: u8 = io_uring::opcode::Listen::CODE;
+    fn run_blocking(&self) -> std::io::Result<i32> {
+      syscall!(listen(self.fd, self.backlog))
+    }
+    fn create_entry(&self) -> io_uring::squeue::Entry {
+      io_uring::opcode::Listen::new(Fd(self.fd), self.backlog).build()
+    }
   }
 }

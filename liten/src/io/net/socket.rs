@@ -1,8 +1,4 @@
-use std::{
-  io,
-  mem::{self, MaybeUninit},
-  os::fd::{AsRawFd, RawFd},
-};
+use std::{future::Future, io, mem::MaybeUninit, os::fd::RawFd};
 
 use socket2::{SockAddr, SockAddrStorage, Type};
 
@@ -30,38 +26,17 @@ impl Socket {
   }
 
   pub async fn bind(addr: SockAddr, ty: Type) -> io::Result<Self> {
-    let socket = socket2::Socket::new(addr.domain(), ty, None)?;
-
-    let sockaddr_ptr = &addr as *const SockAddr;
-
-    // Once WSL moves to 6.11+ when bind is supported.
-    // lio::bind(fd, addr).await?;
-
-    // Instead of this:
-    syscall!(bind(
-      socket.as_raw_fd(),
-      sockaddr_ptr.cast::<libc::sockaddr>(),
-      addr.len() as _,
-    ))?;
-
-    let fd = socket.as_raw_fd();
-
-    mem::forget(socket);
+    let fd = lio::socket(addr.domain(), ty, None).await?;
+    lio::bind(fd, addr).await?;
 
     let flag = 1;
-    let result = unsafe {
-      libc::setsockopt(
-        fd,
-        libc::SOL_SOCKET,
-        libc::SO_REUSEADDR | libc::SO_REUSEPORT,
-        &flag as *const _ as *const libc::c_void,
-        std::mem::size_of_val(&flag) as libc::socklen_t,
-      )
-    };
-
-    if result < 0 {
-      return Err(std::io::Error::from_raw_os_error(result));
-    };
+    syscall!(setsockopt(
+      fd,
+      libc::SOL_SOCKET,
+      libc::SO_REUSEADDR | libc::SO_REUSEPORT,
+      &flag as *const _ as *const libc::c_void,
+      std::mem::size_of_val(&flag) as libc::socklen_t,
+    ))?;
 
     Ok(Self { fd })
   }
@@ -72,12 +47,8 @@ impl Socket {
     Ok(Self { fd })
   }
 
-  pub async fn listen(&self, backlog: i32) -> io::Result<()> {
-    // Once WSL moves to 6.11+ when listen is supported.
-    // lio::listen(fd, backlog).await?;
-    //
-    // Instead of this:
-    syscall!(listen(self.fd, backlog)).map(|_| ())
+  pub fn listen(&self, backlog: i32) -> impl Future<Output = io::Result<()>> {
+    lio::listen(self.fd, backlog)
   }
 
   pub async fn accept(&self) -> io::Result<(Socket, SockAddr)> {

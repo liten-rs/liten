@@ -1,5 +1,10 @@
 use std::{
-  fs::OpenOptions, io, os::fd::AsRawFd, path::Path, string::FromUtf8Error,
+  ffi::CString,
+  fs::OpenOptions,
+  io,
+  os::fd::{AsRawFd, RawFd},
+  path::Path,
+  string::FromUtf8Error,
 };
 
 use thiserror::Error;
@@ -78,4 +83,45 @@ pub async fn write<P: AsRef<Path>>(
   };
 
   (Ok(()), vector)
+}
+
+pub struct File(RawFd);
+
+impl File {
+  pub async fn open<F: AsRef<Path>>(path: F) -> io::Result<File> {
+    let path: &[u8] = path.as_ref().as_os_str().as_encoded_bytes();
+    let path = CString::new(path)?;
+    let fd = lio::openat(libc::AT_FDCWD, path, 0).await?;
+    Ok(Self(fd))
+  }
+
+  pub async fn write_at(
+    &self,
+    index: usize,
+    vec: Vec<u8>,
+  ) -> BufResult<usize, Vec<u8>> {
+    let (result, buf) = lio::write(self.0, vec, index as u64).await;
+    match result {
+      Ok(nice) => (Ok(nice as usize), buf),
+      Err(err) => (Err(err), buf),
+    }
+  }
+
+  pub async fn read_at(
+    &self,
+    index: usize,
+    vec: Vec<u8>,
+  ) -> BufResult<usize, Vec<u8>> {
+    let (result, buf) = lio::read(self.0, vec, index as u64).await;
+    match result {
+      Ok(nice) => (Ok(nice as usize), buf),
+      Err(err) => (Err(err), buf),
+    }
+  }
+}
+
+impl Drop for File {
+  fn drop(&mut self) {
+    lio::close(self.0).detatch();
+  }
 }
