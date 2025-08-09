@@ -1,3 +1,5 @@
+use std::io;
+
 use super::Operation;
 
 pub struct Socket {
@@ -17,13 +19,26 @@ impl Socket {
 }
 
 impl Operation for Socket {
-  fn create_entry(&self) -> io_uring::squeue::Entry {
-    io_uring::opcode::Socket::new(
-      self.domain.into(),
-      self.ty.into(),
-      self.proto.unwrap_or(0.into()).into(),
-    )
-    .build()
-  }
   impl_result!(fd);
+
+  os_linux! {
+    const OPCODE: u8 = io_uring::opcode::Socket::CODE;
+    fn create_entry(&self) -> io_uring::squeue::Entry {
+      io_uring::opcode::Socket::new(
+        self.domain.into(),
+        self.ty.into(),
+        self.proto.unwrap_or(0.into()).into(),
+      )
+      .build()
+    }
+
+    fn run_blocking(&self) -> io::Result<i32> {
+      syscall!(socket(
+        self.domain.into(),
+        self.ty.into(),
+        self.proto.unwrap_or(0.into()).into()
+      ))
+      .map(|t| t as i32)
+    }
+  }
 }
