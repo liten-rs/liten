@@ -1,7 +1,7 @@
 macro_rules! cfg_time {
    ($($item:item)*) => {
        $(
-            #[cfg(feature = "time")]
+            #[cfg(all(feature = "time", not(loom)))]
             #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
             $item
         )*

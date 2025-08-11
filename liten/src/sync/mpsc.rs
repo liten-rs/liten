@@ -68,7 +68,7 @@ pub struct Receiver<T>(Arc<Inner<T>>);
 
 impl<T> Receiver<T> {
   pub fn recv(&self) -> RecvFuture<'_, T> {
-    RecvFuture(self)
+    RecvFuture::<'_, T>(self)
   }
 
   cfg_time! {

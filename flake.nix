@@ -26,19 +26,32 @@
 
       in
       {
-        devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
-            cargo-nextest
-            mdbook
-            cargo-watch
-            cargo-hack
-            cargo-expand
+        devShells =
+          let
+            buildInputs = with pkgs; [
+              (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
+              cargo-nextest
+              cargo-hack
 
-            just
-            bacon
-          ];
-        };
+              just
+            ];
+          in
+          {
+            ci = pkgs.mkShell {
+              inherit buildInputs;
+            };
+            default = pkgs.mkShell {
+              buildInputs =
+                buildInputs
+                ++ (with pkgs; [
+                  mdbook
+                  cargo-watch
+                  cargo-expand
+
+                  bacon
+                ]);
+            };
+          };
       }
     );
 }

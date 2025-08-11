@@ -104,7 +104,7 @@ unsafe impl<V: Send> Send for Receiver<V> {}
 
 impl<V> Receiver<V> {
   pub(crate) fn new(arc_inner: NonNull<Inner<V>>) -> Self {
-    Receiver(arc_inner)
+    Receiver::<V>(arc_inner)
   }
 
   pub fn try_recv(&self) -> Result<Option<V>, OneshotError> {

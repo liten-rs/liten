@@ -1,5 +1,5 @@
 loom-test:
-  RUSTFLAGS="--cfg liten=\"loom\"" cargo nextest r --release --all-features
+  RUSTFLAGS="--cfg loom -C debug_assertions" cargo nextest r --release --features _loom_testing --lib --fail-fast
 
 
 

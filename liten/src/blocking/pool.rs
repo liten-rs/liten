@@ -126,7 +126,11 @@ impl BlockingPool {
           let mut unparkers = self.thread_state.unparkers.lock().unwrap();
 
           unparkers.insert(thread::current().id(), parker.unparker());
+
+          // some weird shit with cfg(loom), it passes cfg down to libs also??
+          #[cfg(not(loom))]
           parker.park_timeout(Duration::from_secs(5));
+
           let _ = unparkers.remove(&thread::current().id());
         }
         Err(mpmc::RecvError::Closed) => unreachable!(),

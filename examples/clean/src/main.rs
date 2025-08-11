@@ -3,22 +3,12 @@ use std::time::Duration;
 use liten::io::fs::File;
 use liten::io::net::tcp::TcpStream;
 use liten::io::{AsyncReadExt, AsyncWriteExt};
-use liten::time::sleep;
 
 #[liten::main]
 async fn main() {
   let file = File::open("./README.md").await.unwrap();
 
-  liten::task::spawn(async {
-    loop {
-      sleep(Duration::from_secs(1)).await;
-      println!("hello");
-    }
-  });
-
   let result = file.read_to_string().await.unwrap();
-
-  sleep(Duration::from_secs(3)).await;
 
   println!("{result}");
   // let listener = TcpListener::bind("127.0.0.1:3002").await.unwrap();
