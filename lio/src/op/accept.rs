@@ -1,7 +1,7 @@
 use std::{mem::MaybeUninit, os::fd::RawFd};
 
 os_linux! {
-  use io_uring::{types::Fd, opcode::Accept, squeue};
+  use io_uring::{types::Fd, opcode, squeue};
 }
 use socket2::SockAddrStorage;
 
@@ -32,10 +32,10 @@ impl Operation for Accept {
   }
 
   os_linux! {
-    const OPCODE: u8 = Accept::CODE;
+    const OPCODE: u8 = opcode::Accept::CODE;
 
     fn create_entry(&self) -> squeue::Entry {
-      Accept::new(
+      opcode::Accept::new(
         Fd(self.fd),
         self.addr as *mut libc::sockaddr,
         self.len,

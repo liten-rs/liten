@@ -42,8 +42,9 @@ impl Operation for Socket {
 
     // Remove blocking by kernel if no result is available. Linux uses io-uring so it doesn't
     // count.
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not_linux)]
     syscall!(ioctl(result, libc::FIONBIO, &mut 1))?;
+
     Ok(result)
   }
 }

@@ -1,14 +1,13 @@
 use std::time::Duration;
 
-use liten::future::Stream;
-use liten::io::net::tcp::{TcpListener, TcpStream};
+use liten::io::fs::File;
+use liten::io::net::tcp::TcpStream;
 use liten::io::{AsyncReadExt, AsyncWriteExt};
 use liten::time::sleep;
 
 #[liten::main]
 async fn main() {
-  let listener = TcpListener::bind("127.0.0.1:3001").await.unwrap();
-  println!("Server listening on 127.0.0.1:8081");
+  let file = File::open("./README.md").await.unwrap();
 
   liten::task::spawn(async {
     loop {
@@ -17,14 +16,23 @@ async fn main() {
     }
   });
 
-  while let Some(Ok((socket, _))) = listener.next().await {
-    liten::task::spawn(async move {
-      println!("new");
-      if let Err(e) = handle_connection(socket).await {
-        println!("Error handling connection: {}", e);
-      }
-    });
-  }
+  let result = file.read_to_string().await.unwrap();
+
+  sleep(Duration::from_secs(3)).await;
+
+  println!("{result}");
+  // let listener = TcpListener::bind("127.0.0.1:3002").await.unwrap();
+  // println!("Server listening on 127.0.0.1:8081");
+  //
+  //
+  // while let Some(Ok((socket, _))) = listener.next().await {
+  //   liten::task::spawn(async move {
+  //     println!("new");
+  //     if let Err(e) = handle_connection(socket).await {
+  //       println!("Error handling connection: {}", e);
+  //     }
+  //   });
+  // }
 }
 
 async fn handle_connection(

@@ -54,7 +54,7 @@ os_linux! {
 pub use truncate::*;
 pub use write::*;
 
-/// Done to disallow someone creating a operation outside of lio.
+/// Done to disallow someone creating a operation outside of lio, which will cause issues.
 trait Sealed {}
 impl<O: Operation> Sealed for O {}
 
@@ -63,7 +63,7 @@ impl<O: Operation> Sealed for O {}
 #[allow(private_bounds)]
 pub trait Operation: Sealed {
   type Output: Sized;
-  type Result; // = io::Result<Self::Output>;
+  type Result; // = most often io::Result<Self::Output>;
 
   os_linux! {
     const OPCODE: u8;
@@ -75,7 +75,7 @@ pub trait Operation: Sealed {
     fn create_entry(&self) -> io_uring::squeue::Entry;
   }
   fn run_blocking(&self) -> io::Result<i32>;
-  // This is guarranteed after this has completed and only fire ONCE.
-  // i32 is guarranteed to be >= 0.
+  /// This is guarranteed to fire after this has completed and only fire ONCE.
+  /// i32 is guarranteed to be >= 0.
   fn result(&mut self, _ret: io::Result<i32>) -> Self::Result;
 }

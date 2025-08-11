@@ -1,3 +1,8 @@
+#[cfg(linux)]
+use crate::CheckRegistrationResult;
+#[cfg(linux)]
+use std::marker::PhantomData;
+
 use std::{
   future::Future,
   pin::Pin,
@@ -36,7 +41,7 @@ use crate::{Driver, op};
 /// ```
 #[cfg(linux)]
 pub enum OperationProgress<T> {
-  IoUring { id: OperationId, _m: PhantomData<T> },
+  IoUring { id: u64, _m: PhantomData<T> },
   Blocking { operation: T },
 }
 
@@ -74,27 +79,7 @@ pub enum OperationProgress<T> {
   Blocking { operation: T },
 }
 
-#[cfg(target_os = "linux")]
 impl<T> OperationProgress<T> {
-  pub fn new_uring(id: u64) -> Self {
-    Self::IoUring { id, _m: PhantomData }
-  }
-
-  pub fn new_blocking(op: T) -> Self {
-    Self::Blocking { operation: op }
-  }
-}
-
-#[cfg(not(target_os = "linux"))]
-impl<T> OperationProgress<T> {
-  pub fn new_poll(id: u64, operation: T) -> Self {
-    Self::Poll { id, operation }
-  }
-
-  pub fn new_blocking(operation: T) -> Self {
-    Self::Blocking { operation }
-  }
-
   /// Detaches this progress tracker from the driver without binding it to any object.
   ///
   /// This function is useful when you want to clean up the operation registration
@@ -120,6 +105,28 @@ impl<T> OperationProgress<T> {
   pub fn detatch(self) {
     // Engages the Driver::detatch(..);
     drop(self);
+  }
+}
+
+#[cfg(target_os = "linux")]
+impl<T> OperationProgress<T> {
+  pub fn new_uring(id: u64) -> Self {
+    Self::IoUring { id, _m: PhantomData }
+  }
+
+  pub fn new_blocking(op: T) -> Self {
+    Self::Blocking { operation: op }
+  }
+}
+
+#[cfg(not(target_os = "linux"))]
+impl<T> OperationProgress<T> {
+  pub fn new_poll(id: u64, operation: T) -> Self {
+    Self::Poll { id, operation }
+  }
+
+  pub fn new_blocking(operation: T) -> Self {
+    Self::Blocking { operation }
   }
 }
 

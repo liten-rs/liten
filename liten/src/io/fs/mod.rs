@@ -13,15 +13,13 @@ use crate::io::BufResult;
 
 const CHUNK_SIZE: usize = 4096; // 4KB
 
-pub async fn read<P: AsRef<Path>>(path: P) -> io::Result<Vec<u8>> {
-  let file = OpenOptions::new().read(true).open(path)?;
-
+async fn read_with_fd(fd: RawFd) -> io::Result<Vec<u8>> {
   let mut buffer = Vec::new();
   let mut chunks = Vec::from([0; CHUNK_SIZE]);
   let mut index = 0;
 
   loop {
-    let (result, vector) = lio::read(file.as_raw_fd(), chunks, index).await;
+    let (result, vector) = lio::read(fd, chunks, index).await;
 
     let bytes_read = result?;
 
@@ -35,6 +33,11 @@ pub async fn read<P: AsRef<Path>>(path: P) -> io::Result<Vec<u8>> {
   }
 
   Ok(buffer)
+}
+
+pub async fn read<P: AsRef<Path>>(path: P) -> io::Result<Vec<u8>> {
+  let file = OpenOptions::new().read(true).open(path)?;
+  read_with_fd(file.as_raw_fd()).await
 }
 
 #[derive(Debug, Error)]
@@ -117,6 +120,11 @@ impl File {
       Ok(nice) => (Ok(nice as usize), buf),
       Err(err) => (Err(err), buf),
     }
+  }
+
+  pub async fn read_to_string(&self) -> Result<String, ReadToStringError> {
+    let buf = read_with_fd(self.0).await?;
+    Ok(String::from_utf8(buf)?)
   }
 }
 
