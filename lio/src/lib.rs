@@ -126,7 +126,7 @@ use std::{
   },
   task::Waker,
 };
-#[cfg(target_os = "linux")]
+#[cfg(linux)]
 use std::{mem, sync::atomic::AtomicBool};
 
 /// Result type for operations that return both a result and a buffer.
@@ -143,28 +143,28 @@ mod op_progress;
 mod op_registration;
 pub use op_progress::OperationProgress;
 
-#[cfg(target_os = "linux")]
+#[cfg(linux)]
 use io_uring::{IoUring, cqueue::Entry};
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not_linux)]
 use polling::Poller;
 use socket2::{SockAddr, SockAddrStorage};
 
 use crate::op_registration::OpRegistration;
-#[cfg(target_os = "linux")]
+#[cfg(linux)]
 use crate::op_registration::OpRegistrationStatus;
 
 struct Driver(Arc<DriverInner>);
 
 struct DriverInner {
-  #[cfg(target_os = "linux")]
+  #[cfg(linux)]
   inner: IoUring,
-  #[cfg(target_os = "linux")]
+  #[cfg(linux)]
   has_done_work: AtomicBool,
-  #[cfg(target_os = "linux")]
+  #[cfg(linux)]
   submission_guard: Mutex<()>,
 
-  #[cfg(not(target_os = "linux"))]
+  #[cfg(not_linux)]
   poller: polling::Poller,
 
   wakers: Mutex<HashMap<u64, OpRegistration>>,
@@ -204,7 +204,7 @@ pub fn write(
 ) -> op_progress::OperationProgress<op::Write> {
   let op = <op::Write>::new(fd, buf, offset);
   cfg_if::cfg_if! {
-    if #[cfg(target_os = "linux")] {
+    if #[cfg(linux)] {
       Driver::submit(op)
     } else {
       Driver::submit_block(op)
@@ -246,7 +246,7 @@ pub fn read(
 ) -> op_progress::OperationProgress<op::Read> {
   let op = <op::Read>::new(fd, mem, offset);
   cfg_if::cfg_if! {
-    if #[cfg(target_os = "linux")] {
+    if #[cfg(linux)] {
       Driver::submit(op)
     } else {
       Driver::submit_block(op)
@@ -283,7 +283,7 @@ pub fn truncate(
 ) -> op_progress::OperationProgress<op::Truncate> {
   let op = <op::Truncate>::new(fd, len);
   cfg_if::cfg_if! {
-    if #[cfg(target_os = "linux")] {
+    if #[cfg(linux)] {
       Driver::submit(op)
     } else {
       Driver::submit_block(op)
@@ -323,7 +323,7 @@ pub fn socket(
 ) -> op_progress::OperationProgress<op::Socket> {
   let op = <op::Socket>::new(domain, ty, proto);
   cfg_if::cfg_if! {
-    if #[cfg(target_os = "linux")] {
+    if #[cfg(linux)] {
       Driver::submit(op)
     } else {
       Driver::submit_block(op)
@@ -361,7 +361,7 @@ pub fn bind(
 ) -> op_progress::OperationProgress<op::Bind> {
   let op = <op::Bind>::new(fd, addr);
   cfg_if::cfg_if! {
-    if #[cfg(target_os = "linux")] {
+    if #[cfg(linux)] {
       Driver::submit(op)
     } else {
       Driver::submit_block(op)
@@ -411,8 +411,9 @@ pub fn accept(
   len: *mut libc::socklen_t,
 ) -> op_progress::OperationProgress<op::Accept> {
   let op = <op::Accept>::new(fd, addr, len);
+
   cfg_if::cfg_if! {
-    if #[cfg(target_os = "linux")] {
+    if #[cfg(linux)] {
       Driver::submit(op)
     } else {
       Driver::submit_poll(fd, PollInterest::Read, op)
@@ -446,7 +447,7 @@ pub fn accept(
 pub fn listen(fd: RawFd) -> op_progress::OperationProgress<op::Listen> {
   let op = <op::Listen>::new(fd);
   cfg_if::cfg_if! {
-    if #[cfg(target_os = "linux")] {
+    if #[cfg(linux)] {
       Driver::submit(op)
     } else {
       Driver::submit_block(op)
@@ -485,7 +486,7 @@ pub fn connect(
 ) -> op_progress::OperationProgress<op::Connect> {
   let op = <op::Connect>::new(fd, addr);
   cfg_if::cfg_if! {
-    if #[cfg(target_os = "linux")] {
+    if #[cfg(linux)] {
       Driver::submit(op)
     } else {
       Driver::submit_poll(fd, PollInterest::Read, op)
@@ -527,7 +528,7 @@ pub fn send(
 ) -> op_progress::OperationProgress<op::Send> {
   let op = <op::Send>::new(fd, buf, flags);
   cfg_if::cfg_if! {
-    if #[cfg(target_os = "linux")] {
+    if #[cfg(linux)] {
       Driver::submit(op)
     } else {
       Driver::submit_poll(fd, PollInterest::Write, op)
@@ -569,7 +570,7 @@ pub fn recv(
 ) -> op_progress::OperationProgress<op::Recv> {
   let op = <op::Recv>::new(fd, buf, flags);
   cfg_if::cfg_if! {
-    if #[cfg(target_os = "linux")] {
+    if #[cfg(linux)] {
       Driver::submit(op)
     } else {
       Driver::submit_poll(fd, PollInterest::Read, op)
@@ -603,7 +604,7 @@ pub fn recv(
 pub fn close(fd: RawFd) -> op_progress::OperationProgress<op::Close> {
   let op = <op::Close>::new(fd);
   cfg_if::cfg_if! {
-    if #[cfg(target_os = "linux")] {
+    if #[cfg(linux)] {
       Driver::submit(op)
     } else {
       Driver::submit_block(op)
@@ -645,7 +646,7 @@ pub fn openat(
   let op = <op::OpenAt>::new(fd, path, flags);
 
   cfg_if::cfg_if! {
-    if #[cfg(target_os = "linux")] {
+    if #[cfg(linux)] {
       Driver::submit(op)
     } else {
       Driver::submit_block(op)
@@ -672,7 +673,7 @@ pub fn openat(
 /// # Examples
 ///
 /// ```rust
-/// #[cfg(target_os = "linux")]
+/// #[cfg(linux)]
 /// async fn tee_example() -> std::io::Result<()> {
 ///     use lio::tee;
 ///     let fd_in: RawFd = /* input file descriptor */;
@@ -682,7 +683,7 @@ pub fn openat(
 ///     Ok(())
 /// }
 /// ```
-#[cfg(target_os = "linux")]
+#[cfg(linux)]
 pub fn tee(
   fd_in: RawFd,
   fd_out: RawFd,
@@ -708,14 +709,14 @@ pub fn tick() {
 #[cfg(not_linux)]
 pub fn tick() {}
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not_linux)]
 #[derive(Clone, Copy)]
 pub(crate) enum PollInterest {
   Read,
   Write,
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not_linux)]
 impl PollInterest {
   fn as_event(self, id: u64) -> polling::Event {
     polling::Event::new(
@@ -737,14 +738,14 @@ impl Driver {
 
     DRIVER.get_or_init(|| {
       let driver = Driver(Arc::new(DriverInner {
-        #[cfg(target_os = "linux")]
+        #[cfg(linux)]
         inner: IoUring::new(256).unwrap(),
-        #[cfg(target_os = "linux")]
+        #[cfg(linux)]
         submission_guard: Mutex::new(()),
-        #[cfg(target_os = "linux")]
+        #[cfg(linux)]
         has_done_work: AtomicBool::new(false),
 
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not_linux)]
         poller: polling::Poller::new().unwrap(),
 
         wakers: Mutex::new(HashMap::default()),
@@ -760,7 +761,7 @@ impl Driver {
     let mut _lock = Driver::get().0.wakers.lock().unwrap();
 
     cfg_if::cfg_if! {
-      if #[cfg(target_os = "linux")] {
+      if #[cfg(linux)] {
         let thing = _lock.get_mut(&id)?;
         thing.status = OpRegistrationStatus::Cancelling;
       } else {
@@ -780,7 +781,7 @@ impl Driver {
   }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not_linux)]
 impl Driver {
   pub(crate) fn insert_poll(&self, fd: RawFd, interest: PollInterest) -> u64 {
     let mut _lock = self.0.wakers.lock().unwrap();
@@ -853,7 +854,7 @@ impl Driver {
   }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(linux)]
 impl Driver {
   pub fn background(&self) {
     // SAFETY: completion_shared is only accessed here so it's a singlethreaded access, hence
@@ -976,7 +977,7 @@ impl Driver {
   }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(linux)]
 pub(crate) enum CheckRegistrationResult<V> {
   /// Waker has been registered and future should return Poll::Pending
   WakerSet,

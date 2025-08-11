@@ -1,12 +1,12 @@
-#[cfg(not(target_os = "linux"))]
+#[cfg(not_linux)]
 use std::os::fd::RawFd;
 use std::{cell::Cell, task::Waker};
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not_linux)]
 use crate::PollInterest;
 
 // TODO: make crossplatform with polling crate.
-#[cfg(target_os = "linux")]
+#[cfg(linux)]
 pub struct OpRegistration {
   pub op: *const (),
   pub status: OpRegistrationStatus,
@@ -15,16 +15,15 @@ pub struct OpRegistration {
 
 unsafe impl Send for OpRegistration {}
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not_linux)]
 pub struct OpRegistration {
   status: OpRegistrationStatus,
   interest: PollInterest,
   fd: RawFd,
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not_linux)]
 impl OpRegistration {
-  #[cfg(not(target_os = "linux"))]
   pub fn new(fd: RawFd, interest: PollInterest) -> Self {
     OpRegistration {
       status: OpRegistrationStatus { registered_waker: Cell::new(None) },
@@ -52,7 +51,7 @@ impl OpRegistration {
   }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(linux)]
 impl OpRegistration {
   pub fn new<T>(op: T) -> Self {
     fn drop_op<T>(ptr: *const ()) {
@@ -71,7 +70,7 @@ impl OpRegistration {
   }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(linux)]
 pub enum OpRegistrationStatus {
   Waiting {
     registered_waker: Cell<Option<Waker>>,
@@ -84,7 +83,7 @@ pub enum OpRegistrationStatus {
   },
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not_linux)]
 pub struct OpRegistrationStatus {
   registered_waker: Cell<Option<Waker>>,
 }

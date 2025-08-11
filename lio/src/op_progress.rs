@@ -73,7 +73,7 @@ pub enum OperationProgress<T> {
 ///     Ok(())
 /// }
 /// ```
-#[cfg(not(target_os = "linux"))]
+#[cfg(not_linux)]
 pub enum OperationProgress<T> {
   Poll { id: u64, operation: T },
   Blocking { operation: T },
@@ -108,7 +108,7 @@ impl<T> OperationProgress<T> {
   }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(linux)]
 impl<T> OperationProgress<T> {
   pub fn new_uring(id: u64) -> Self {
     Self::IoUring { id, _m: PhantomData }
@@ -119,7 +119,7 @@ impl<T> OperationProgress<T> {
   }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not_linux)]
 impl<T> OperationProgress<T> {
   pub fn new_poll(id: u64, operation: T) -> Self {
     Self::Poll { id, operation }
@@ -135,7 +135,7 @@ impl<T> OperationProgress<T> {
 /// This implementation handles the completion of operations submitted to the
 /// io_uring subsystem, automatically waking the future when the operation
 /// completes.
-#[cfg(target_os = "linux")]
+#[cfg(linux)]
 impl<T> Future for OperationProgress<T>
 where
   T: op::Operation + Unpin,
@@ -169,7 +169,7 @@ where
 ///
 /// This implementation handles operations that use polling-based async I/O,
 /// automatically re-registering for events when operations would block.
-#[cfg(not(target_os = "linux"))]
+#[cfg(not_linux)]
 impl<T> Future for OperationProgress<T>
 where
   T: op::Operation + Unpin,
@@ -213,7 +213,7 @@ where
 ///
 /// When an `OperationProgress` is dropped, this implementation ensures
 /// that the operation is properly cancelled and cleaned up from the driver.
-#[cfg(target_os = "linux")]
+#[cfg(linux)]
 impl<T> Drop for OperationProgress<T> {
   fn drop(&mut self) {
     if let OperationProgress::IoUring { id, .. } = *self {
@@ -226,7 +226,7 @@ impl<T> Drop for OperationProgress<T> {
 ///
 /// When an `OperationProgress` is dropped, this implementation ensures
 /// that the operation is properly detached and cleaned up from the driver.
-#[cfg(not(target_os = "linux"))]
+#[cfg(not_linux)]
 impl<T> Drop for OperationProgress<T> {
   fn drop(&mut self) {
     if let OperationProgress::Poll { id, .. } = *self {

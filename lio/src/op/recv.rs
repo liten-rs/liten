@@ -1,6 +1,6 @@
 use std::{io, os::fd::RawFd};
 
-#[cfg(target_os = "linux")]
+#[cfg(linux)]
 use io_uring::types::Fd;
 
 use crate::BufResult;

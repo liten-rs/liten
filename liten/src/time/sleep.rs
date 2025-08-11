@@ -82,7 +82,9 @@ mod tests {
         )
         .await;
       let instant2 = Instant::now();
-      panic!("{:#?} {:?}", result, instant2 - instant);
+
+      assert!(result == Err(Timeout));
+      assert!((instant2 - instant).as_millis() > 10);
     })
   }
 
