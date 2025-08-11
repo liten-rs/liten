@@ -1,7 +1,7 @@
 macro_rules! os_linux {
    ($($item:item)*) => {
        $(
-            #[cfg(target_os = "linux")]
+            #[cfg(linux)]
             $item
         )*
     }

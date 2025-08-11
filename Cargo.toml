@@ -1,5 +1,5 @@
 [workspace]
-members = [ "liten", "liten-macros", "examples/clean", "examples/testing", "liten", "lio", "examples/runtime_modes"]
+members = [ "liten", "liten-macros", "examples/clean", "examples/testing", "liten", "lio", "examples/runtime_modes", "lblock"]
 resolver = "3"
 
 [workspace.dependencies]

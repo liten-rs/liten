@@ -10,11 +10,11 @@ test-doc:
   cargo test --doc --all-features
 
 miri-test:
-  # miriflgas is for issue with crossbeam-deque
+  # miriflgas is for issue with time syscalls
   MIRIFLAGS="-Zmiri-permissive-provenance -Zmiri-disable-isolation" cargo miri nextest r --target x86_64-unknown-linux-gnu --all-features
 
 miri-test-watch:
-  # miriflgas is for issue with crossbeam-deque
+  # miriflgas is for issue with time syscalls
   MIRIFLAGS="-Zmiri-permissive-provenance -Zmiri-disable-isolation" cargo watch -x "miri nextest r --target x86_64-unknown-linux-gnu --all-features"
 
 lint:

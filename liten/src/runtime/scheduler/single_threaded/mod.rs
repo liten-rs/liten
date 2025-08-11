@@ -41,6 +41,7 @@ impl Scheduler for SingleThreaded {
         return value;
       }
 
+      #[cfg(all(feature = "io", not(miri)))]
       lio::tick();
 
       thread::park();

@@ -58,6 +58,15 @@ macro_rules! cfg_io {
     }
 }
 
+macro_rules! cfg_internal_io {
+   ($($item:item)*) => {
+       $(
+            #[cfg(all(feature = "io", not(miri)))]
+            $item
+        )*
+    }
+}
+
 macro_rules! cfg_compat {
    ($($item:item)*) => {
        $(
