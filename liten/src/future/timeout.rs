@@ -1,6 +1,6 @@
 /// Error returned when a future times out.
 ///
-/// This error is produced by the [`FutureExt::timeout`] method when the inner future does not complete within the specified duration.
+/// This error is produced by the [`FutureExt::timeout`](super::FutureExt::timeout) method when the inner future does not complete within the specified duration.
 #[cfg(feature = "time")]
 #[derive(thiserror::Error, Debug, PartialEq)]
 #[error("Timeout reached")]

@@ -16,6 +16,15 @@
 //! - **Network operations**: socket, bind, listen, accept, connect, send, recv
 //! - **Automatic fallback** to blocking operations when async isn't supported
 //!
+//! ## **NOTE**
+//! Currently this library is a bit finicky ([`libc::accept`] especially) on linux machines that doesn't support
+//! io-uring operations, like wsl2. If anyone has a good idea of api design and detecting io-uring support on linux,
+//! please file an issue.
+//!
+//! This problem arises when the library checks for the specific operation support, if yes
+//! everything works. If no, it will call the blocking normal syscall. With accept, that means
+//! blocking in a future which is really bad.
+//!
 //! ## Quick Start
 //!
 //! ```rust
@@ -87,13 +96,6 @@
 //! }
 //! ```
 //!
-//! ## Performance Characteristics
-//!
-//! - **Linux**: io_uring provides the highest performance with zero-copy operations
-//! - **Windows**: IOCP offers excellent performance for high-concurrency scenarios
-//! - **macOS**: kqueue provides efficient event notification for async operations
-//! - **Fallback**: Automatic fallback to blocking operations ensures compatibility
-//!
 //! ## Safety and Threading
 //!
 //! - All operations are safe and follow Rust's memory safety guarantees
@@ -144,7 +146,7 @@ pub use op_progress::OperationProgress;
 #[cfg(target_os = "linux")]
 use io_uring::{IoUring, cqueue::Entry};
 
-#[cfg(target_os = "linux")]
+#[cfg(not(target_os = "linux"))]
 use polling::Poller;
 use socket2::{SockAddr, SockAddrStorage};
 
@@ -369,6 +371,9 @@ pub fn bind(
 
 /// Accepts a connection on a listening socket.
 ///
+/// **NOTE**: This operation doesn't seem to work on wsl2 linux. This is because they have a old
+/// kernel pinned.
+///
 /// # Arguments
 ///
 /// * `fd` - The listening socket file descriptor
@@ -387,7 +392,6 @@ pub fn bind(
 /// # Examples
 ///
 /// ```rust
-/// use lio::accept;
 /// use std::mem::MaybeUninit;
 /// use std::os::fd::RawFd;
 ///
@@ -396,7 +400,7 @@ pub fn bind(
 ///     let mut addr_storage: MaybeUninit<socket2::SockAddrStorage> = MaybeUninit::uninit();
 ///     let mut addr_len = std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
 ///     
-///     let client_fd = accept(listen_fd, addr_storage.as_mut_ptr(), &mut addr_len).await?;
+///     let client_fd = lio::accept(listen_fd, addr_storage.as_mut_ptr(), &mut addr_len).await?;
 ///     println!("Accepted connection on fd: {}", client_fd);
 ///     Ok(())
 /// }
@@ -688,39 +692,21 @@ pub fn tee(
   Driver::submit(op)
 }
 
-impl Driver {
-  #[cfg(target_os = "linux")]
-  pub fn tick() {
-    let driver = Driver::get();
-    if driver
-      .0
-      .has_done_work
-      .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
-      .is_ok()
-    {
-      let _ = driver.0.inner.submit();
-    }
+#[cfg(linux)]
+pub fn tick() {
+  let driver = Driver::get();
+  if driver
+    .0
+    .has_done_work
+    .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+    .is_ok()
+  {
+    let _ = driver.0.inner.submit();
   }
-
-  // fn submit<T>(op: T) -> OperationProgress<T>
-  // where
-  //   T: op::Operation,
-  // {
-  //   cfg_if::cfg_if! {
-  //     if #[cfg(target_os = "linux")] {
-  //       if T::supported() {
-  //         let operation_id = Self::get().push::<T>(op);
-  //         OperationProgress::<T>::new_async(operation_id)
-  //       } else {
-  //         OperationProgress::<T>::new_sync(op)
-  //       }
-  //     } else {
-  //       OperationProgress::<T>::new_blocking(op)
-  //       }
-  //     }
-  //   }
-  // }
 }
+
+#[cfg(not_linux)]
+pub fn tick() {}
 
 #[cfg(not(target_os = "linux"))]
 #[derive(Clone, Copy)]
@@ -849,23 +835,21 @@ impl Driver {
 
   pub fn background(&self) {
     let driver = self.0.clone();
-    utils::create_worker()
-      .spawn(move || {
-        let mut events = polling::Events::new();
-        loop {
-          events.clear();
-          driver.poller.wait(&mut events, None).unwrap();
+    utils::create_worker(move || {
+      let mut events = polling::Events::new();
+      loop {
+        events.clear();
+        driver.poller.wait(&mut events, None).unwrap();
 
-          let mut _lock = driver.wakers.lock().unwrap();
-          for event in events.iter() {
-            match _lock.get_mut(&(event.key as _)) {
-              Some(reg) => reg.wake(),
-              None => continue,
-            };
-          }
+        let mut _lock = driver.wakers.lock().unwrap();
+        for event in events.iter() {
+          match _lock.get_mut(&(event.key as _)) {
+            Some(reg) => reg.wake(),
+            None => continue,
+          };
         }
-      })
-      .unwrap();
+      }
+    });
   }
 }
 
@@ -875,7 +859,7 @@ impl Driver {
     // SAFETY: completion_shared is only accessed here so it's a singlethreaded access, hence
     // guarranteed only to have one completion queue.
     let driver = self.0.clone();
-    utils::create_worker().spawn(move || {
+    utils::create_worker(move || {
       loop {
         driver.inner.submit_and_wait(1).unwrap();
 
@@ -927,9 +911,9 @@ impl Driver {
   {
     if T::supported() {
       let operation_id = Self::get().push::<T>(op);
-      OperationProgress::<T>::new_async(operation_id)
+      OperationProgress::<T>::new_uring(operation_id)
     } else {
-      OperationProgress::<T>::new_sync(op)
+      OperationProgress::<T>::new_blocking(op)
     }
   }
 
@@ -971,7 +955,7 @@ impl Driver {
 
         // SAFETY: The pointer was created with Box::into_raw in queue_submit with a concrete type T
         // We can safely cast it back to the concrete type T
-        let value = unsafe { Box::from_raw(op_registration.op as *mut T) };
+        let mut value = unsafe { Box::from_raw(op_registration.op as *mut T) };
 
         let raw_ret = if ret < 0 {
           Err(io::Error::from_raw_os_error(ret))
@@ -1003,7 +987,15 @@ pub(crate) enum CheckRegistrationResult<V> {
 mod utils {
   use std::thread;
 
-  pub fn create_worker() -> thread::Builder {
-    thread::Builder::new().name("lio".into())
+  pub fn create_worker<F, T>(handle: F)
+  where
+    F: FnOnce() -> T,
+    F: Send + 'static,
+    T: Send + 'static,
+  {
+    thread::Builder::new()
+      .name("lio".into())
+      .spawn(handle)
+      .expect("failed to launch the worker thread");
   }
 }

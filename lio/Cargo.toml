@@ -1,12 +1,11 @@
 [package]
 name = "lio"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "A platform-independent async I/O library with native support for io_uring (Linux), IOCP (Windows), and kqueue (macOS)"
 license = "MIT"
 repository = "https://github.com/liten-rs/liten"
 documentation = "https://docs.rs/lio"
-readme = "README.md"
 keywords = ["async", "io", "networking", "filesystem"]
 categories = ["asynchronous", "network-programming", "filesystem", "os"]
 authors = ["Vincent Thomas <vincent@v-thomas.com>"]

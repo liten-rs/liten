@@ -13,6 +13,8 @@ pub struct OpRegistration {
   pub drop_fn: fn(*const ()), // Function to properly drop the operation
 }
 
+unsafe impl Send for OpRegistration {}
+
 #[cfg(not(target_os = "linux"))]
 pub struct OpRegistration {
   status: OpRegistrationStatus,
@@ -66,16 +68,6 @@ impl OpRegistration {
       },
       drop_fn: drop_op::<T>,
     }
-  }
-}
-
-impl std::fmt::Debug for OpRegistration {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("OpRegistration")
-      .field("op", &"*const ()")
-      .field("status", &self.status)
-      .field("drop_fn", &"fn(*const())")
-      .finish()
   }
 }
 

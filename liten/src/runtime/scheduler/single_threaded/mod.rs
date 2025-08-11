@@ -41,8 +41,7 @@ impl Scheduler for SingleThreaded {
         return value;
       }
 
-      #[cfg(all(feature = "io", target_os = "linux"))]
-      lio::Driver::tick();
+      lio::tick();
 
       thread::park();
     }
