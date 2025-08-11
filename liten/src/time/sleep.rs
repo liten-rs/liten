@@ -72,6 +72,7 @@ mod tests {
   };
 
   #[crate::internal_test]
+  #[cfg(not(loom))] // Hangs because it runs in so many combinations.
   fn sleep_test() {
     crate::runtime::Runtime::single_threaded().block_on(async {
       let fut1 = pending::<Result<(), Timeout>>();
