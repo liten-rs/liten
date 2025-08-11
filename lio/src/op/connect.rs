@@ -1,6 +1,8 @@
 use std::os::fd::RawFd;
 
-use io_uring::types::Fd;
+os_linux! {
+  use io_uring::types::Fd;
+}
 use socket2::SockAddr;
 
 use super::Operation;
@@ -21,13 +23,6 @@ impl Operation for Connect {
 
   os_linux! {
     const OPCODE: u8 = io_uring::opcode::Connect::CODE;
-    fn run_blocking(&self) -> std::io::Result<i32> {
-      syscall!(connect(
-        self.fd,
-        self.addr.as_ptr().cast::<libc::sockaddr>(),
-        self.addr.len(),
-      ))
-    }
     fn create_entry(&self) -> io_uring::squeue::Entry {
       io_uring::opcode::Connect::new(
         Fd(self.fd),
@@ -36,5 +31,13 @@ impl Operation for Connect {
       )
       .build()
     }
+  }
+
+  fn run_blocking(&self) -> std::io::Result<i32> {
+    syscall!(connect(
+      self.fd,
+      self.addr.as_ptr().cast::<libc::sockaddr>(),
+      self.addr.len(),
+    ))
   }
 }

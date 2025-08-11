@@ -1,11 +1,56 @@
+#[cfg(not(target_os = "linux"))]
+use std::os::fd::RawFd;
 use std::{cell::Cell, task::Waker};
 
+#[cfg(not(target_os = "linux"))]
+use crate::PollInterest;
+
+// TODO: make crossplatform with polling crate.
+#[cfg(target_os = "linux")]
 pub struct OpRegistration {
   pub op: *const (),
   pub status: OpRegistrationStatus,
   pub drop_fn: fn(*const ()), // Function to properly drop the operation
 }
 
+#[cfg(not(target_os = "linux"))]
+pub struct OpRegistration {
+  status: OpRegistrationStatus,
+  interest: PollInterest,
+  fd: RawFd,
+}
+
+#[cfg(not(target_os = "linux"))]
+impl OpRegistration {
+  #[cfg(not(target_os = "linux"))]
+  pub fn new(fd: RawFd, interest: PollInterest) -> Self {
+    OpRegistration {
+      status: OpRegistrationStatus { registered_waker: Cell::new(None) },
+      fd,
+      interest,
+    }
+  }
+
+  pub fn fd(&self) -> RawFd {
+    self.fd
+  }
+
+  pub fn interest(&self) -> PollInterest {
+    self.interest
+  }
+
+  pub fn wake(&mut self) {
+    if let Some(wake) = self.status.registered_waker.take() {
+      wake.wake();
+    }
+  }
+
+  pub fn set_waker(&mut self, waker: Waker) {
+    self.status.registered_waker.set(Some(waker));
+  }
+}
+
+#[cfg(target_os = "linux")]
 impl OpRegistration {
   pub fn new<T>(op: T) -> Self {
     fn drop_op<T>(ptr: *const ()) {
@@ -33,29 +78,8 @@ impl std::fmt::Debug for OpRegistration {
       .finish()
   }
 }
-impl std::fmt::Debug for OpRegistrationStatus {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      Self::Waiting { registered_waker } => f
-        .debug_struct("OpRegistrationStatus::Waiting")
-        .field(
-          "registered_waker (is some)",
-          &unsafe { &*registered_waker.as_ptr() }.is_some(),
-        )
-        .finish(),
-      Self::Cancelling => {
-        f.debug_struct("OpRegistrationStatus::Cancelling").finish()
-      }
-      Self::Done { ret } => {
-        f.debug_struct("OpRegistrationStatus::Done").field("ret", &ret).finish()
-      }
-    }
-  }
-}
 
-unsafe impl Send for OpRegistration {}
-unsafe impl Sync for OpRegistration {}
-
+#[cfg(target_os = "linux")]
 pub enum OpRegistrationStatus {
   Waiting {
     registered_waker: Cell<Option<Waker>>,
@@ -66,4 +90,9 @@ pub enum OpRegistrationStatus {
   Done {
     ret: i32,
   },
+}
+
+#[cfg(not(target_os = "linux"))]
+pub struct OpRegistrationStatus {
+  registered_waker: Cell<Option<Waker>>,
 }

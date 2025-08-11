@@ -8,16 +8,26 @@ pub struct Socket {
   fd: RawFd,
 }
 
-macro_rules! syscall {
-  ($fn: ident ( $($arg: expr),* $(,)* ) ) => {{
-      #[allow(unused_unsafe)]
-      let res = unsafe { libc::$fn($($arg, )*) };
-      if res == -1 {
-          Err(std::io::Error::last_os_error())
-      } else {
-          Ok(res)
-      }
-  }};
+fn setsocketopt<T>(
+  fd: RawFd,
+  level: libc::c_int,
+  value: libc::c_int,
+  flag: T,
+) -> io::Result<i32> {
+  let res = unsafe {
+    libc::setsockopt(
+      fd,
+      level,
+      value,
+      (&raw const flag) as *const _,
+      std::mem::size_of::<T>() as libc::socklen_t,
+    )
+  };
+  if res == -1 {
+    Err(std::io::Error::last_os_error())
+  } else {
+    Ok(res)
+  }
 }
 
 impl Socket {
@@ -26,17 +36,13 @@ impl Socket {
   }
 
   pub async fn bind(addr: SockAddr, ty: Type) -> io::Result<Self> {
-    let fd = lio::socket(addr.domain(), ty, None).await?;
+    let fd =
+      lio::socket(addr.domain(), ty, Some(libc::IPPROTO_TCP.into())).await?;
     lio::bind(fd, addr).await?;
 
-    let flag = 1;
-    syscall!(setsockopt(
-      fd,
-      libc::SOL_SOCKET,
-      libc::SO_REUSEADDR | libc::SO_REUSEPORT,
-      &flag as *const _ as *const libc::c_void,
-      std::mem::size_of_val(&flag) as libc::socklen_t,
-    ))?;
+    // https://github.com/rust-lang/rust/blob/18eeac04fc5c2a4c4a8020dbdf1c652077ad0e4e/library/std/src/sys/net/connection/socket.rs#L516-L518
+    #[cfg(not(windows))]
+    setsocketopt(fd, libc::SOL_SOCKET, libc::SO_REUSEADDR, 1)?;
 
     Ok(Self { fd })
   }
@@ -47,8 +53,8 @@ impl Socket {
     Ok(Self { fd })
   }
 
-  pub fn listen(&self, backlog: i32) -> impl Future<Output = io::Result<()>> {
-    lio::listen(self.fd, backlog)
+  pub fn listen(&self) -> impl Future<Output = io::Result<()>> {
+    lio::listen(self.fd)
   }
 
   pub async fn accept(&self) -> io::Result<(Socket, SockAddr)> {

@@ -1,6 +1,8 @@
 use std::{io, os::fd::RawFd};
 
-use io_uring::types::Fd;
+os_linux! {
+  use io_uring::types::Fd;
+}
 
 use crate::BufResult;
 
@@ -34,19 +36,27 @@ impl Operation for Read {
         unreachable!()
       }
     }
-    type Output = i32;
-    type Result = BufResult<Self::Output, Vec<u8>>;
-    fn run_blocking(&self) -> io::Result<i32> {
-      let buf = self.buf.as_ref().unwrap();
-      syscall!(read(self.fd, buf.as_ptr() as *mut _, buf.len())).map(|t| t as i32)
-    }
-    fn result(&mut self, _ret: io::Result<i32>) -> Self::Result {
-      let buf = self.buf.take().expect("ran Recv::result more than once.");
+  }
+  type Output = i32;
+  type Result = BufResult<Self::Output, Vec<u8>>;
 
-      match _ret {
-        Ok(ret) => (Ok(ret), buf),
-        Err(err) => (Err(err), buf),
-      }
+  fn run_blocking(&self) -> io::Result<i32> {
+    let buf = self.buf.as_ref().unwrap();
+    syscall!(pread(
+      self.fd,
+      buf.as_ptr() as *mut _,
+      buf.len(),
+      // FIXME: is that right?
+      self.offset as i64
+    ))
+    .map(|t| t as i32)
+  }
+  fn result(&mut self, _ret: io::Result<i32>) -> Self::Result {
+    let buf = self.buf.take().expect("ran Recv::result more than once.");
+
+    match _ret {
+      Ok(ret) => (Ok(ret), buf),
+      Err(err) => (Err(err), buf),
     }
   }
 }

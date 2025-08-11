@@ -29,7 +29,10 @@ mod read;
 mod recv;
 mod send;
 mod socket;
-mod tee;
+
+os_linux! {
+  mod tee;
+}
 mod truncate;
 mod write;
 
@@ -43,7 +46,11 @@ pub use read::*;
 pub use recv::*;
 pub use send::*;
 pub use socket::*;
-pub use tee::*;
+
+os_linux! {
+  pub use tee::*;
+}
+
 pub use truncate::*;
 pub use write::*;
 
@@ -66,9 +73,9 @@ pub trait Operation: Sealed {
     }
 
     fn create_entry(&self) -> io_uring::squeue::Entry;
-    fn run_blocking(&self) -> io::Result<i32>;
-    // This is guarranteed after this has completed and only fire ONCE.
-    // i32 is guarranteed to be >= 0.
-    fn result(&mut self, _ret: io::Result<i32>) -> Self::Result;
   }
+  fn run_blocking(&self) -> io::Result<i32>;
+  // This is guarranteed after this has completed and only fire ONCE.
+  // i32 is guarranteed to be >= 0.
+  fn result(&mut self, _ret: io::Result<i32>) -> Self::Result;
 }

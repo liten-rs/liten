@@ -1,5 +1,6 @@
 use std::{io, os::fd::RawFd};
 
+#[cfg(target_os = "linux")]
 use io_uring::types::Fd;
 
 use crate::BufResult;
@@ -21,6 +22,7 @@ impl Recv {
 impl Operation for Recv {
   type Output = i32;
   type Result = BufResult<Self::Output, Vec<u8>>;
+
   os_linux! {
     const OPCODE: u8 = io_uring::opcode::Recv::CODE;
 
@@ -33,20 +35,20 @@ impl Operation for Recv {
       .flags(self.flags)
       .build()
     }
+  }
 
-    fn run_blocking(&self) -> io::Result<i32> {
-      let buf = self.buf.as_ref().unwrap();
-      syscall!(recv(self.fd, buf.as_ptr() as *mut _, buf.len(), 0))
-        .map(|t| t as i32)
-    }
+  fn run_blocking(&self) -> io::Result<i32> {
+    let buf = self.buf.as_ref().unwrap();
+    syscall!(recv(self.fd, buf.as_ptr() as *mut _, buf.len(), self.flags))
+      .map(|t| t as i32)
+  }
 
-    fn result(&mut self, _ret: io::Result<i32>) -> Self::Result {
-      let buf = self.buf.take().expect("ran Recv::result more than once.");
+  fn result(&mut self, _ret: io::Result<i32>) -> Self::Result {
+    let buf = self.buf.take().expect("ran Recv::result more than once.");
 
-      match _ret {
-        Ok(ret) => (Ok(ret), buf),
-        Err(err) => (Err(err), buf),
-      }
+    match _ret {
+      Ok(ret) => (Ok(ret), buf),
+      Err(err) => (Err(err), buf),
     }
   }
 }

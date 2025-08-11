@@ -18,7 +18,7 @@ impl TcpListener {
     let addr = SockAddr::from(addr.to_socket_addrs()?.next().unwrap());
     let socket = Socket::bind(addr, Type::STREAM).await?;
 
-    socket.listen(512).await?;
+    socket.listen().await?;
 
     Ok(TcpListener(socket))
   }
