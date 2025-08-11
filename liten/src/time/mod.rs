@@ -100,6 +100,7 @@ impl TimeDriver {
     NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::AcqRel)
   }
 
+  #[cfg(not(loom))]
   fn background_thread(&self, parker: Parker) {
     const FUDGE_MS: usize = 10; // Try 5ms, tune as needed
 
@@ -123,6 +124,7 @@ impl TimeDriver {
             delta_time_to_next_thing
           };
           let instant = Instant::now() + Duration::from_millis(sleep_ms as u64);
+
           parker.park_deadline(instant);
 
           // Busy-wait for the last few ms

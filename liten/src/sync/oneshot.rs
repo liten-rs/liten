@@ -13,7 +13,7 @@ mod imp;
 /// This makes oneshot channels very optimised for a async runtime.
 pub fn channel<V>() -> (imp::Sender<V>, imp::Receiver<V>) {
   let channel =
-    NonNull::new(Box::into_raw(Box::new(imp::Inner::new()))).unwrap();
+    NonNull::new(Box::into_raw(Box::new(imp::Inner::<V>::new()))).unwrap();
 
-  (imp::Sender::new(channel), imp::Receiver::new(channel))
+  (imp::Sender::<V>::new(channel), imp::Receiver::<V>::new(channel))
 }

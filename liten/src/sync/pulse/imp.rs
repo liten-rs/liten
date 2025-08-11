@@ -1,12 +1,11 @@
 use std::{
   cell::Cell,
   future::Future,
-  sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
-    Arc,
-  },
+  sync::atomic::{AtomicBool, AtomicUsize, Ordering},
   task::{Context, Poll, Waker},
 };
+
+use crate::loom::sync::Arc;
 
 use thiserror::Error;
 

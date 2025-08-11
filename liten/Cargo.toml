@@ -16,6 +16,8 @@ io = ["dep:lio", "dep:libc", "dep:socket2"]
 compat = ["dep:tokio"]
 full = ["sync", "time", "blocking", "fs", "runtime", "io", "compat"]
 
+_loom_testing = ["sync", "blocking", "fs", "runtime", "io", "compat"]
+
 [target.'cfg(loom)'.dependencies]
 loom = { version = "0.7", features = ["futures"] }
 

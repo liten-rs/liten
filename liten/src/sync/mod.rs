@@ -5,8 +5,8 @@ pub mod oneshot;
 mod mutex;
 pub use mutex::*;
 
-pub mod pulse;
-pub mod request;
+// pub mod pulse;
+// pub mod request;
 
 mod semaphore;
 pub use semaphore::*;

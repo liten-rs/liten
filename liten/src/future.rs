@@ -70,6 +70,7 @@ pub trait FutureExt: Future {
     Or::new(self, fut)
   }
 
+  #[cfg(not(loom))]
   cfg_time! {
     /// Start awaiting the future but only before the timeout, after it cancels.
     fn timeout(

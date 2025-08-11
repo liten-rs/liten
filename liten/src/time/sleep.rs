@@ -61,6 +61,21 @@ impl Future for Sleep {
 
 #[cfg(test)]
 mod tests {
+  use crate::time::interval;
+  use std::time::Duration;
+
+  #[crate::internal_test]
+  fn interval_test() {
+    crate::runtime::Runtime::single_threaded().block_on(async {
+      let inter = interval(Duration::from_millis(0));
+
+      inter.tick().await;
+      inter.tick().await;
+    })
+  }
+}
+#[cfg(all(test, not(loom)))]
+mod tests2 {
   use std::{
     future::pending,
     time::{Duration, Instant},
@@ -68,11 +83,11 @@ mod tests {
 
   use crate::{
     future::{timeout::Timeout, FutureExt},
-    time::{interval, sleep},
+    time::sleep,
   };
 
-  #[crate::internal_test]
-  #[cfg(not(loom))] // Hangs because it runs in so many combinations.
+  #[test]
+  // #[cfg_attr(loom, ignore)] // Hangs because it runs in so many combinations.
   fn sleep_test() {
     crate::runtime::Runtime::single_threaded().block_on(async {
       let fut1 = pending::<Result<(), Timeout>>();
@@ -86,16 +101,6 @@ mod tests {
 
       assert!(result == Err(Timeout));
       assert!((instant2 - instant).as_millis() > 10);
-    })
-  }
-
-  #[crate::internal_test]
-  fn interval_test() {
-    crate::runtime::Runtime::single_threaded().block_on(async {
-      let inter = interval(Duration::from_millis(0));
-
-      inter.tick().await;
-      inter.tick().await;
     })
   }
 }

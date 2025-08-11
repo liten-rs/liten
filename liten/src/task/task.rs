@@ -6,19 +6,18 @@ pub use store::TaskStore;
 use std::{
   future::Future,
   pin::Pin,
+  sync::atomic::{AtomicUsize, Ordering},
   task::{Context, Poll},
 };
 
-use crate::loom::sync::{
-  atomic::{AtomicUsize, Ordering},
-  Arc,
-};
+use crate::loom::sync::Arc;
 
 use thiserror::Error;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct TaskId(pub usize);
 
+// std should be used here because only that supports const ::new
 static CURRENT_TASK_ID: AtomicUsize = AtomicUsize::new(0);
 
 impl Default for TaskId {
