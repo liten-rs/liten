@@ -1,34 +1,134 @@
 use std::{
   future::Future,
-  marker::PhantomData,
   pin::Pin,
   task::{Context, Poll},
 };
 
-use crate::{CheckRegistrationResult, Driver, op};
+use crate::{Driver, op};
 
-type OperationId = u64;
-
+/// Represents the progress of an I/O operation across different platforms.
+///
+/// This enum provides a unified interface for tracking I/O operations regardless
+/// of the underlying platform implementation. It automatically selects the most
+/// efficient execution method for each platform.
+///
+/// # Platform-Specific Behavior
+///
+/// - **Linux**: Uses io_uring for maximum performance when supported
+/// - **Other platforms**: Falls back to polling-based async I/O or blocking execution
+///
+/// # Examples
+///
+/// ```rust
+/// use lio::{read, OperationProgress};
+/// use std::os::fd::RawFd;
+///
+/// async fn example() -> std::io::Result<()> {
+///     let fd: RawFd = 0; // stdin
+///     let buffer = vec![0u8; 1024];
+///     
+///     let progress: OperationProgress<lio::op::Read> = read(fd, buffer, 0);
+///     let (bytes_read, buf) = progress.await?;
+///     
+///     println!("Read {} bytes", bytes_read);
+///     Ok(())
+/// }
+/// ```
+#[cfg(linux)]
 pub enum OperationProgress<T> {
-  Async { id: OperationId, _m: PhantomData<T> },
-  Sync { operation: T },
+  IoUring { id: OperationId, _m: PhantomData<T> },
+  Blocking { operation: T },
 }
 
+/// Represents the progress of an I/O operation across different platforms.
+///
+/// This enum provides a unified interface for tracking I/O operations regardless
+/// of the underlying platform implementation. It automatically selects the most
+/// efficient execution method for each platform.
+///
+/// # Platform-Specific Behavior
+///
+/// - **Linux**: Uses io_uring for maximum performance when supported
+/// - **Other platforms**: Falls back to polling-based async I/O or blocking execution
+///
+/// # Examples
+///
+/// ```rust
+/// use lio::{read, OperationProgress};
+/// use std::os::fd::RawFd;
+///
+/// async fn example() -> std::io::Result<()> {
+///     let fd: RawFd = 0; // stdin
+///     let buffer = vec![0u8; 1024];
+///     
+///     let progress: OperationProgress<lio::op::Read> = read(fd, buffer, 0);
+///     let (bytes_read, buf) = progress.await?;
+///     
+///     println!("Read {} bytes", bytes_read);
+///     Ok(())
+/// }
+/// ```
+#[cfg(not(target_os = "linux"))]
+pub enum OperationProgress<T> {
+  Poll { id: u64, operation: T },
+  Blocking { operation: T },
+}
+
+#[cfg(target_os = "linux")]
 impl<T> OperationProgress<T> {
-  pub fn new_async(id: u64) -> Self {
-    Self::Async { id, _m: PhantomData }
+  pub fn new_uring(id: u64) -> Self {
+    Self::IoUring { id, _m: PhantomData }
   }
 
-  pub fn new_sync(op: T) -> Self {
-    Self::Sync { operation: op }
+  pub fn new_blocking(op: T) -> Self {
+    Self::Blocking { operation: op }
   }
-  /// Doesn't ty this progress down to any object inwhich lifetime is active.
+}
+
+#[cfg(not(target_os = "linux"))]
+impl<T> OperationProgress<T> {
+  pub fn new_poll(id: u64, operation: T) -> Self {
+    Self::Poll { id, operation }
+  }
+
+  pub fn new_blocking(operation: T) -> Self {
+    Self::Blocking { operation }
+  }
+
+  /// Detaches this progress tracker from the driver without binding it to any object.
+  ///
+  /// This function is useful when you want to clean up the operation registration
+  /// without waiting for the operation to complete. It's automatically called
+  /// when the `OperationProgress` is dropped.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use lio::{read, OperationProgress};
+  ///
+  /// async fn detach_example() -> std::io::Result<()> {
+  ///     let fd: RawFd = 0;
+  ///     let buffer = vec![0u8; 1024];
+  ///     let progress: OperationProgress<lio::op::Read> = read(fd, buffer, 0);
+  ///     
+  ///     // Detach without waiting for completion
+  ///     progress.detatch();
+  ///     
+  ///     Ok(())
+  /// }
+  /// ```
   pub fn detatch(self) {
     // Engages the Driver::detatch(..);
     drop(self);
   }
 }
 
+/// Implements `Future` for io_uring-based operations on Linux.
+///
+/// This implementation handles the completion of operations submitted to the
+/// io_uring subsystem, automatically waking the future when the operation
+/// completes.
+#[cfg(target_os = "linux")]
 impl<T> Future for OperationProgress<T>
 where
   T: op::Operation + Unpin,
@@ -40,7 +140,7 @@ where
     cx: &mut Context<'_>,
   ) -> Poll<Self::Output> {
     match *self {
-      OperationProgress::Async { ref id, ref _m } => {
+      OperationProgress::IoUring { ref id, ref _m } => {
         let is_done = Driver::get()
           .check_registration::<T>(*id, cx.waker().clone())
           .expect("Polled OperationProgress when not even registered");
@@ -50,7 +150,7 @@ where
           CheckRegistrationResult::Value(result) => Poll::Ready(result),
         }
       }
-      OperationProgress::Sync { ref mut operation } => {
+      OperationProgress::Blocking { ref mut operation } => {
         let result = operation.run_blocking();
         Poll::Ready(operation.result(result))
       }
@@ -58,9 +158,71 @@ where
   }
 }
 
+/// Implements `Future` for polling-based operations on non-Linux platforms.
+///
+/// This implementation handles operations that use polling-based async I/O,
+/// automatically re-registering for events when operations would block.
+#[cfg(not(target_os = "linux"))]
+impl<T> Future for OperationProgress<T>
+where
+  T: op::Operation + Unpin,
+{
+  type Output = T::Result;
+
+  fn poll(
+    mut self: Pin<&mut Self>,
+    cx: &mut Context<'_>,
+  ) -> Poll<Self::Output> {
+    match *self {
+      OperationProgress::Poll { id, ref mut operation, .. } => {
+        use std::io;
+
+        match operation.run_blocking() {
+          Ok(result) => Poll::Ready(operation.result(Ok(result))),
+          Err(err) => match err.kind() {
+            io::ErrorKind::WouldBlock => {
+              if let Err(err) = Driver::get()
+                .register_repoll(id, cx.waker().clone())
+                .expect("why didn't exist")
+              {
+                Poll::Ready(operation.result(Err(err)))
+              } else {
+                Poll::Pending
+              }
+            }
+            _ => Poll::Ready(operation.result(Err(err))),
+          },
+        }
+      }
+      OperationProgress::Blocking { ref mut operation } => {
+        let result = operation.run_blocking();
+        Poll::Ready(operation.result(result))
+      }
+    }
+  }
+}
+
+/// Implements automatic cleanup for io_uring operations on Linux.
+///
+/// When an `OperationProgress` is dropped, this implementation ensures
+/// that the operation is properly cancelled and cleaned up from the driver.
+#[cfg(target_os = "linux")]
 impl<T> Drop for OperationProgress<T> {
   fn drop(&mut self) {
-    if let OperationProgress::Async { id, _m } = *self {
+    if let OperationProgress::IoUring { id, .. } = *self {
+      Driver::get().detatch(id);
+    }
+  }
+}
+
+/// Implements automatic cleanup for polling-based operations on non-Linux platforms.
+///
+/// When an `OperationProgress` is dropped, this implementation ensures
+/// that the operation is properly detached and cleaned up from the driver.
+#[cfg(not(target_os = "linux"))]
+impl<T> Drop for OperationProgress<T> {
+  fn drop(&mut self) {
+    if let OperationProgress::Poll { id, .. } = *self {
       Driver::get().detatch(id);
     }
   }

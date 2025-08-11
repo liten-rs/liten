@@ -1,6 +1,8 @@
 use std::os::fd::RawFd;
 
-use io_uring::types::Fd;
+os_linux! {
+  use io_uring::types::Fd;
+}
 
 use super::Operation;
 
@@ -23,8 +25,8 @@ impl Operation for Truncate {
     fn create_entry(&self) -> io_uring::squeue::Entry {
       io_uring::opcode::Ftruncate::new(Fd(self.fd), self.size).build()
     }
-    fn run_blocking(&self) -> std::io::Result<i32> {
-      syscall!(ftruncate(self.fd, self.size as i64))
-    }
+  }
+  fn run_blocking(&self) -> std::io::Result<i32> {
+    syscall!(ftruncate(self.fd, self.size as i64))
   }
 }

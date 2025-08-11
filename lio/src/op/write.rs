@@ -1,6 +1,8 @@
 use super::Operation;
 use crate::BufResult;
-use io_uring::types::Fd;
+os_linux! {
+  use io_uring::types::Fd;
+}
 use std::os::fd::RawFd;
 
 pub struct Write {
@@ -32,23 +34,24 @@ impl Operation for Write {
       .build()
     }
 
-    fn run_blocking(&self) -> std::io::Result<i32> {
-      syscall!(pwrite(
-        self.fd,
-        self.buf.as_ref().unwrap().as_ptr() as *const _,
-        self.buf.as_ref().unwrap().len() as usize,
-        self.offset as i64
-      ))
-      .map(|u| u as i32)
-    }
 
-    fn result(&mut self, _ret: std::io::Result<i32>) -> Self::Result {
-      let buf = self.buf.take().expect("ran Recv::result more than once.");
+  }
+  fn run_blocking(&self) -> std::io::Result<i32> {
+    syscall!(pwrite(
+      self.fd,
+      self.buf.as_ref().unwrap().as_ptr() as *const _,
+      self.buf.as_ref().unwrap().len() as usize,
+      // FIXME
+      self.offset as i64
+    ))
+    .map(|u| u as i32)
+  }
+  fn result(&mut self, _ret: std::io::Result<i32>) -> Self::Result {
+    let buf = self.buf.take().expect("ran Recv::result more than once.");
 
-      match _ret {
-        Ok(ret) => (Ok(ret), buf),
-        Err(err) => (Err(err), buf),
-      }
+    match _ret {
+      Ok(ret) => (Ok(ret), buf),
+      Err(err) => (Err(err), buf),
     }
   }
 }

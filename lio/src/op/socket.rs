@@ -31,14 +31,19 @@ impl Operation for Socket {
       )
       .build()
     }
+  }
+  fn run_blocking(&self) -> io::Result<i32> {
+    let result = syscall!(socket(
+      self.domain.into(),
+      self.ty.into(),
+      self.proto.unwrap_or(0.into()).into()
+    ))
+    .map(|t| t as i32)?;
 
-    fn run_blocking(&self) -> io::Result<i32> {
-      syscall!(socket(
-        self.domain.into(),
-        self.ty.into(),
-        self.proto.unwrap_or(0.into()).into()
-      ))
-      .map(|t| t as i32)
-    }
+    // Remove blocking by kernel if no result is available. Linux uses io-uring so it doesn't
+    // count.
+    #[cfg(not(target_os = "linux"))]
+    syscall!(ioctl(result, libc::FIONBIO, &mut 1))?;
+    Ok(result)
   }
 }

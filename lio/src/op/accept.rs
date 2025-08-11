@@ -1,6 +1,8 @@
 use std::{mem::MaybeUninit, os::fd::RawFd};
 
-use io_uring::types::Fd;
+os_linux! {
+  use io_uring::{types::Fd, opcode::Accept, squeue};
+}
 use socket2::SockAddrStorage;
 
 use super::Operation;
@@ -30,18 +32,18 @@ impl Operation for Accept {
   }
 
   os_linux! {
-    const OPCODE: u8 = io_uring::opcode::Accept::CODE;
-    fn run_blocking(&self) -> std::io::Result<i32> {
-      syscall!(accept(self.fd, self.addr as *mut libc::sockaddr, self.len))
-    }
+    const OPCODE: u8 = Accept::CODE;
 
-    fn create_entry(&self) -> io_uring::squeue::Entry {
-      io_uring::opcode::Accept::new(
+    fn create_entry(&self) -> squeue::Entry {
+      Accept::new(
         Fd(self.fd),
         self.addr as *mut libc::sockaddr,
         self.len,
       )
       .build()
     }
+  }
+  fn run_blocking(&self) -> std::io::Result<i32> {
+    syscall!(accept(self.fd, self.addr as *mut libc::sockaddr, self.len))
   }
 }

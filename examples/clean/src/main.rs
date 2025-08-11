@@ -1,14 +1,25 @@
+use std::time::Duration;
+
 use liten::future::Stream;
 use liten::io::net::tcp::{TcpListener, TcpStream};
 use liten::io::{AsyncReadExt, AsyncWriteExt};
+use liten::time::sleep;
 
 #[liten::main]
 async fn main() {
-  let listener = TcpListener::bind("127.0.0.1:8084").await.unwrap();
+  let listener = TcpListener::bind("127.0.0.1:3001").await.unwrap();
   println!("Server listening on 127.0.0.1:8081");
+
+  liten::task::spawn(async {
+    loop {
+      sleep(Duration::from_secs(1)).await;
+      println!("hello");
+    }
+  });
 
   while let Some(Ok((socket, _))) = listener.next().await {
     liten::task::spawn(async move {
+      println!("new");
       if let Err(e) = handle_connection(socket).await {
         println!("Error handling connection: {}", e);
       }

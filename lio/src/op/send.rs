@@ -1,6 +1,8 @@
 use std::{io, os::fd::RawFd};
 
-use io_uring::types::Fd;
+os_linux! {
+  use io_uring::types::Fd;
+}
 
 use crate::BufResult;
 
@@ -34,20 +36,19 @@ impl Operation for Send {
       .flags(self.flags)
       .build()
     }
+  }
 
+  fn run_blocking(&self) -> io::Result<i32> {
+    let buf = self.buf.as_ref().unwrap();
+    syscall!(send(self.fd, buf.as_ptr() as *mut _, buf.len(), self.flags))
+      .map(|t| t as i32)
+  }
+  fn result(&mut self, _ret: std::io::Result<i32>) -> Self::Result {
+    let buf = self.buf.take().expect("ran Recv::result more than once.");
 
-    fn run_blocking(&self) -> io::Result<i32> {
-      let buf = self.buf.as_ref().unwrap();
-      syscall!(send(self.fd, buf.as_ptr() as *mut _, buf.len(), 0))
-        .map(|t| t as i32)
-    }
-    fn result(&mut self, _ret: std::io::Result<i32>) -> Self::Result {
-      let buf = self.buf.take().expect("ran Recv::result more than once.");
-
-      match _ret {
-        Ok(ret) => (Ok(ret), buf),
-        Err(err) => (Err(err), buf),
-      }
+    match _ret {
+      Ok(ret) => (Ok(ret), buf),
+      Err(err) => (Err(err), buf),
     }
   }
 }
