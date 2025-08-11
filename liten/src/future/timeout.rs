@@ -24,23 +24,9 @@ mod tests {
     })
   }
 
-  // #[crate::internal_test]
-  // #[cfg(feature = "time")]
-  // fn future_timeout_completes_after_timeout() {
-  //   crate::runtime::Runtime::single_threaded().block_on(async {
-  //     use crate::{future::FutureExt, time::sleep};
-  //
-  //     assert!(FutureExt::timeout(
-  //       sleep(Duration::from_millis(1000)),
-  //       Duration::from_millis(10),
-  //     )
-  //     .await
-  //     .is_err());
-  //   })
-  // }
-
   cfg_time! {
     #[crate::internal_test]
+      #[cfg(not(loom))] // runs so many times so 100ms * many runs never completes
     fn future_timeout_fires_on_sleep() {
         crate::runtime::Runtime::single_threaded().block_on(async {
             use crate::future::FutureExt;
