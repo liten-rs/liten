@@ -16,23 +16,26 @@ pub trait AsyncReadExt: AsyncRead {
     mut buf: Vec<u8>,
   ) -> impl Future<Output = BufResult<(), Vec<u8>>> {
     async {
-      let len = buf.len();
-      let mut start_index = 0;
+      let total_len = buf.len();
+      let mut filled = 0;
 
-      while start_index < len {
-        let remaining_buf = Vec::from(&buf[start_index..]);
-        let (result, read_buf) = self.read(remaining_buf).await;
+      while filled < total_len {
+        let remaining = total_len - filled;
+        let tmp = vec![0u8; remaining];
+        let (result, read_buf) = self.read(tmp).await;
 
         match result {
           Ok(bytes_read) => {
             if bytes_read == 0 {
-              // End of file or no more data to read
-              return (Ok(()), buf);
+              return (
+                Err(io::Error::new(io::ErrorKind::UnexpectedEof, "not enough bytes")),
+                buf,
+              );
             }
-            // Update the original buffer with the data read
-            buf[start_index..start_index + bytes_read]
+
+            buf[filled..filled + bytes_read]
               .copy_from_slice(&read_buf[..bytes_read]);
-            start_index += bytes_read;
+            filled += bytes_read;
           }
           Err(err) => {
             return (Err(err), buf);
@@ -96,7 +99,7 @@ macro_rules! impl_read_byte {
         cx: &mut Context<'_>,
       ) -> Poll<Self::Output> {
         let buf = vec![0; $word_amount];
-        match pin!(self.src.read(buf)).poll(cx) {
+        match pin!(self.src.read_all(buf)).poll(cx) {
           Poll::Ready((maybe_error, buf)) => {
             maybe_error?;
 
@@ -127,26 +130,31 @@ pub trait AsyncWriteExt: AsyncWrite {
     // To remove lint warnings
     async {
       let total_len = buf.len();
-      let mut start_index = 0;
+      let mut written = 0;
 
-      let mut buf = buf;
+      // Keep the original buffer to return it unchanged
+      let original_buf = buf;
 
-      while total_len > start_index {
-        assert!(total_len < start_index, "fucked up bad here");
-        let (result, tmp_buf) =
-          self.write(Vec::from(&buf[start_index..])).await;
+      while written < total_len {
+        let remaining = total_len - written;
+        let tmp = Vec::from(&original_buf[written..]);
+        let (result, _tmp_buf) = self.write(tmp).await;
 
         match result {
-          Err(err) => return (Err(err), buf),
+          Err(err) => return (Err(err), original_buf),
           Ok(bytes_written) => {
-            start_index += bytes_written + 1;
-
-            buf = tmp_buf;
+            if bytes_written == 0 {
+              return (
+                Err(io::Error::new(io::ErrorKind::WriteZero, "failed to write the buffer")),
+                original_buf,
+              );
+            }
+            written += bytes_written;
           }
         }
       }
 
-      (Ok(()), buf)
+      (Ok(()), original_buf)
     }
   }
 

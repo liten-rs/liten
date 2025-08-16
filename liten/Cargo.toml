@@ -13,6 +13,7 @@ blocking = ["sync"]
 fs = ["blocking"]
 runtime = []
 io = ["dep:lio", "dep:libc", "dep:socket2"]
+coro = []
 compat = ["dep:tokio"]
 full = ["sync", "time", "blocking", "fs", "runtime", "io", "compat"]
 
@@ -27,9 +28,9 @@ lio = { version = "0.1.1", path = "../lio", optional = true }
 
 thiserror = "2.0.11"
 
-parking = "2.2.1"
 pin-project-lite = "0.2.16"
 crossbeam-queue = "0.3.12"
 socket2 = { workspace = true, optional = true }
 libc = { workspace = true, optional = true }
 tokio = { version = "1.47.1", optional = true }
+async-task = "4.7.1"

@@ -1,8 +1,8 @@
 macro_rules! impl_result {
   (()) => {
-    #[cfg(unix)]
+    // #[cfg(unix)]
     type Output = ();
-    #[cfg(unix)]
+    // #[cfg(unix)]
     type Result = std::io::Result<Self::Output>;
 
     fn result(&mut self, res: std::io::Result<i32>) -> Self::Result {

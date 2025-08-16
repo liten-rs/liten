@@ -7,18 +7,20 @@ use std::{
   collections::HashMap,
   sync::{atomic::AtomicUsize, OnceLock},
   task::{Context, Poll, Waker},
-  thread::{self, JoinHandle},
+  thread::{self, JoinHandle, Thread},
   time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use crate::loom::sync::{Arc, Mutex};
 
 use clock::{Clock, TimerId};
-use parking::{Parker, Unparker};
 pub use sleep::*;
 
 #[derive(Clone)]
-pub struct TimeDriver(Arc<Mutex<TimeDriverInner>>);
+pub struct TimeDriver {
+  field1: Arc<Mutex<TimeDriverInner>>,
+  // thread: OnceLock<Thread>,
+}
 
 pub struct TimeDriverInner {
   clock: Clock,
@@ -27,14 +29,14 @@ pub struct TimeDriverInner {
   shutdown_signal: bool,
   waker_store: HashMap<TimerId, Waker>,
   background_handle: Option<JoinHandle<()>>,
-  unparker: Unparker,
 }
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 impl TimeDriver {
   fn get() -> &'static TimeDriver {
     static TIME_DRIVER: OnceLock<TimeDriver> = OnceLock::new();
-    TIME_DRIVER.get_or_init(TimeDriver::new)
+    let driver = TIME_DRIVER.get_or_init(|| TimeDriver::new());
+    driver
   }
   fn new() -> TimeDriver {
     let (days, hours, minutes, seconds, milliseconds) =
@@ -45,7 +47,7 @@ impl TimeDriver {
     let clock =
       Clock::new_with_positions(days, hours, minutes, seconds, milliseconds);
 
-    let parker = Parker::new();
+    // let parker = Parker::new();
 
     let time_driver_inner = TimeDriverInner {
       clock,
@@ -53,17 +55,19 @@ impl TimeDriver {
       shutdown_signal: false,
       background_handle: None,
       waker_store: HashMap::new(),
-      unparker: parker.unparker(),
     };
 
-    let driver = TimeDriver(Arc::new(Mutex::new(time_driver_inner)));
+    let driver = TimeDriver {
+      field1: Arc::new(Mutex::new(time_driver_inner)),
+      // thread: OnceLock::new(),
+    };
 
     let driver_clone = driver.clone();
-    let mut driver_lock = driver_clone.0.lock().unwrap();
+    let mut driver_lock = driver_clone.field1.lock().unwrap();
 
     driver_lock.background_handle = Some(thread::spawn({
       let driver = driver.clone();
-      move || driver.background_thread(parker)
+      move || driver.background_thread()
     }));
     drop(driver_lock);
 
@@ -71,7 +75,7 @@ impl TimeDriver {
   }
 
   pub(in crate::time) fn start_elapsed(&self) -> usize {
-    let _lock = self.0.lock().unwrap();
+    let _lock = self.field1.lock().unwrap();
     let value = _lock.clock.start_elapsed();
     drop(_lock);
     value
@@ -85,12 +89,12 @@ impl TimeDriver {
     }
     let this = Self::get();
 
-    let mut _lock = this.0.lock().unwrap();
+    let mut _lock = this.field1.lock().unwrap();
 
     _lock.shutdown_signal = true;
-    _lock.unparker.unpark();
 
     let handle = _lock.background_handle.take().unwrap();
+    handle.thread().unpark();
     drop(_lock);
     let _ = handle.join();
     let _ = DONE_BEFORE.set(());
@@ -101,13 +105,14 @@ impl TimeDriver {
   }
 
   #[cfg(not(loom))]
-  fn background_thread(&self, parker: Parker) {
-    const FUDGE_MS: usize = 10; // Try 5ms, tune as needed
+  fn background_thread(&self) {
+    const FUDGE_MS: usize = 10;
+    let driver = TimeDriver::get();
 
     loop {
       self.jump();
 
-      let lock = self.0.lock().unwrap();
+      let lock = self.field1.lock().unwrap();
       let nearest = lock.clock.peek_nearest_timer();
       let shutdown = lock.shutdown_signal;
       drop(lock);
@@ -125,7 +130,9 @@ impl TimeDriver {
           };
           let instant = Instant::now() + Duration::from_millis(sleep_ms as u64);
 
-          parker.park_deadline(instant);
+          std::thread::park_timeout(
+            instant.saturating_duration_since(Instant::now()),
+          );
 
           // Busy-wait for the last few ms
           let target = Instant::now() + Duration::from_millis(FUDGE_MS as u64);
@@ -135,7 +142,7 @@ impl TimeDriver {
         }
         None => {
           // No timers currently waiting...
-          parker.park();
+          std::thread::park();
         }
       }
     }
@@ -147,26 +154,38 @@ impl TimeDriver {
     let timestamp = self.start_elapsed() + duration;
     let timer = TimerId::new(timestamp);
 
-    let mut _lock = self.0.lock().unwrap();
+    let mut _lock = self.field1.lock().unwrap();
     _lock.clock.insert(timer);
-    _lock.unparker.unpark();
+    if let Some(handle) = _lock.background_handle.as_ref() {
+      handle.thread().unpark();
+    } else {
+      unreachable!()
+    };
 
     timer
   }
 
   pub fn poll(&self, cx: &mut Context, timer_id: TimerId) -> Poll<()> {
+    // Drive time forward on poll to ensure progress even if background thread isn't running
+    self.jump();
+
     if timer_id.has_happened(self.start_elapsed()) {
-      self.0.lock().unwrap().waker_store.remove(&timer_id);
+      self.field1.lock().unwrap().waker_store.remove(&timer_id);
       return Poll::Ready(());
     }
 
-    self.0.lock().unwrap().waker_store.insert(timer_id, cx.waker().clone());
+    self
+      .field1
+      .lock()
+      .unwrap()
+      .waker_store
+      .insert(timer_id, cx.waker().clone());
 
     Poll::Pending
   }
 
   fn jump(&self) {
-    let mut _lock = self.0.lock().unwrap();
+    let mut _lock = self.field1.lock().unwrap();
 
     let millis = _lock.last_advance.elapsed().as_millis() as usize;
 

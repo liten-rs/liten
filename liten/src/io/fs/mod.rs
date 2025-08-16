@@ -130,6 +130,6 @@ impl File {
 
 impl Drop for File {
   fn drop(&mut self) {
-    lio::close(self.0).detatch();
+    lio::close(self.0).detach();
   }
 }

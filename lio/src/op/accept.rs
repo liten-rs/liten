@@ -44,6 +44,26 @@ impl Operation for Accept {
     }
   }
   fn run_blocking(&self) -> std::io::Result<i32> {
-    syscall!(accept(self.fd, self.addr as *mut libc::sockaddr, self.len))
+    cfg_if::cfg_if! {
+      if #[cfg(any(
+          target_os = "android",
+          target_os = "dragonfly",
+          target_os = "freebsd",
+          target_os = "illumos",
+          target_os = "linux",
+          target_os = "hurd",
+          target_os = "netbsd",
+          target_os = "openbsd",
+          target_os = "cygwin",
+      ))] {
+        let fd = syscall!(accept4(self.as_raw_fd(), storage, len, libc::SOCK_CLOEXEC))?;
+        Ok(fd)
+      } else {
+        let fd = syscall!(accept(self.fd, self.addr as *mut libc::sockaddr, self.len))?;
+        syscall!(ioctl(fd, libc::FIOCLEX))?;
+
+        Ok(fd)
+      }
+    }
   }
 }

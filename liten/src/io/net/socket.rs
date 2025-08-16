@@ -97,6 +97,6 @@ impl AsyncWrite for Socket {
 
 impl Drop for Socket {
   fn drop(&mut self) {
-    lio::close(self.fd).detatch();
+    lio::close(self.fd).detach();
   }
 }

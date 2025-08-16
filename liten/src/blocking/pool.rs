@@ -1,7 +1,6 @@
 use std::{collections::HashMap, sync::OnceLock, time::Duration};
 
 use crate::sync::mpmc;
-use parking::{Parker, Unparker};
 use private::JobRun;
 
 use crate::loom::{
@@ -25,7 +24,7 @@ struct ThreadState {
   threads_busy: AtomicUsize,
   max_threads: usize,
 
-  unparkers: Mutex<HashMap<thread::ThreadId, Unparker>>,
+  unparkers: Mutex<HashMap<thread::ThreadId, thread::Thread>>,
   shutting_down: AtomicBool,
 }
 
@@ -109,8 +108,6 @@ impl BlockingPool {
 
     let mut _guard = ThreadPanicGuard::new(self);
 
-    let parker = Parker::new();
-
     // TODO
     loop {
       if self.thread_state.shutting_down.load(Ordering::Acquire) {
@@ -125,11 +122,11 @@ impl BlockingPool {
         Ok(None) => {
           let mut unparkers = self.thread_state.unparkers.lock().unwrap();
 
-          unparkers.insert(thread::current().id(), parker.unparker());
+          unparkers.insert(thread::current().id(), thread::current());
 
           // some weird shit with cfg(loom), it passes cfg down to libs also??
           #[cfg(not(loom))]
-          parker.park_timeout(Duration::from_secs(5));
+          thread::park_timeout(Duration::from_secs(5));
 
           let _ = unparkers.remove(&thread::current().id());
         }

@@ -5,6 +5,10 @@
 mod macros;
 mod loom;
 
+cfg_coro! {
+  pub mod coro;
+}
+
 pub mod future;
 
 pub(crate) mod data;
@@ -43,8 +47,7 @@ cfg_time! {
   pub mod time;
 }
 
-#[doc(hidden)]
-pub mod utils;
+mod parking;
 
 cfg_compat! {
   pub mod compat;
