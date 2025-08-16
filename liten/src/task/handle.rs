@@ -12,6 +12,7 @@ impl<O> TaskHandle<O> {
   }
 
   pub fn join(self) -> O {
+    // I don't know how this works atm with the wakers and whatnot.
     crate::future::block_on(self)
   }
 }

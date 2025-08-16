@@ -27,7 +27,6 @@ lio = { version = "0.1.1", path = "../lio", optional = true }
 
 thiserror = "2.0.11"
 
-parking = "2.2.1"
 pin-project-lite = "0.2.16"
 crossbeam-queue = "0.3.12"
 socket2 = { workspace = true, optional = true }
