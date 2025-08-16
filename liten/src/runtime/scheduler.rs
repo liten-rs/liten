@@ -1,11 +1,8 @@
-use std::future::Future;
-
 pub(crate) mod single_threaded;
 
-pub use single_threaded::SingleThreaded;
+use async_task::Runnable;
+pub use single_threaded::*;
 
 pub trait Scheduler {
-  fn block_on<F>(&self, fut: F) -> F::Output
-  where
-    F: Future;
+  fn tick(&self, runnables: impl Iterator<Item = Runnable>);
 }

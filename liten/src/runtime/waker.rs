@@ -2,7 +2,6 @@ use std::mem::ManuallyDrop;
 use std::task::{RawWaker, RawWakerVTable, Waker};
 
 use crate::loom::{sync::Arc, thread::Thread};
-use crate::task::{TaskId, TaskStore};
 
 pub struct TaskWakerData {
   unparker: Thread,

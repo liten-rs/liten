@@ -84,7 +84,8 @@ impl TimeDriver {
       lock.unparker = parker.unparker();
 
       let driver = self.clone();
-      lock.background_handle = Some(thread::spawn(move || driver.background_thread(parker)));
+      lock.background_handle =
+        Some(thread::spawn(move || driver.background_thread(parker)));
     }
   }
 

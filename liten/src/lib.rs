@@ -5,6 +5,8 @@
 mod macros;
 mod loom;
 
+pub mod coro;
+
 pub mod future;
 
 pub(crate) mod data;

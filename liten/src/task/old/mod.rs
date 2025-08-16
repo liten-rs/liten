@@ -10,16 +10,13 @@
 //!
 
 #![allow(clippy::module_inception)]
-// mod task;
-mod handle;
-pub(crate) mod store;
-pub use handle::*;
+mod task;
 
 #[cfg(feature = "runtime")]
 use std::future::Future;
 
-// pub use task::*;
-// mod yield_now;
+pub use task::*;
+mod yield_now;
 
 /// Spawns a new asynchronous task.
 ///
@@ -96,34 +93,30 @@ use std::future::Future;
 /// The handle implements `Future`, so you can directly await it or use it with
 /// other async combinators.
 #[cfg(feature = "runtime")]
-pub fn spawn<F>(fut: F) -> handle::TaskHandle<F::Output>
+pub fn spawn<F>(fut: F) -> task::TaskHandle<F::Output>
 where
   F: Future + Send + 'static,
   F::Output: Send,
 {
-  use crate::task::store::TaskStore;
+  let (task, handle) = task::Task::new(fut);
 
-  let (runnable, task) = async_task::spawn(fut, |runnable| {
-    TaskStore::get().task_enqueue(runnable);
-    crate::runtime::PARKER.get().unwrap().unpark();
-  });
-  runnable.schedule();
+  task::TaskStore::get().task_enqueue(task);
 
-  TaskHandle::new(task)
+  handle
 }
 
-// /// Give up some time to the task scheduler.
-// ///
-// /// *See [task module docs](crate::task) for documentation about tasks*
-// ///
-// /// When a task/main future currently on has little to do, or for some reason is waiting for another task
-// /// but doesn't have access to the handle, it can signal to the schedule that the caller is willing
-// /// to give up compute to prioritize other tasks.
-// ///
-// /// A drawback is that if no other tasks are running, this will just busy-wait for a while, which
-// /// wastes CPU and energy.
-// ///
-// /// Other primitives should be used instead of (checkout [`sync`](`crate::sync`) for async primitives) this and this should be seen as a last resort.
-// pub async fn yield_now() {
-//   yield_now::YieldNow::default().await
-// }
+/// Give up some time to the task scheduler.
+///
+/// *See [task module docs](crate::task) for documentation about tasks*
+///
+/// When a task/main future currently on has little to do, or for some reason is waiting for another task
+/// but doesn't have access to the handle, it can signal to the schedule that the caller is willing
+/// to give up compute to prioritize other tasks.
+///
+/// A drawback is that if no other tasks are running, this will just busy-wait for a while, which
+/// wastes CPU and energy.
+///
+/// Other primitives should be used instead of (checkout [`sync`](`crate::sync`) for async primitives) this and this should be seen as a last resort.
+pub async fn yield_now() {
+  yield_now::YieldNow::default().await
+}
