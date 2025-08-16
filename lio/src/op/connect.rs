@@ -1,4 +1,4 @@
-use std::os::fd::RawFd;
+use std::{io, mem, os::fd::RawFd};
 
 os_linux! {
   use io_uring::types::Fd;
@@ -34,10 +34,34 @@ impl Operation for Connect {
   }
 
   fn run_blocking(&self) -> std::io::Result<i32> {
-    syscall!(connect(
+    // Check SO_ERROR
+    // let mut so_error: i32 = 0;
+    // let mut len = mem::size_of::<i32>() as libc::socklen_t;
+    // let test = syscall!(getsockopt(
+    //   self.fd,
+    //   libc::SOL_SOCKET,
+    //   libc::SO_ERROR,
+    //   &mut so_error as *mut _ as *mut libc::c_void,
+    //   &mut len,
+    // ));
+
+    let result = syscall!(connect(
       self.fd,
       self.addr.as_ptr().cast::<libc::sockaddr>(),
       self.addr.len(),
-    ))
+    ));
+
+    // Macos doesn't silently fail if socket is already connected. So we just ignore it if that
+    // would happen.
+    #[cfg(macos)]
+    if let Err(ref err) = result {
+      if let Some(errno) = err.raw_os_error() {
+        if errno == 56 {
+          return Ok(0); // 0 is dummy variable. prob gonna change trait impl.
+        }
+      }
+    };
+
+    result
   }
 }

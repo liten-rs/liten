@@ -97,13 +97,13 @@ impl<T> OperationProgress<T> {
   ///     let progress: OperationProgress<lio::op::Read> = read(fd, buffer, 0);
   ///     
   ///     // Detach without waiting for completion
-  ///     progress.detatch();
+  ///     progress.detach();
   ///     
   ///     Ok(())
   /// }
   /// ```
-  pub fn detatch(self) {
-    // Engages the Driver::detatch(..);
+  pub fn detach(self) {
+    // Engages the Driver::detach(..)
     drop(self);
   }
 }
@@ -186,8 +186,10 @@ where
 
         match operation.run_blocking() {
           Ok(result) => Poll::Ready(operation.result(Ok(result))),
-          Err(err) => match err.kind() {
-            io::ErrorKind::WouldBlock => {
+          Err(err) => {
+            if err.kind() == io::ErrorKind::WouldBlock
+              || err.raw_os_error() == Some(libc::EINPROGRESS)
+            {
               if let Err(err) = Driver::get()
                 .register_repoll(id, cx.waker().clone())
                 .expect("why didn't exist")
@@ -196,9 +198,10 @@ where
               } else {
                 Poll::Pending
               }
+            } else {
+              Poll::Ready(operation.result(Err(err)))
             }
-            _ => Poll::Ready(operation.result(Err(err))),
-          },
+          }
         }
       }
       OperationProgress::Blocking { ref mut operation } => {
@@ -217,7 +220,7 @@ where
 impl<T> Drop for OperationProgress<T> {
   fn drop(&mut self) {
     if let OperationProgress::IoUring { id, .. } = *self {
-      Driver::get().detatch(id);
+      Driver::get().detach(id);
     }
   }
 }
@@ -230,7 +233,7 @@ impl<T> Drop for OperationProgress<T> {
 impl<T> Drop for OperationProgress<T> {
   fn drop(&mut self) {
     if let OperationProgress::Poll { id, .. } = *self {
-      Driver::get().detatch(id);
+      Driver::get().detach(id);
     }
   }
 }

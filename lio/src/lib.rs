@@ -114,6 +114,7 @@
 //! This project is licensed under the MIT License - see the LICENSE file for details.
 
 // TODO: Safe shutdown
+use std::thread::JoinHandle;
 use std::{
   collections::HashMap,
   ffi::CString,
@@ -122,7 +123,7 @@ use std::{
   os::fd::RawFd,
   sync::{
     Arc, Mutex, OnceLock,
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
   },
   task::Waker,
 };
@@ -168,6 +169,9 @@ struct DriverInner {
   poller: polling::Poller,
 
   wakers: Mutex<HashMap<u64, OpRegistration>>,
+  // Shared shutdown state and background thread handle
+  shutting_down: AtomicBool,
+  background_handle: Mutex<Option<JoinHandle<()>>>,
 }
 
 /// Performs an async write operation on a file descriptor.
@@ -489,7 +493,7 @@ pub fn connect(
     if #[cfg(linux)] {
       Driver::submit(op)
     } else {
-      Driver::submit_poll(fd, PollInterest::Read, op)
+      Driver::submit_poll(fd, PollInterest::Write, op)
     }
   }
 }
@@ -749,6 +753,8 @@ impl Driver {
         poller: polling::Poller::new().unwrap(),
 
         wakers: Mutex::new(HashMap::default()),
+        shutting_down: AtomicBool::new(false),
+        background_handle: Mutex::new(None),
       }));
 
       driver.background();
@@ -757,7 +763,7 @@ impl Driver {
     })
   }
 
-  pub(crate) fn detatch(&self, id: u64) -> Option<()> {
+  pub(crate) fn detach(&self, id: u64) -> Option<()> {
     let mut _lock = Driver::get().0.wakers.lock().unwrap();
 
     cfg_if::cfg_if! {
@@ -836,21 +842,29 @@ impl Driver {
 
   pub fn background(&self) {
     let driver = self.0.clone();
-    utils::create_worker(move || {
+    let handle = utils::create_worker(move || {
       let mut events = polling::Events::new();
       loop {
+        if driver.shutting_down.load(Ordering::Acquire) {
+          break;
+        }
         events.clear();
         driver.poller.wait(&mut events, None).unwrap();
 
+        if driver.shutting_down.load(Ordering::Acquire) {
+          break;
+        }
+
         let mut _lock = driver.wakers.lock().unwrap();
         for event in events.iter() {
-          match _lock.get_mut(&(event.key as _)) {
-            Some(reg) => reg.wake(),
-            None => continue,
-          };
+          if let Some(reg) = _lock.get_mut(&(event.key as _)) {
+            reg.wake();
+          }
         }
       }
     });
+
+    *self.0.background_handle.lock().unwrap() = Some(handle);
   }
 }
 
@@ -858,24 +872,28 @@ impl Driver {
 impl Driver {
   pub fn background(&self) {
     // SAFETY: completion_shared is only accessed here so it's a singlethreaded access, hence
-    // guarranteed only to have one completion queue.
+    // guaranteed only to have one completion queue.
     let driver = self.0.clone();
-    utils::create_worker(move || {
+    let handle = utils::create_worker(move || {
       loop {
+        if driver.shutting_down.load(Ordering::Acquire) {
+          break;
+        }
         driver.inner.submit_and_wait(1).unwrap();
 
         let entries: Vec<Entry> =
-                // SAFETY: The only thread that is concerned with completion queue.
-          unsafe { driver.inner.completion_shared() }.collect();
+            // SAFETY: The only thread that is concerned with completion queue.
+            unsafe { driver.inner.completion_shared() }.collect();
 
         for entry in entries {
           let operation_id = entry.user_data();
 
           let mut wakers = driver.wakers.lock().unwrap();
 
-          let op_registration = wakers
-            .get_mut(&operation_id)
-            .expect("entry in completion queue doesnt exist in store.");
+          // If the operation id is not registered (e.g., wake-up NOP), skip.
+          let Some(op_registration) = wakers.get_mut(&operation_id) else {
+            continue;
+          };
 
           let old_value = mem::replace(
             &mut op_registration.status,
@@ -905,17 +923,19 @@ impl Driver {
         unsafe { driver.inner.completion_shared() }.sync();
       }
     });
+
+    *self.0.background_handle.lock().unwrap() = Some(handle);
   }
   fn submit<T>(op: T) -> OperationProgress<T>
   where
     T: op::Operation,
   {
-    if T::supported() {
-      let operation_id = Self::get().push::<T>(op);
-      OperationProgress::<T>::new_uring(operation_id)
-    } else {
-      OperationProgress::<T>::new_blocking(op)
-    }
+    //if T::supported() {
+    let operation_id = Self::get().push::<T>(op);
+    OperationProgress::<T>::new_uring(operation_id)
+    //} else {
+    //  OperationProgress::<T>::new_blocking(op)
+    //}
   }
 
   fn push<T: op::Operation>(&self, op: T) -> u64 {
@@ -959,7 +979,7 @@ impl Driver {
         let mut value = unsafe { Box::from_raw(op_registration.op as *mut T) };
 
         let raw_ret = if ret < 0 {
-          Err(io::Error::from_raw_os_error(ret))
+          Err(io::Error::from_raw_os_error(-ret))
         } else {
           Ok(ret)
         };
@@ -986,9 +1006,9 @@ pub(crate) enum CheckRegistrationResult<V> {
 }
 
 mod utils {
-  use std::thread;
+  use std::thread::{self, JoinHandle};
 
-  pub fn create_worker<F, T>(handle: F)
+  pub fn create_worker<F, T>(handle: F) -> JoinHandle<T>
   where
     F: FnOnce() -> T,
     F: Send + 'static,
@@ -997,6 +1017,44 @@ mod utils {
     thread::Builder::new()
       .name("lio".into())
       .spawn(handle)
-      .expect("failed to launch the worker thread");
+      .expect("failed to launch the worker thread")
   }
+}
+
+/// Shut down the lio I/O driver background thread(s) and release OS resources.
+///
+/// After calling this, further I/O operations in this process are unsupported.
+/// Calling shutdown more than once will panic.
+pub fn shutdown() {
+  static DONE_BEFORE: OnceLock<()> = OnceLock::new();
+  if DONE_BEFORE.get().is_some() {
+    panic!("shutdown after shutdown");
+  }
+
+  let driver = Driver::get();
+  driver.0.shutting_down.store(true, Ordering::Release);
+
+  cfg_if::cfg_if! {
+    if #[cfg(not_linux)] {
+      // Wake the poller so it can observe the shutdown flag
+      let _ = driver.0.poller.notify();
+    } else {
+      // Submit a NOP to wake submit_and_wait
+      unsafe {
+        let _g = driver.0.submission_guard.lock();
+        let mut sub = driver.0.inner.submission_shared();
+        let entry = io_uring::opcode::Nop::new().build().user_data(0);
+        let _ = sub.push(&entry);
+        sub.sync();
+        drop(sub);
+      }
+      let _ = driver.0.inner.submit();
+    }
+  }
+
+  if let Some(handle) = driver.0.background_handle.lock().unwrap().take() {
+    let _ = handle.join();
+  }
+
+  let _ = DONE_BEFORE.set(());
 }

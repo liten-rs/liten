@@ -34,7 +34,9 @@ static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 impl TimeDriver {
   fn get() -> &'static TimeDriver {
     static TIME_DRIVER: OnceLock<TimeDriver> = OnceLock::new();
-    TIME_DRIVER.get_or_init(TimeDriver::new)
+    let driver = TIME_DRIVER.get_or_init(TimeDriver::new);
+    driver.ensure_running();
+    driver
   }
   fn new() -> TimeDriver {
     let (days, hours, minutes, seconds, milliseconds) =
@@ -68,6 +70,22 @@ impl TimeDriver {
     drop(driver_lock);
 
     driver
+  }
+
+  fn ensure_running(&self) {
+    let mut lock = self.0.lock().unwrap();
+    let is_stopped = lock.background_handle.is_none();
+    if is_stopped {
+      // Restart background thread after a shutdown
+      lock.shutdown_signal = false;
+      lock.last_advance = Instant::now();
+
+      let parker = Parker::new();
+      lock.unparker = parker.unparker();
+
+      let driver = self.clone();
+      lock.background_handle = Some(thread::spawn(move || driver.background_thread(parker)));
+    }
   }
 
   pub(in crate::time) fn start_elapsed(&self) -> usize {
@@ -155,6 +173,9 @@ impl TimeDriver {
   }
 
   pub fn poll(&self, cx: &mut Context, timer_id: TimerId) -> Poll<()> {
+    // Drive time forward on poll to ensure progress even if background thread isn't running
+    self.jump();
+
     if timer_id.has_happened(self.start_elapsed()) {
       self.0.lock().unwrap().waker_store.remove(&timer_id);
       return Poll::Ready(());

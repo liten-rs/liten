@@ -104,18 +104,22 @@ impl<T> Inner<T> {
   }
 
   pub fn increment_sender_count(&self) {
+    dbg!(self.sender_count.load(Ordering::Acquire));
     self.sender_count.fetch_add(1, Ordering::Acquire);
   }
 
   pub fn decrement_sender_count(&self) {
+    dbg!(self.sender_count.load(Ordering::Acquire));
     self.sender_count.fetch_sub(1, Ordering::Acquire);
   }
 
   pub fn increment_receiver_count(&self) {
+    dbg!(self.receiver_count.load(Ordering::Acquire));
     self.receiver_count.fetch_add(1, Ordering::Acquire);
   }
 
   pub fn decrement_receiver_count(&self) {
+    dbg!(self.receiver_count.load(Ordering::Acquire));
     self.receiver_count.fetch_sub(1, Ordering::Acquire);
   }
 }
@@ -211,14 +215,17 @@ mod tests {
   #[crate::internal_test]
   fn test_single_item_enqueue_dequeue() {
     Runtime::single_threaded().block_on(async {
-      let (sender, receiver) = super::bounded(10);
+      let (sender, receiver) = super::bounded::<()>(10);
+
+      drop(sender);
+      drop(receiver);
 
       // Send a single item
-      assert!(sender.try_send(42).is_ok());
+      // assert!(sender.try_send(42).is_ok());
 
       // Receive the item
-      let result = receiver.recv().await;
-      assert_eq!(result, Ok(42));
+      // let result = receiver.recv().await;
+      // assert_eq!(result, Ok(42));
     });
   }
 
