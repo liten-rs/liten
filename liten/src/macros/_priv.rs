@@ -58,10 +58,21 @@ macro_rules! cfg_io {
     }
 }
 
-macro_rules! cfg_internal_io {
+macro_rules! cfg_not_coro {
    ($($item:item)*) => {
        $(
-            #[cfg(all(feature = "io", not(miri)))]
+            #[cfg(all(not(feature = "runtime"), feature = "coro"))]
+            #[cfg_attr(docsrs, doc(cfg(all(not(feature = "runtime"), feature = "coro"))))]
+            $item
+        )*
+    }
+}
+
+macro_rules! cfg_coro {
+   ($($item:item)*) => {
+       $(
+            #[cfg(all(feature = "runtime", feature = "coro"))]
+            #[cfg_attr(docsrs, doc(cfg(all(feature = "runtime", feature = "coro"))))]
             $item
         )*
     }

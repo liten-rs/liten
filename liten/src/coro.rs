@@ -1,7 +1,8 @@
 use std::{
+  future::Future,
   sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Mutex, OnceLock,
   },
   thread::{self, JoinHandle},
 };
@@ -11,78 +12,101 @@ use crate::blocking::pool::BlockingPool;
 #[cfg(all(feature = "time", not(loom)))]
 use crate::time::TimeDriver;
 use crate::{
-  runtime::{
-    scheduler::{Scheduler, SingleThreaded},
-    PARKER,
-  },
-  task::store::TaskStore,
+  runtime::scheduler::{Scheduler, SingleThreaded},
+  task::{store::TaskStore, TaskHandle},
 };
 
-pub struct CoroHandle {
-  // scheduler: SingleThreaded,
-  handle: Option<JoinHandle<()>>,
+struct CoroHandle {
+  handle: Mutex<Option<JoinHandle<()>>>,
   state: Arc<CoroState>,
 }
 
 struct CoroState {
   shutdown_singal: AtomicBool,
+  queue: TaskStore,
 }
-
 impl Default for CoroState {
   fn default() -> Self {
-    Self { shutdown_singal: AtomicBool::new(false) }
+    Self { shutdown_singal: AtomicBool::new(false), queue: TaskStore::new() }
   }
 }
 
-impl Drop for CoroHandle {
-  fn drop(&mut self) {
-    self.state.shutdown_singal.store(true, Ordering::Relaxed);
+impl CoroHandle {
+  fn with_scheduler<S: Scheduler + Send + 'static>(scheduler: S) -> Self {
+    let state = Arc::new(CoroState::default());
+    let handle = thread::spawn({
+      let state = state.clone();
+      move || Self::bg_thread(scheduler, state)
+    });
 
-    PARKER.get().unwrap().unpark();
-
-    self
-      .handle
-      .take()
-      .expect("handle taken twice")
-      .join()
-      .expect("thread panicked");
+    CoroHandle { handle: Mutex::new(Some(handle)), state }
   }
-}
+  fn bg_thread<S: Scheduler>(scheduler: S, state: Arc<CoroState>) {
+    loop {
+      if state.shutdown_singal.load(Ordering::Acquire) {
+        break;
+      }
 
-pub fn init() -> CoroHandle {
-  init_with_schedule(SingleThreaded)
-}
+      scheduler.tick(state.queue.tasks());
 
-pub fn init_with_schedule<S: Scheduler + Send + 'static>(
-  scheduler: S,
-) -> CoroHandle {
-  let state = Arc::new(CoroState::default());
-  let handle = thread::spawn({
-    let state = state.clone();
-    move || main_thread(scheduler, state)
-  });
+      #[cfg(all(feature = "io", not(miri)))]
+      lio::tick();
 
-  CoroHandle { handle: Some(handle), state }
-}
-
-fn main_thread<S: Scheduler>(scheduler: S, state: Arc<CoroState>) {
-  let _thread = thread::current();
-  PARKER.set(_thread).unwrap();
-  let store = TaskStore::get();
-  loop {
-    if state.shutdown_singal.load(Ordering::Acquire) {
-      break;
+      thread::park();
     }
 
-    scheduler.tick(store.tasks());
-
-    #[cfg(all(feature = "io", not(miri)))]
-    lio::tick();
-
-    thread::park();
+    #[cfg(all(feature = "time", not(loom)))]
+    TimeDriver::shutdown();
+    #[cfg(feature = "blocking")]
+    BlockingPool::shutdown();
   }
-  #[cfg(all(feature = "time", not(loom)))]
-  TimeDriver::shutdown();
-  #[cfg(feature = "blocking")]
-  BlockingPool::shutdown();
+}
+
+std::thread_local! {
+  static CORO: OnceLock<CoroHandle> = OnceLock::new();
+}
+
+pub fn init_with_scheduler<S: Scheduler + Send + 'static>(scheduler: S) {
+  CORO.with(|thing| {
+    if let Err(_) = thing.set(CoroHandle::with_scheduler(scheduler)) {
+      // TODO: good with panic?
+      unreachable!();
+    }
+  })
+}
+
+pub fn shutdown() {
+  CORO.with(|coro| {
+    let this = coro.get().unwrap();
+    this.state.shutdown_singal.store(true, Ordering::SeqCst);
+
+    let mut _lock = this.handle.lock().unwrap();
+    let handle = _lock.take().expect("handle taken twice");
+    // Cannot have mutex locked after waking worker thread.
+    drop(_lock);
+    handle.thread().unpark();
+
+    handle.join().expect("thread panicked");
+  });
+}
+
+pub fn go<F>(f: F) -> TaskHandle<F::Output>
+where
+  F: Future + Send + 'static,
+  F::Output: Send,
+{
+  let (runnable, task) = async_task::spawn(f, |runnable| {
+    CORO.with(|thing| {
+      let handle =
+        thing.get_or_init(|| CoroHandle::with_scheduler(SingleThreaded));
+
+      handle.state.queue.task_enqueue(runnable);
+      let _lock = handle.handle.lock().unwrap();
+      let handle = _lock.as_ref().unwrap();
+      handle.thread().unpark();
+    })
+  });
+  runnable.schedule();
+
+  TaskHandle::new(task)
 }

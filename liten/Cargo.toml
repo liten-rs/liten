@@ -13,6 +13,7 @@ blocking = ["sync"]
 fs = ["blocking"]
 runtime = []
 io = ["dep:lio", "dep:libc", "dep:socket2"]
+coro = []
 compat = ["dep:tokio"]
 full = ["sync", "time", "blocking", "fs", "runtime", "io", "compat"]
 

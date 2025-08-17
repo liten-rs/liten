@@ -11,13 +11,12 @@ use crate::blocking::pool::BlockingPool;
 use crate::time::TimeDriver;
 use crate::{
   future::block_on::park_waker,
+  parking,
   runtime::scheduler::{single_threaded::SingleThreaded, Scheduler},
   task::store::TaskStore,
 };
 
 pub mod scheduler;
-
-pub static PARKER: OnceLock<Thread> = OnceLock::new();
 
 #[derive(Default)]
 pub struct Runtime<S> {
@@ -37,13 +36,13 @@ where
   pub const fn with_scheduler(scheduler: S) -> Self {
     Runtime { scheduler }
   }
+
   pub fn block_on<F>(self, fut: F) -> F::Output
   where
     F: Future,
   {
-    PARKER.set(thread::current()).unwrap();
+    let _thread = parking::set_main_thread();
     let mut fut = std::pin::pin!(fut);
-    let _thread = PARKER.get().unwrap();
 
     let to_return: F::Output = loop {
       self.scheduler.tick(TaskStore::get().tasks());
@@ -55,10 +54,10 @@ where
         break value;
       }
 
-      #[cfg(all(feature = "io", not(miri)))]
+      #[cfg(feature = "io")]
       lio::tick();
 
-      thread::park();
+      parking::park();
     };
 
     #[cfg(all(feature = "time", not(loom)))]
