@@ -94,4 +94,3 @@ fn partial_inner_writes_are_handled() {
   block_on(writer.flush()).unwrap();
   assert_eq!(writer.get_ref().written, vec![1, 2, 3, 4, 5]);
 }
-

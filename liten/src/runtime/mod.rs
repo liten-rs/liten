@@ -54,8 +54,8 @@ where
         break value;
       }
 
-      #[cfg(feature = "io")]
-      lio::tick();
+      // #[cfg(feature = "io")]
+      // lio::tick();
 
       parking::park();
     };

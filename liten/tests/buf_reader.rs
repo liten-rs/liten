@@ -87,4 +87,3 @@ fn buf_reader_eof_returns_zero() {
   assert_eq!(r2.unwrap(), 0);
   assert_eq!(out2.len(), 8);
 }
-

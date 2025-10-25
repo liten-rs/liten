@@ -1,8 +1,7 @@
 use std::{mem::MaybeUninit, os::fd::RawFd};
 
-os_linux! {
-  use io_uring::{types::Fd, opcode, squeue};
-}
+#[cfg(linux)]
+use io_uring::{opcode, squeue, types::Fd};
 use socket2::SockAddrStorage;
 
 use super::Operation;
@@ -31,39 +30,40 @@ impl Operation for Accept {
     res
   }
 
-  os_linux! {
-    const OPCODE: u8 = opcode::Accept::CODE;
+  #[cfg(linux)]
+  const OPCODE: u8 = 13;
 
-    fn create_entry(&self) -> squeue::Entry {
-      opcode::Accept::new(
-        Fd(self.fd),
+  #[cfg(linux)]
+  fn create_entry(&self) -> squeue::Entry {
+    opcode::Accept::new(Fd(self.fd), self.addr as *mut libc::sockaddr, self.len)
+      .build()
+  }
+
+  fn run_blocking(&self) -> std::io::Result<i32> {
+    let fd = if cfg!(any(
+      target_os = "android",
+      target_os = "dragonfly",
+      target_os = "freebsd",
+      target_os = "illumos",
+      target_os = "linux",
+      target_os = "hurd",
+      target_os = "netbsd",
+      target_os = "openbsd",
+      target_os = "cygwin",
+    )) {
+      syscall!(accept4(
+        self.fd,
         self.addr as *mut libc::sockaddr,
         self.len,
-      )
-      .build()
-    }
-  }
-  fn run_blocking(&self) -> std::io::Result<i32> {
-    cfg_if::cfg_if! {
-      if #[cfg(any(
-          target_os = "android",
-          target_os = "dragonfly",
-          target_os = "freebsd",
-          target_os = "illumos",
-          target_os = "linux",
-          target_os = "hurd",
-          target_os = "netbsd",
-          target_os = "openbsd",
-          target_os = "cygwin",
-      ))] {
-        let fd = syscall!(accept4(self.as_raw_fd(), storage, len, libc::SOCK_CLOEXEC))?;
-        Ok(fd)
-      } else {
-        let fd = syscall!(accept(self.fd, self.addr as *mut libc::sockaddr, self.len))?;
-        syscall!(ioctl(fd, libc::FIOCLEX))?;
+        libc::SOCK_CLOEXEC
+      ))?
+    } else {
+      let fd =
+        syscall!(accept(self.fd, self.addr as *mut libc::sockaddr, self.len))?;
+      syscall!(ioctl(fd, libc::FIOCLEX))?;
+      fd
+    };
 
-        Ok(fd)
-      }
-    }
+    Ok(fd)
   }
 }

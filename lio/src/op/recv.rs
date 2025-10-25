@@ -23,18 +23,18 @@ impl Operation for Recv {
   type Output = i32;
   type Result = BufResult<Self::Output, Vec<u8>>;
 
-  os_linux! {
-    const OPCODE: u8 = io_uring::opcode::Recv::CODE;
+  #[cfg(linux)]
+  const OPCODE: u8 = 27;
 
-    fn create_entry(&self) -> io_uring::squeue::Entry {
-      io_uring::opcode::Recv::new(
-        Fd(self.fd),
-        self.buf.as_ref().unwrap().as_ptr() as *mut _,
-        self.buf.as_ref().unwrap().len() as u32,
-      )
-      .flags(self.flags)
-      .build()
-    }
+  #[cfg(linux)]
+  fn create_entry(&self) -> io_uring::squeue::Entry {
+    io_uring::opcode::Recv::new(
+      Fd(self.fd),
+      self.buf.as_ref().unwrap().as_ptr() as *mut _,
+      self.buf.as_ref().unwrap().len() as u32,
+    )
+    .flags(self.flags)
+    .build()
   }
 
   fn run_blocking(&self) -> io::Result<i32> {

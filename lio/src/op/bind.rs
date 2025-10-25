@@ -1,8 +1,7 @@
 use std::{io, os::fd::RawFd};
 
-os_linux! {
-  use io_uring::types::Fd;
-}
+#[cfg(linux)]
+use io_uring::types::Fd;
 
 use super::Operation;
 
@@ -19,18 +18,18 @@ impl Bind {
 impl Operation for Bind {
   impl_result!(());
 
-  os_linux! {
-    const OPCODE: u8 = io_uring::opcode::Bind::CODE;
+  #[cfg(linux)]
+  const OPCODE: u8 = 56;
 
-    fn create_entry(&self) -> io_uring::squeue::Entry {
-      let storage = self.addr.as_ptr();
-      io_uring::opcode::Bind::new(
-        Fd(self.fd),
-        storage.cast::<libc::sockaddr>(),
-        self.addr.len() as _,
-      )
-      .build()
-    }
+  #[cfg(linux)]
+  fn create_entry(&self) -> io_uring::squeue::Entry {
+    let storage = self.addr.as_ptr();
+    io_uring::opcode::Bind::new(
+      Fd(self.fd),
+      storage.cast::<libc::sockaddr>(),
+      self.addr.len() as _,
+    )
+    .build()
   }
   fn run_blocking(&self) -> io::Result<i32> {
     syscall!(bind(

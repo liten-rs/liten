@@ -1,8 +1,7 @@
 use std::{ffi::CString, os::fd::RawFd};
 
-os_linux! {
-  use io_uring::types::Fd;
-}
+#[cfg(linux)]
+use io_uring::types::Fd;
 
 use super::Operation;
 
@@ -19,16 +18,24 @@ impl OpenAt {
 }
 
 impl Operation for OpenAt {
-  impl_result!(fd);
+  #[cfg(unix)]
+  type Output = std::os::fd::RawFd;
 
-  os_linux! {
-    const OPCODE: u8 = io_uring::opcode::OpenAt::CODE;
+  #[cfg(unix)]
+  type Result = std::io::Result<Self::Output>;
+  /// File descriptor returned from the operation.
+  fn result(&mut self, fd: std::io::Result<i32>) -> Self::Result {
+    fd
+  }
 
-    fn create_entry(&self) -> io_uring::squeue::Entry {
-      io_uring::opcode::OpenAt::new(Fd(self.fd), self.pathname.as_ptr())
-        .flags(self.flags)
-        .build()
-    }
+  #[cfg(linux)]
+  const OPCODE: u8 = 18;
+
+  #[cfg(linux)]
+  fn create_entry(&self) -> io_uring::squeue::Entry {
+    io_uring::opcode::OpenAt::new(Fd(self.fd), self.pathname.as_ptr())
+      .flags(self.flags)
+      .build()
   }
   fn run_blocking(&self) -> std::io::Result<i32> {
     syscall!(openat(self.fd, self.pathname.as_ptr(), self.flags))

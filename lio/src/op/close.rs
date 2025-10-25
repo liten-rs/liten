@@ -1,8 +1,7 @@
 use std::os::fd::RawFd;
 
-os_linux! {
-  use io_uring::types::Fd;
-}
+#[cfg(linux)]
+use io_uring::{opcode, types::Fd};
 
 use super::Operation;
 
@@ -18,11 +17,13 @@ impl Close {
 
 impl Operation for Close {
   impl_result!(());
-  os_linux! {
-    const OPCODE: u8 = io_uring::opcode::Close::CODE;
-    fn create_entry(&self) -> io_uring::squeue::Entry {
-      io_uring::opcode::Close::new(Fd(self.fd)).build()
-    }
+
+  #[cfg(linux)]
+  const OPCODE: u8 = 19;
+
+  #[cfg(linux)]
+  fn create_entry(&self) -> io_uring::squeue::Entry {
+    opcode::Close::new(Fd(self.fd)).build()
   }
 
   fn run_blocking(&self) -> std::io::Result<i32> {

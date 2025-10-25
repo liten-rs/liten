@@ -55,9 +55,7 @@ impl OpRegistration {
 impl OpRegistration {
   pub fn new<T>(op: T) -> Self {
     fn drop_op<T>(ptr: *const ()) {
-      unsafe {
-        let _ = Box::from_raw(ptr as *mut T);
-      }
+      drop(unsafe { Box::from_raw(ptr as *mut T) })
     }
 
     OpRegistration {

@@ -19,12 +19,13 @@ impl Tee {
 impl Operation for Tee {
   impl_result!(());
 
-  os_linux! {
-    const OPCODE: u8 = io_uring::opcode::Tee::CODE;
-    fn create_entry(&self) -> io_uring::squeue::Entry {
-      io_uring::opcode::Tee::new(Fd(self.fd_in), Fd(self.fd_out), self.size)
-        .build()
-    }
+  #[cfg(linux)]
+  const OPCODE: u8 = 33;
+
+  #[cfg(linux)]
+  fn create_entry(&self) -> io_uring::squeue::Entry {
+    io_uring::opcode::Tee::new(Fd(self.fd_in), Fd(self.fd_out), self.size)
+      .build()
   }
 
   fn run_blocking(&self) -> std::io::Result<i32> {

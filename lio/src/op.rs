@@ -6,6 +6,7 @@ macro_rules! os_linux {
         )*
     }
 }
+
 macro_rules! syscall {
   ($fn: ident ( $($arg: expr),* $(,)* ) ) => {{
       #[allow(unused_unsafe)]
@@ -30,9 +31,8 @@ mod recv;
 mod send;
 mod socket;
 
-os_linux! {
-  mod tee;
-}
+#[cfg(linux)]
+mod tee;
 mod truncate;
 mod write;
 
@@ -47,9 +47,8 @@ pub use recv::*;
 pub use send::*;
 pub use socket::*;
 
-os_linux! {
-  pub use tee::*;
-}
+#[cfg(linux)]
+pub use tee::*;
 
 pub use truncate::*;
 pub use write::*;
@@ -59,21 +58,22 @@ trait Sealed {}
 impl<O: Operation> Sealed for O {}
 
 // Things that implement this trait represent a command that can be executed using io-uring.
-// TODO: Maybe combine output and result?
 #[allow(private_bounds)]
 pub trait Operation: Sealed {
   type Output: Sized;
   type Result; // = most often io::Result<Self::Output>;
 
-  os_linux! {
-    const OPCODE: u8;
+  #[cfg(linux)]
+  const OPCODE: u8;
 
-    fn supported() -> bool {
-      io_uring::Probe::new().is_supported(Self::OPCODE)
-    }
-
-    fn create_entry(&self) -> io_uring::squeue::Entry;
+  #[cfg(linux)]
+  fn entry_supported(probe: &io_uring::Probe) -> bool {
+    probe.is_supported(Self::OPCODE)
   }
+
+  #[cfg(linux)]
+  fn create_entry(&self) -> io_uring::squeue::Entry;
+
   fn run_blocking(&self) -> io::Result<i32>;
   /// This is guarranteed to fire after this has completed and only fire ONCE.
   /// i32 is guarranteed to be >= 0.

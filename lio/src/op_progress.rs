@@ -1,5 +1,5 @@
 #[cfg(linux)]
-use crate::CheckRegistrationResult;
+use crate::driver::CheckRegistrationResult;
 #[cfg(linux)]
 use std::marker::PhantomData;
 

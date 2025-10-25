@@ -110,4 +110,3 @@ fn write_all_write_zero_error() {
   let (res, _returned) = block_on(writer.write_all(payload));
   assert!(matches!(res, Err(e) if e.kind() == io::ErrorKind::WriteZero));
 }
-

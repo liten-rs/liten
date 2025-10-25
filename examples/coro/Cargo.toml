@@ -4,4 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-liten = { path = "../../liten", features = [ "runtime", "time", "coro"] }
+libc.workspace = true
+lio = { path = "../../lio" }
+socket2.workspace = true
+tokio = { version = "1.48.0", features = ["macros", "rt"] }

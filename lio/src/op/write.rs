@@ -1,8 +1,9 @@
 use super::Operation;
 use crate::BufResult;
-os_linux! {
-  use io_uring::types::Fd;
-}
+
+#[cfg(linux)]
+use io_uring::types::Fd;
+
 use std::os::fd::RawFd;
 
 pub struct Write {
@@ -22,20 +23,20 @@ impl Operation for Write {
   type Output = i32;
   type Result = BufResult<Self::Output, Vec<u8>>;
 
-  os_linux! {
-    const OPCODE: u8 = io_uring::opcode::Write::CODE;
-    fn create_entry(&self) -> io_uring::squeue::Entry {
-      io_uring::opcode::Write::new(
-        Fd(self.fd),
-        self.buf.as_ref().unwrap().as_ptr(),
-        self.buf.as_ref().unwrap().len() as u32,
-      )
-      .offset(self.offset)
-      .build()
-    }
+  #[cfg(linux)]
+  const OPCODE: u8 = 23;
 
-
+  #[cfg(linux)]
+  fn create_entry(&self) -> io_uring::squeue::Entry {
+    io_uring::opcode::Write::new(
+      Fd(self.fd),
+      self.buf.as_ref().unwrap().as_ptr(),
+      self.buf.as_ref().unwrap().len() as u32,
+    )
+    .offset(self.offset)
+    .build()
   }
+
   fn run_blocking(&self) -> std::io::Result<i32> {
     syscall!(pwrite(
       self.fd,

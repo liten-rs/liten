@@ -16,17 +16,15 @@ const CHUNK_SIZE: usize = 4096; // 4KB
 async fn read_with_fd(fd: RawFd) -> io::Result<Vec<u8>> {
   let mut buffer = Vec::new();
   let mut chunks = Vec::from([0; CHUNK_SIZE]);
-  let mut index = 0;
 
   loop {
-    let (result, vector) = lio::read(fd, chunks, index).await;
+    let (result, vector) = lio::read(fd, chunks, -1).await;
 
     let bytes_read = result?;
 
     if bytes_read == 0 {
       break; // End of file
     }
-    index += bytes_read as u64 + 1;
     buffer.extend_from_slice(&vector[0..bytes_read as usize]);
 
     chunks = vector;
@@ -115,7 +113,7 @@ impl File {
     index: usize,
     vec: Vec<u8>,
   ) -> BufResult<usize, Vec<u8>> {
-    let (result, buf) = lio::read(self.0, vec, index as u64).await;
+    let (result, buf) = lio::read(self.0, vec, index as i64).await;
     match result {
       Ok(nice) => (Ok(nice as usize), buf),
       Err(err) => (Err(err), buf),

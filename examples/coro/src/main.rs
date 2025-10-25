@@ -1,23 +1,97 @@
-use std::time::Duration;
+use std::{ffi::CString, os::fd::RawFd};
 
-use liten::coro::go;
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+  let fd: RawFd = lio::openat(
+    libc::AT_FDCWD,
+    CString::new("README.md").unwrap(),
+    libc::O_RDONLY,
+  )
+  .await
+  .unwrap();
 
-fn main() {
-  let testing2 = go(async {
-    let testing = go(async {
-      liten::time::sleep(Duration::from_millis(1500)).await;
-      dbg!("yes");
-    });
-    liten::time::sleep(Duration::from_millis(1000)).await;
+  let mut buf = vec![0u8; 100];
+  buf.fill(0);
 
-    dbg!("yes");
+  let (res, buf) = lio::read(fd, buf, -1).await;
 
-    testing.await;
-  });
+  println!(
+    "bytes: {}, buf: {:?}",
+    res.unwrap(),
+    String::from_utf8(buf.clone())
+  );
 
-  std::thread::sleep(Duration::from_secs(2));
-  // // dbg!("yes");
-  dbg!(testing2.join());
-  // dbg!(testing.join());
-  liten::coro::shutdown();
+  let (res, buf) = lio::read(fd, buf, -1).await;
+
+  println!(
+    "bytes: {}, buf: {:?}",
+    res.unwrap(),
+    String::from_utf8(buf.clone())
+  );
+
+  let (res, buf) = lio::read(fd, buf, -1).await;
+
+  println!(
+    "bytes: {}, buf: {:?}",
+    res.unwrap(),
+    String::from_utf8(buf.clone())
+  );
+
+  let (res, buf) = lio::read(fd, buf, -1).await;
+
+  println!(
+    "bytes: {}, buf: {:?}",
+    res.unwrap(),
+    String::from_utf8(buf.clone())
+  );
+  let (res, buf) = lio::read(fd, buf, -1).await;
+
+  println!(
+    "bytes: {}, buf: {:?}",
+    res.unwrap(),
+    String::from_utf8(buf.clone())
+  );
+  let (res, buf) = lio::read(fd, buf, -1).await;
+
+  println!(
+    "bytes: {}, buf: {:?}",
+    res.unwrap(),
+    String::from_utf8(buf.clone())
+  );
+  let (res, buf) = lio::read(fd, buf, -1).await;
+
+  println!(
+    "bytes: {}, buf: {:?}",
+    res.unwrap(),
+    String::from_utf8(buf.clone())
+  );
+  let (res, buf) = lio::read(fd, buf, -1).await;
+
+  println!(
+    "bytes: {}, buf: {:?}",
+    res.unwrap(),
+    String::from_utf8(buf.clone())
+  );
+  let (res, buf) = lio::read(fd, buf, -1).await;
+
+  println!(
+    "bytes: {}, buf: {:?}",
+    res.unwrap(),
+    String::from_utf8(buf.clone())
+  );
+  let (res, buf) = lio::read(fd, buf, -1).await;
+
+  println!(
+    "bytes: {}, buf: {:?}",
+    res.unwrap(),
+    String::from_utf8(buf.clone())
+  );
+  let (res, buf) = lio::read(fd, buf, -1).await;
+  println!(
+    "bytes: {}, buf: {:?}",
+    res.unwrap(),
+    String::from_utf8(buf.clone())
+  );
+
+  lio::close(fd).await.unwrap();
 }

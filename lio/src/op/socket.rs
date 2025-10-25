@@ -19,18 +19,28 @@ impl Socket {
 }
 
 impl Operation for Socket {
-  impl_result!(fd);
+  #[cfg(unix)]
+  type Output = std::os::fd::RawFd;
 
-  os_linux! {
-    const OPCODE: u8 = io_uring::opcode::Socket::CODE;
-    fn create_entry(&self) -> io_uring::squeue::Entry {
-      io_uring::opcode::Socket::new(
-        self.domain.into(),
-        self.ty.into(),
-        self.proto.unwrap_or(0.into()).into(),
-      )
-      .build()
-    }
+  #[cfg(unix)]
+  type Result = std::io::Result<Self::Output>;
+
+  #[doc = r" File descriptor returned from the operation."]
+  fn result(&mut self, fd: std::io::Result<i32>) -> Self::Result {
+    fd
+  }
+
+  #[cfg(linux)]
+  const OPCODE: u8 = 45;
+
+  #[cfg(linux)]
+  fn create_entry(&self) -> io_uring::squeue::Entry {
+    io_uring::opcode::Socket::new(
+      self.domain.into(),
+      self.ty.into(),
+      self.proto.unwrap_or(0.into()).into(),
+    )
+    .build()
   }
   fn run_blocking(&self) -> io::Result<i32> {
     let result = syscall!(socket(
