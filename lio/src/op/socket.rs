@@ -1,4 +1,8 @@
 use std::io;
+#[cfg(not(linux))]
+use std::os::fd::RawFd;
+
+use crate::op::EventType;
 
 use super::Operation;
 
@@ -42,8 +46,16 @@ impl Operation for Socket {
     )
     .build()
   }
+
+  const EVENT_TYPE: Option<EventType> = None;
+
+  #[cfg(not(linux))]
+  fn fd(&self) -> Option<RawFd> {
+    None
+  }
+
   fn run_blocking(&self) -> io::Result<i32> {
-    let result = syscall!(socket(
+    let fd = syscall!(socket(
       self.domain.into(),
       self.ty.into(),
       self.proto.unwrap_or(0.into()).into()
@@ -52,9 +64,18 @@ impl Operation for Socket {
 
     // Remove blocking by kernel if no result is available. Linux uses io-uring so it doesn't
     // count.
-    #[cfg(not_linux)]
-    syscall!(ioctl(result, libc::FIONBIO, &mut 1))?;
+    #[cfg(not(linux))]
+    syscall!(ioctl(fd, libc::FIONBIO, &mut 1))?;
 
-    Ok(result)
+    let opt: i32 = 1;
+    syscall!(setsockopt(
+      fd,
+      libc::SOL_SOCKET,
+      libc::SO_REUSEADDR,
+      &opt as *const i32 as *const libc::c_void,
+      4
+    ))?;
+
+    Ok(fd)
   }
 }

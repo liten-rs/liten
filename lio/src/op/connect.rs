@@ -4,6 +4,9 @@ use std::os::fd::RawFd;
 use io_uring::types::Fd;
 use socket2::SockAddr;
 
+#[cfg(not(linux))]
+use crate::op::EventType;
+
 use super::Operation;
 
 pub struct Connect {
@@ -31,6 +34,14 @@ impl Operation for Connect {
       self.addr.len(),
     )
     .build()
+  }
+
+  #[cfg(not(linux))]
+  const EVENT_TYPE: Option<EventType> = Some(EventType::Read);
+
+  #[cfg(not(linux))]
+  fn fd(&self) -> Option<RawFd> {
+    Some(self.fd)
   }
 
   fn run_blocking(&self) -> std::io::Result<i32> {

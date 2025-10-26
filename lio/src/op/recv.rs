@@ -4,6 +4,8 @@ use std::{io, os::fd::RawFd};
 use io_uring::types::Fd;
 
 use crate::BufResult;
+#[cfg(not(linux))]
+use crate::op::EventType;
 
 use super::Operation;
 
@@ -35,6 +37,14 @@ impl Operation for Recv {
     )
     .flags(self.flags)
     .build()
+  }
+
+  #[cfg(not(linux))]
+  const EVENT_TYPE: Option<EventType> = Some(EventType::Read);
+
+  #[cfg(not(linux))]
+  fn fd(&self) -> Option<RawFd> {
+    Some(self.fd)
   }
 
   fn run_blocking(&self) -> io::Result<i32> {

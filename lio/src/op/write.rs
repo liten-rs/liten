@@ -1,6 +1,9 @@
 use super::Operation;
 use crate::BufResult;
 
+#[cfg(not(linux))]
+use crate::op::EventType;
+
 #[cfg(linux)]
 use io_uring::types::Fd;
 
@@ -35,6 +38,13 @@ impl Operation for Write {
     )
     .offset(self.offset)
     .build()
+  }
+
+  const EVENT_TYPE: Option<EventType> = None;
+
+  #[cfg(not(linux))]
+  fn fd(&self) -> Option<RawFd> {
+    None
   }
 
   fn run_blocking(&self) -> std::io::Result<i32> {

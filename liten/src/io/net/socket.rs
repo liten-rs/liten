@@ -54,7 +54,7 @@ impl Socket {
   }
 
   pub fn listen(&self) -> impl Future<Output = io::Result<()>> {
-    lio::listen(self.fd)
+    lio::listen(self.fd, 128)
   }
 
   pub async fn accept(&self) -> io::Result<(Socket, SockAddr)> {

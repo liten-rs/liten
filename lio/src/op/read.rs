@@ -4,6 +4,8 @@ use std::{io, os::fd::RawFd};
 use io_uring::types::Fd;
 
 use crate::BufResult;
+#[cfg(not(linux))]
+use crate::op::EventType;
 
 use super::Operation;
 
@@ -39,6 +41,14 @@ impl Operation for Read {
   }
   type Output = i32;
   type Result = BufResult<Self::Output, Vec<u8>>;
+
+  #[cfg(not(linux))]
+  const EVENT_TYPE: Option<EventType> = None;
+
+  #[cfg(not(linux))]
+  fn fd(&self) -> Option<RawFd> {
+    None
+  }
 
   fn run_blocking(&self) -> io::Result<i32> {
     let buf = self.buf.as_ref().unwrap();

@@ -1,20 +1,25 @@
+use crate::OperationProgress;
 use std::{
   collections::HashMap,
   sync::{
     Arc, Mutex, OnceLock,
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
   },
   thread::JoinHandle,
 };
+#[cfg(not(linux))]
+use std::{io, os::fd::RawFd, task::Waker};
 #[cfg(linux)]
 use std::{sync::atomic::AtomicBool, task::Waker};
 
 #[cfg(linux)]
 use io_uring::{IoUring, Probe};
 
+#[cfg(not(linux))]
+use crate::op;
 use crate::op_registration::OpRegistration;
 #[cfg(linux)]
-use crate::{OperationProgress, op, op_registration::OpRegistrationStatus};
+use crate::op_registration::OpRegistrationStatus;
 
 pub(crate) struct Driver(Arc<DriverInner>);
 
@@ -81,6 +86,7 @@ impl Driver {
       driver
     })
   }
+
   pub(crate) fn shutdown() {
     static DONE_BEFORE: OnceLock<()> = OnceLock::new();
     if DONE_BEFORE.get().is_some() {
@@ -205,7 +211,6 @@ impl Driver {
       OperationProgress::<T>::new_blocking(op)
     }
   }
-
   fn push<T: op::Operation>(&self, op: T) -> u64 {
     let operation_id = Self::next_id();
     let entry = op.create_entry().user_data(operation_id);
@@ -270,68 +275,96 @@ impl Driver {
 
 #[cfg(not(linux))]
 impl Driver {
-  pub(crate) fn detach(&self, id: u64) -> Option<()> {
-    let mut _lock = Driver::get().0.wakers.lock().unwrap();
+  // pub(crate) fn detach(&self, id: u64) -> Option<()> {
+  //   let mut _lock = Driver::get().0.wakers.lock().unwrap();
+  //
+  //   let thing = _lock.remove(&id)?;
+  //   // If exists:
+  //
+  //   // SAFETY: Just turning a RawFd into something polling crate can understand.
+  //   let fd = unsafe {
+  //     use std::os::fd::BorrowedFd;
+  //     BorrowedFd::borrow_raw(thing.fd())
+  //   };
+  //   self.0.poller.delete(fd).unwrap();
+  //
+  //   Some(())
+  // }
+  // pub(crate) fn insert_poll(&self, fd: RawFd, interest: PollInterest) -> u64 {
+  //   let mut _lock = self.0.wakers.lock().unwrap();
+  //   let id = Self::next_id();
+  //
+  //   let op = OpRegistration::new(fd, interest);
+  //   let _ = _lock.insert(id, op);
+  //
+  //   // SAFETY: Just turning a RawFd into something polling crate can understand.
+  //   unsafe {
+  //     use std::os::fd::BorrowedFd;
+  //
+  //     let fd = BorrowedFd::borrow_raw(fd);
+  //     self.0.poller.add(&fd, interest.as_event(id)).unwrap();
+  //   };
+  //
+  //   id
+  // }
 
-    let thing = _lock.remove(&id)?;
-    // If exists:
-
-    // SAFETY: Just turning a RawFd into something polling crate can understand.
-    let fd = unsafe {
-      use std::os::fd::BorrowedFd;
-      BorrowedFd::borrow_raw(thing.fd())
-    };
-    self.0.poller.delete(fd).unwrap();
-
-    Some(())
+  pub(crate) fn submit<T>(op: T) -> OperationProgress<T>
+  where
+    T: op::Operation,
+  {
+    if T::EVENT_TYPE.is_some() {
+      OperationProgress::<T>::new(Driver::get().reserve_driver_entry(), op)
+    } else {
+      OperationProgress::<T>::new_blocking(op)
+    }
   }
-  pub(crate) fn insert_poll(&self, fd: RawFd, interest: PollInterest) -> u64 {
+
+  /// Returns None operation should be run blocking.
+  fn reserve_driver_entry(&self) -> u64 {
+    let operation_id = Self::next_id();
+
     let mut _lock = self.0.wakers.lock().unwrap();
-    let id = Self::next_id();
 
-    let op = OpRegistration::new(fd, interest);
-    let _ = _lock.insert(id, op);
+    _lock.insert(operation_id, OpRegistration::new_without_waker());
 
-    // SAFETY: Just turning a RawFd into something polling crate can understand.
-    unsafe {
-      use std::os::fd::BorrowedFd;
-
-      let fd = BorrowedFd::borrow_raw(fd);
-      self.0.poller.add(&fd, interest.as_event(id)).unwrap();
-    };
-
-    id
+    operation_id
   }
-  pub(crate) fn submit_block<O: op::Operation>(op: O) -> OperationProgress<O> {
-    OperationProgress::new_blocking(op)
-  }
-  pub(crate) fn submit_poll<O: op::Operation>(
-    fd: RawFd,
-    interest: PollInterest,
-    op: O,
-  ) -> OperationProgress<O> {
-    let id = Driver::get().insert_poll(fd, interest);
-    OperationProgress::new_poll(id, op)
-  }
+  // // pub(crate) fn submit_block<O: op::Operation>(op: O) -> OperationProgress<O> {
+  // //   use crate::OperationProgress;
+  // //
+  // //   OperationProgress::new_blocking(op)
+  // // }
+  // pub(crate) fn submit_poll<O: op::Operation>(
+  //   fd: RawFd,
+  //   interest: PollInterest,
+  //   op: O,
+  // ) -> OperationProgress<O> {
+  //   let id = Driver::get().insert_poll(fd, interest);
+  //   OperationProgress::new_poll(id, op)
+  // }
 
   pub(crate) fn register_repoll(
     &self,
     key: u64,
+    event: polling::Event,
     waker: Waker,
+    fd: RawFd,
   ) -> Option<io::Result<()>> {
+    use std::os::fd::BorrowedFd;
+
     let mut _lock = self.0.wakers.lock().unwrap();
-    let thing = _lock.get_mut(&key)?;
+    let _ = _lock.remove(&key)?;
+    drop(_lock);
 
-    let fd = unsafe {
-      use std::os::fd::BorrowedFd;
-      BorrowedFd::borrow_raw(thing.fd())
-    };
-
-    if let Err(err) = self.0.poller.modify(fd, thing.interest().as_event(key)) {
+    if let Err(err) =
+      unsafe { self.0.poller.add(&BorrowedFd::borrow_raw(fd), event) }
+    {
       return Some(Err(err));
     };
 
-    thing.set_waker(waker);
+    let mut _lock = self.0.wakers.lock().unwrap();
+    _lock.insert(key, OpRegistration::new_with_waker(waker));
+    drop(_lock);
 
     Some(Ok(()))
   }
@@ -377,23 +410,5 @@ mod utils {
       .name("lio".into())
       .spawn(handle)
       .expect("failed to launch the worker thread")
-  }
-}
-
-#[cfg(not_linux)]
-#[derive(Clone, Copy)]
-pub(crate) enum PollInterest {
-  Read,
-  Write,
-}
-
-#[cfg(not_linux)]
-impl PollInterest {
-  fn as_event(self, id: u64) -> polling::Event {
-    polling::Event::new(
-      id as usize,
-      matches!(self, PollInterest::Read),
-      matches!(self, PollInterest::Write),
-    )
   }
 }

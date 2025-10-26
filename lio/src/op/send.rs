@@ -5,6 +5,8 @@ os_linux! {
 }
 
 use crate::BufResult;
+#[cfg(not(linux))]
+use crate::op::EventType;
 
 use super::Operation;
 
@@ -37,6 +39,14 @@ impl Operation for Send {
     )
     .flags(self.flags)
     .build()
+  }
+
+  #[cfg(not(linux))]
+  const EVENT_TYPE: Option<EventType> = Some(EventType::Write);
+
+  #[cfg(not(linux))]
+  fn fd(&self) -> Option<RawFd> {
+    Some(self.fd)
   }
 
   fn run_blocking(&self) -> io::Result<i32> {

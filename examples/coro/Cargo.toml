@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+futures-task = "0.3.31"
 libc.workspace = true
 lio = { path = "../../lio" }
 socket2.workspace = true
-tokio = { version = "1.48.0", features = ["macros", "rt"] }
+tokio = { version = "1.48.0", features = ["macros", "rt", "time"] }

@@ -4,6 +4,8 @@ use std::{mem::MaybeUninit, os::fd::RawFd};
 use io_uring::{opcode, squeue, types::Fd};
 use socket2::SockAddrStorage;
 
+use crate::op::EventType;
+
 use super::Operation;
 
 pub struct Accept {
@@ -39,8 +41,16 @@ impl Operation for Accept {
       .build()
   }
 
+  #[cfg(not(linux))]
+  const EVENT_TYPE: Option<EventType> = Some(EventType::Read);
+
+  #[cfg(not(linux))]
+  fn fd(&self) -> Option<RawFd> {
+    Some(self.fd)
+  }
+
   fn run_blocking(&self) -> std::io::Result<i32> {
-    let fd = if cfg!(any(
+    #[cfg(any(
       target_os = "android",
       target_os = "dragonfly",
       target_os = "freebsd",
@@ -50,17 +60,33 @@ impl Operation for Accept {
       target_os = "netbsd",
       target_os = "openbsd",
       target_os = "cygwin",
-    )) {
+    ))]
+    let fd = {
       syscall!(accept4(
         self.fd,
         self.addr as *mut libc::sockaddr,
         self.len,
         libc::SOCK_CLOEXEC
       ))?
-    } else {
+    };
+
+    #[cfg(not(any(
+      target_os = "android",
+      target_os = "dragonfly",
+      target_os = "freebsd",
+      target_os = "illumos",
+      target_os = "linux",
+      target_os = "hurd",
+      target_os = "netbsd",
+      target_os = "openbsd",
+      target_os = "cygwin",
+    )))]
+    let fd = {
       let fd =
         syscall!(accept(self.fd, self.addr as *mut libc::sockaddr, self.len))?;
+
       syscall!(ioctl(fd, libc::FIOCLEX))?;
+
       fd
     };
 

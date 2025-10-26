@@ -113,6 +113,7 @@
 //!
 //! This project is licensed under the MIT License - see the LICENSE file for details.
 
+use std::{ffi::CString, mem::MaybeUninit, os::fd::RawFd};
 // TODO: Safe shutdown
 #[cfg(linux)]
 use std::{ffi::CString, mem::MaybeUninit, os::fd::RawFd};
@@ -134,8 +135,6 @@ mod op_registration;
 
 pub use op_progress::OperationProgress;
 
-#[cfg(not_linux)]
-use polling::Poller;
 use socket2::{SockAddr, SockAddrStorage};
 
 use crate::driver::Driver;
@@ -272,33 +271,33 @@ impl_op!(
 );
 
 impl_op!(
-    /// Binds a socket to a specific address.
-    ///
-    ///
-    /// # Arguments
-    ///
-    /// * `fd` - The socket file descriptor
-    /// * `addr` - The address to bind to
-    ///
-    /// # Returns
-    ///
-    /// Returns `OperationProgress<Bind>` which implements `Future<io::Result<()>>`.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use lio::bind;
-    /// use socket2::SockAddr;
-    ///
-    /// async fn bind_example() -> std::io::Result<()> {
-    ///     let sock = /* socket fd */;
-    ///     let addr = SockAddr::from("127.0.0.1:8080".parse::<std::net::SocketAddr>().unwrap());
-    ///     bind(sock, addr).await?;
-    ///     Ok(())
-    /// }
-    ///
-    /// ```
-    Bind, fn bind(fd: RawFd, addr: socket2::SockAddr)
+  /// Binds a socket to a specific address.
+  ///
+  ///
+  /// # Arguments
+  ///
+  /// * `fd` - The socket file descriptor
+  /// * `addr` - The address to bind to
+  ///
+  /// # Returns
+  ///
+  /// Returns `OperationProgress<Bind>` which implements `Future<io::Result<()>>`.
+  ///
+  /// # Examples
+  ///
+  /// ```rust
+  /// use lio::bind;
+  /// use socket2::SockAddr;
+  ///
+  /// async fn bind_example() -> std::io::Result<()> {
+  ///     let sock = /* socket fd */;
+  ///     let addr = SockAddr::from("127.0.0.1:8080".parse::<std::net::SocketAddr>().unwrap());
+  ///     bind(sock, addr).await?;
+  ///     Ok(())
+  /// }
+  ///
+  /// ```
+  Bind, fn bind(fd: RawFd, addr: socket2::SockAddr)
 );
 
 impl_op!(
@@ -365,7 +364,7 @@ impl_op!(
   ///     Ok(())
   /// }
   /// ```
-  Listen, fn listen(fd: RawFd)
+  Listen, fn listen(fd: RawFd, backlog: i32)
 );
 
 impl_op!(

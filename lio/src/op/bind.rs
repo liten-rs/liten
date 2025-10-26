@@ -3,6 +3,9 @@ use std::{io, os::fd::RawFd};
 #[cfg(linux)]
 use io_uring::types::Fd;
 
+#[cfg(not(linux))]
+use crate::op::EventType;
+
 use super::Operation;
 
 pub struct Bind {
@@ -31,6 +34,15 @@ impl Operation for Bind {
     )
     .build()
   }
+
+  #[cfg(not(linux))]
+  const EVENT_TYPE: Option<EventType> = None;
+
+  #[cfg(not(linux))]
+  fn fd(&self) -> Option<RawFd> {
+    None
+  }
+
   fn run_blocking(&self) -> io::Result<i32> {
     syscall!(bind(
       self.fd,

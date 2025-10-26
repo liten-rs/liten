@@ -3,6 +3,9 @@ use std::{ffi::CString, os::fd::RawFd};
 #[cfg(linux)]
 use io_uring::types::Fd;
 
+#[cfg(not(linux))]
+use crate::op::EventType;
+
 use super::Operation;
 
 pub struct OpenAt {
@@ -30,6 +33,14 @@ impl Operation for OpenAt {
 
   #[cfg(linux)]
   const OPCODE: u8 = 18;
+
+  #[cfg(not(linux))]
+  const EVENT_TYPE: Option<EventType> = None;
+
+  #[cfg(not(linux))]
+  fn fd(&self) -> Option<RawFd> {
+    None
+  }
 
   #[cfg(linux)]
   fn create_entry(&self) -> io_uring::squeue::Entry {

@@ -1,9 +1,4 @@
-#[cfg(not_linux)]
-use std::os::fd::RawFd;
 use std::{cell::Cell, task::Waker};
-
-#[cfg(not_linux)]
-use crate::PollInterest;
 
 // TODO: make crossplatform with polling crate.
 #[cfg(linux)]
@@ -15,39 +10,31 @@ pub struct OpRegistration {
 
 unsafe impl Send for OpRegistration {}
 
-#[cfg(not_linux)]
+#[cfg(not(linux))]
 pub struct OpRegistration {
-  status: OpRegistrationStatus,
-  interest: PollInterest,
-  fd: RawFd,
+  pub(crate) status: OpRegistrationStatus,
+  // fd: RawFd,
+  // interest: EventType,
 }
 
-#[cfg(not_linux)]
+#[cfg(not(linux))]
 impl OpRegistration {
-  pub fn new(fd: RawFd, interest: PollInterest) -> Self {
+  pub fn new_without_waker() -> Self {
     OpRegistration {
       status: OpRegistrationStatus { registered_waker: Cell::new(None) },
-      fd,
-      interest,
     }
   }
 
-  pub fn fd(&self) -> RawFd {
-    self.fd
-  }
-
-  pub fn interest(&self) -> PollInterest {
-    self.interest
+  pub fn new_with_waker(waker: Waker) -> Self {
+    OpRegistration {
+      status: OpRegistrationStatus { registered_waker: Cell::new(Some(waker)) },
+    }
   }
 
   pub fn wake(&mut self) {
     if let Some(wake) = self.status.registered_waker.take() {
       wake.wake();
     }
-  }
-
-  pub fn set_waker(&mut self, waker: Waker) {
-    self.status.registered_waker.set(Some(waker));
   }
 }
 

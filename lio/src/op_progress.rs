@@ -1,5 +1,7 @@
 #[cfg(linux)]
 use crate::driver::CheckRegistrationResult;
+#[cfg(not_linux)]
+use crate::op::Operation;
 #[cfg(linux)]
 use std::marker::PhantomData;
 
@@ -73,9 +75,9 @@ pub enum OperationProgress<T> {
 ///     Ok(())
 /// }
 /// ```
-#[cfg(not_linux)]
+#[cfg(not(linux))]
 pub enum OperationProgress<T> {
-  Poll { id: u64, operation: T },
+  Poll { event: polling::Event, id: u64, operation: T },
   Blocking { operation: T },
 }
 
@@ -119,10 +121,24 @@ impl<T> OperationProgress<T> {
   }
 }
 
-#[cfg(not_linux)]
+#[cfg(not(linux))]
 impl<T> OperationProgress<T> {
-  pub fn new_poll(id: u64, operation: T) -> Self {
-    Self::Poll { id, operation }
+  pub fn new(id: u64, operation: T) -> Self
+  where
+    T: Operation,
+  {
+    if let Some(test) = T::EVENT_TYPE {
+      use crate::op::EventType;
+
+      let event = match test {
+        EventType::Read => polling::Event::readable(id as usize),
+        EventType::Write => polling::Event::writable(id as usize),
+      };
+
+      Self::Poll { id, event, operation }
+    } else {
+      Self::Blocking { operation }
+    }
   }
 
   pub fn new_blocking(operation: T) -> Self {
@@ -169,7 +185,7 @@ where
 ///
 /// This implementation handles operations that use polling-based async I/O,
 /// automatically re-registering for events when operations would block.
-#[cfg(not_linux)]
+#[cfg(not(linux))]
 impl<T> Future for OperationProgress<T>
 where
   T: op::Operation + Unpin,
@@ -181,7 +197,7 @@ where
     cx: &mut Context<'_>,
   ) -> Poll<Self::Output> {
     match *self {
-      OperationProgress::Poll { id, ref mut operation, .. } => {
+      OperationProgress::Poll { id, ref mut operation, event } => {
         use std::io;
 
         match operation.run_blocking() {
@@ -190,10 +206,17 @@ where
             if err.kind() == io::ErrorKind::WouldBlock
               || err.raw_os_error() == Some(libc::EINPROGRESS)
             {
-              if let Err(err) = Driver::get()
-                .register_repoll(id, cx.waker().clone())
-                .expect("why didn't exist")
-              {
+              let result = Driver::get()
+                .register_repoll(
+                  id,
+                  event,
+                  cx.waker().clone(),
+                  operation.fd().expect(
+                    "operation has event_type.is_some(), but not fd Some(...)",
+                  ),
+                )
+                .expect("why didn't exist");
+              if let Err(err) = result {
                 Poll::Ready(operation.result(Err(err)))
               } else {
                 Poll::Pending
@@ -220,19 +243,6 @@ where
 impl<T> Drop for OperationProgress<T> {
   fn drop(&mut self) {
     if let OperationProgress::IoUring { id, .. } = *self {
-      Driver::get().detach(id);
-    }
-  }
-}
-
-/// Implements automatic cleanup for polling-based operations on non-Linux platforms.
-///
-/// When an `OperationProgress` is dropped, this implementation ensures
-/// that the operation is properly detached and cleaned up from the driver.
-#[cfg(not_linux)]
-impl<T> Drop for OperationProgress<T> {
-  fn drop(&mut self) {
-    if let OperationProgress::Poll { id, .. } = *self {
       Driver::get().detach(id);
     }
   }

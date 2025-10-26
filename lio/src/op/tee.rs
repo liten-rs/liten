@@ -1,3 +1,5 @@
+#[cfg(not(linux))]
+use crate::op::EventType;
 use std::os::fd::RawFd;
 
 use io_uring::types::Fd;
@@ -27,6 +29,14 @@ impl Operation for Tee {
     io_uring::opcode::Tee::new(Fd(self.fd_in), Fd(self.fd_out), self.size)
       .build()
   }
+
+  #[cfg(not(linux))]
+  fn fd(&self) -> Option<RawFd> {
+    None
+  }
+
+  #[cfg(not(linux))]
+  const EVENT_TYPE: Option<EventType> = None;
 
   fn run_blocking(&self) -> std::io::Result<i32> {
     syscall!(tee(self.fd_in, self.fd_out, self.size as usize, 0))

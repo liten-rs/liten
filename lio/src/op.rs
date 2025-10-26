@@ -19,6 +19,8 @@ macro_rules! syscall {
   }};
 }
 use std::io;
+#[cfg(not(linux))]
+use std::os::fd::RawFd;
 
 mod accept;
 mod bind;
@@ -72,10 +74,21 @@ pub trait Operation: Sealed {
   }
 
   #[cfg(linux)]
-  fn create_entry(&self) -> io_uring::squeue::Entry;
+  fn create_entry(&self) -> io_uring::squeue::entry;
+
+  #[cfg(not(linux))]
+  const EVENT_TYPE: Option<EventType>;
+
+  #[cfg(not(linux))]
+  fn fd(&self) -> Option<RawFd>;
 
   fn run_blocking(&self) -> io::Result<i32>;
   /// This is guarranteed to fire after this has completed and only fire ONCE.
   /// i32 is guarranteed to be >= 0.
   fn result(&mut self, _ret: io::Result<i32>) -> Self::Result;
+}
+
+pub enum EventType {
+  Read,
+  Write,
 }
