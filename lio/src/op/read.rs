@@ -16,6 +16,7 @@ pub struct Read {
 }
 
 impl Read {
+  /// Will return errn 22 "EINVAL" if offset < 0
   pub fn new(fd: RawFd, mem: Vec<u8>, offset: i64) -> Self {
     Self { fd, buf: Some(mem), offset }
   }
@@ -58,9 +59,6 @@ impl Operation for Read {
   fn result(&mut self, _ret: io::Result<i32>) -> Self::Result {
     let buf = self.buf.take().expect("ran Recv::result more than once.");
 
-    match _ret {
-      Ok(ret) => (Ok(ret), buf),
-      Err(err) => (Err(err), buf),
-    }
+    (_ret, buf)
   }
 }

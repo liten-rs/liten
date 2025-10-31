@@ -1,6 +1,8 @@
 use std::{cell::Cell, task::Waker};
 
-// TODO: make crossplatform with polling crate.
+#[cfg(not(linux))]
+use std::os::fd::RawFd;
+
 #[cfg(linux)]
 pub struct OpRegistration {
   pub op: *const (),
@@ -12,29 +14,39 @@ unsafe impl Send for OpRegistration {}
 
 #[cfg(not(linux))]
 pub struct OpRegistration {
-  pub(crate) status: OpRegistrationStatus,
-  // fd: RawFd,
-  // interest: EventType,
+  registered_waker: Cell<Option<Waker>>,
+  pub(crate) registered_listener: bool,
+  pub(crate) fd: RawFd,
 }
 
 #[cfg(not(linux))]
 impl OpRegistration {
-  pub fn new_without_waker() -> Self {
+  pub fn new(fd: RawFd) -> Self {
     OpRegistration {
-      status: OpRegistrationStatus { registered_waker: Cell::new(None) },
-    }
-  }
-
-  pub fn new_with_waker(waker: Waker) -> Self {
-    OpRegistration {
-      status: OpRegistrationStatus { registered_waker: Cell::new(Some(waker)) },
+      registered_waker: Cell::new(None),
+      registered_listener: false,
+      fd,
     }
   }
 
   pub fn wake(&mut self) {
-    if let Some(wake) = self.status.registered_waker.take() {
+    if let Some(wake) = self.registered_waker.take() {
       wake.wake();
     }
+    self.registered_listener = false;
+  }
+
+  /// Returns "if event has been registered"
+  pub fn on_event_register(&mut self, waker: Waker) -> bool {
+    let old = self.registered_listener;
+    self.registered_listener = true;
+    self.registered_waker.set(Some(waker));
+
+    old
+  }
+
+  pub fn has_waker(&self) -> bool {
+    self.registered_listener
   }
 }
 
@@ -66,9 +78,4 @@ pub enum OpRegistrationStatus {
   Done {
     ret: i32,
   },
-}
-
-#[cfg(not_linux)]
-pub struct OpRegistrationStatus {
-  registered_waker: Cell<Option<Waker>>,
 }

@@ -31,6 +31,7 @@ impl Operation for Close {
 
   #[cfg(not(linux))]
   const EVENT_TYPE: Option<EventType> = None;
+
   #[cfg(not(linux))]
   fn fd(&self) -> Option<RawFd> {
     None

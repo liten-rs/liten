@@ -129,6 +129,10 @@ pub(crate) mod macros;
 
 mod driver;
 pub mod op;
+#[cfg(not(lio_shuttle))]
+mod shuttle;
+#[cfg(lio_shuttle)]
+pub mod shuttle;
 use op::*;
 mod op_progress;
 mod op_registration;
@@ -153,17 +157,17 @@ macro_rules! impl_op {
 }
 
 impl_op!(
-    /// Performs an async write operation on a file descriptor.
+    /// Performs an async write operation on a file descriptor. Equivalent to the `pwrite` syscall.
     ///
     /// # Arguments
     ///
     /// * `fd` - The file descriptor to write to
     /// * `buf` - The data buffer to write
-    /// * `offset` - The file offset to write at (for regular files)
+    /// * `offset` - The file offset to write at (for regular files), cannot be < 0
     ///
     /// # Returns
     ///
-    /// Returns `OperationProgress<Write>` which implements `Future<BufResult<i32, Vec<u8>>>`.
+    /// Return value implements `Future<BufResult<i32, Vec<u8>>>`.
     /// The result contains the number of bytes written and the original buffer.
     ///
     /// # Examples
@@ -180,17 +184,17 @@ impl_op!(
     ///     Ok(())
     /// }
     /// ```
-    Write, fn write(fd: RawFd, buf: Vec<u8>, offset: u64)
+    Write, fn write(fd: RawFd, buf: Vec<u8>, offset: i64)
 );
 
 impl_op!(
-    /// Performs an async read operation on a file descriptor.
+    /// Performs an async read operation on a file descriptor. Equivalent of the `pread` syscall.
     ///
     /// # Arguments
     ///
     /// * `fd` - The file descriptor to read from
     /// * `mem` - The buffer to read data into
-    /// * `offset` - The file offset to read from (for regular files)
+    /// * `offset` - The file offset to read from (for regular files), cannot be < -1
     ///
     /// # Returns
     ///

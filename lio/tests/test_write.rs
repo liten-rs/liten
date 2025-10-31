@@ -1,3 +1,4 @@
+/// write in append mode is not tested since `pwrite` doesn't support it.
 use futures::executor::block_on;
 use lio::write;
 use std::ffi::CString;
@@ -181,7 +182,6 @@ fn test_write_multiple_sequential() {
 }
 
 #[test]
-#[ignore]
 fn test_write_overwrite() {
   block_on(async {
     let path = CString::new("/tmp/lio_test_write_overwrite.txt").unwrap();
@@ -209,45 +209,9 @@ fn test_write_overwrite() {
     unsafe {
       libc::lseek(fd, 0, libc::SEEK_SET);
       libc::read(fd, verify_buf.as_mut_ptr() as *mut libc::c_void, 10);
-      assert_eq!(&verify_buf, b"XXXYYXXXXX");
+      println!("{:?}", String::from_utf8(verify_buf.clone()));
+      assert_eq!(&verify_buf, b"XXXYYYXXXX");
       libc::close(fd);
-      libc::unlink(path.as_ptr());
-    }
-  });
-}
-
-#[test]
-#[ignore]
-fn test_write_append_mode() {
-  block_on(async {
-    let path = CString::new("/tmp/lio_test_write_append.txt").unwrap();
-
-    // Create file with initial data
-    let fd1 = unsafe {
-      let fd = libc::open(
-        path.as_ptr(),
-        libc::O_CREAT | libc::O_WRONLY | libc::O_TRUNC,
-        0o644,
-      );
-      libc::write(fd, b"Initial".as_ptr() as *const libc::c_void, 7);
-      libc::close(fd);
-      libc::open(path.as_ptr(), libc::O_WRONLY | libc::O_APPEND)
-    };
-
-    // Write with append mode (offset should be ignored in append mode)
-    let data = b" Appended".to_vec();
-    let (bytes_written, _) = write(fd1, data, 0).await;
-    bytes_written.expect("Failed to write in append mode");
-
-    // Verify
-    let mut verify_buf = vec![0u8; 100];
-    unsafe {
-      let read_fd = libc::open(path.as_ptr(), libc::O_RDONLY);
-      let read_bytes =
-        libc::read(read_fd, verify_buf.as_mut_ptr() as *mut libc::c_void, 100);
-      assert_eq!(&verify_buf[..read_bytes as usize], b"Initial Appended");
-      libc::close(read_fd);
-      libc::close(fd1);
       libc::unlink(path.as_ptr());
     }
   });

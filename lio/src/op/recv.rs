@@ -56,9 +56,6 @@ impl Operation for Recv {
   fn result(&mut self, _ret: io::Result<i32>) -> Self::Result {
     let buf = self.buf.take().expect("ran Recv::result more than once.");
 
-    match _ret {
-      Ok(ret) => (Ok(ret), buf),
-      Err(err) => (Err(err), buf),
-    }
+    (_ret, buf)
   }
 }

@@ -1,5 +1,5 @@
-use lio::close;
 use futures::executor::block_on;
+use lio::close;
 use std::ffi::CString;
 
 #[test]

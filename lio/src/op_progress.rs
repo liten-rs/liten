@@ -1,6 +1,6 @@
 #[cfg(linux)]
 use crate::driver::CheckRegistrationResult;
-#[cfg(not_linux)]
+#[cfg(not(linux))]
 use crate::op::Operation;
 #[cfg(linux)]
 use std::marker::PhantomData;
@@ -247,3 +247,29 @@ impl<T> Drop for OperationProgress<T> {
     }
   }
 }
+
+/// Implements automatic cleanup for polling operations on non-Linux platforms.
+///
+/// When an `OperationProgress` is dropped, this implementation ensures
+/// that the operation is properly cancelled and cleaned up from the driver.
+#[cfg(not(linux))]
+impl<T> Drop for OperationProgress<T> {
+  fn drop(&mut self) {
+    if let OperationProgress::Poll { id, .. } = *self {
+      Driver::get().detach(id);
+    }
+  }
+}
+
+// /// Implements automatic cleanup for polling operations on non-Linux platforms.
+// ///
+// /// When an `OperationProgress` is dropped, this implementation ensures
+// /// that the operation is properly cancelled and cleaned up from the driver.
+// #[cfg(not(linux))]
+// impl<T> Drop for OperationProgress<T> {
+//   fn drop(&mut self) {
+//     if let OperationProgress::Poll { id, .. } = *self {
+//       Driver::get().detach(id);
+//     }
+//   }
+// }

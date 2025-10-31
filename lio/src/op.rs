@@ -1,12 +1,3 @@
-macro_rules! os_linux {
-   ($($item:item)*) => {
-       $(
-            #[cfg(linux)]
-            $item
-        )*
-    }
-}
-
 macro_rules! syscall {
   ($fn: ident ( $($arg: expr),* $(,)* ) ) => {{
       #[allow(unused_unsafe)]

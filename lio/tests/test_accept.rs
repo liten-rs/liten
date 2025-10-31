@@ -8,7 +8,7 @@ use std::thread;
 use std::time::Duration;
 
 #[test]
-#[ignore]
+#[ignore = "deadlocks"]
 fn test_accept_basic() {
   let mut pool = LocalPool::new();
   let spawner = pool.spawner();
@@ -87,7 +87,7 @@ fn test_accept_basic() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "deadlocks"]
 fn test_accept_multiple() {
   let mut pool = LocalPool::new();
   let spawner = pool.spawner();
@@ -177,7 +177,6 @@ fn test_accept_multiple() {
 }
 
 #[test]
-#[ignore]
 fn test_accept_with_client_info() {
   let mut pool = LocalPool::new();
   let spawner = pool.spawner();
@@ -256,7 +255,6 @@ fn test_accept_with_client_info() {
 }
 
 #[test]
-#[ignore]
 fn test_accept_ipv6() {
   let mut pool = LocalPool::new();
   let spawner = pool.spawner();
@@ -329,7 +327,7 @@ fn test_accept_ipv6() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "not too sure how to handle concurrent poll registrations. Have to store fd and operation in some way in driver."]
 fn test_accept_concurrent() {
   let mut pool = LocalPool::new();
   let spawner = pool.spawner();

@@ -5,7 +5,6 @@ use std::mem::MaybeUninit;
 use std::net::SocketAddr;
 
 #[test]
-#[ignore]
 fn test_connect_basic() {
   block_on(async {
     // Create server socket
@@ -15,6 +14,7 @@ fn test_connect_basic() {
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
     let sock_addr = SockAddr::from(addr);
+    println!("bind");
     bind(server_sock, sock_addr).await.expect("Failed to bind");
 
     let bound_addr = unsafe {
@@ -31,16 +31,20 @@ fn test_connect_basic() {
       format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap()
     };
 
+    println!("listen");
     listen(server_sock, 128).await.expect("Failed to listen");
 
+    println!("socket");
     // Create client socket and connect
     let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
       .await
       .expect("Failed to create client socket");
 
+    println!("connect");
     connect(client_sock, SockAddr::from(bound_addr))
       .await
       .expect("Failed to connect");
+    println!("connect after");
 
     // Verify connection by checking peer name
     unsafe {
@@ -61,7 +65,6 @@ fn test_connect_basic() {
 }
 
 #[test]
-#[ignore]
 fn test_connect_ipv6() {
   block_on(async {
     let server_sock = socket(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))
@@ -136,7 +139,7 @@ fn test_connect_to_nonexistent() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "deadlocking"]
 fn test_connect_multiple_clients() {
   block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
@@ -190,7 +193,6 @@ fn test_connect_multiple_clients() {
 }
 
 #[test]
-#[ignore]
 fn test_connect_already_connected() {
   block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
@@ -239,7 +241,6 @@ fn test_connect_already_connected() {
 }
 
 #[test]
-#[ignore]
 fn test_connect_to_localhost() {
   block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
@@ -294,7 +295,7 @@ fn test_connect_to_localhost() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "deadlocking"]
 fn test_connect_concurrent() {
   block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
@@ -348,7 +349,6 @@ fn test_connect_concurrent() {
 }
 
 #[test]
-#[ignore]
 fn test_connect_with_bind() {
   block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))

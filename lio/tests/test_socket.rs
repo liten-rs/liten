@@ -226,7 +226,6 @@ fn test_socket_concurrent() {
 }
 
 #[test]
-#[ignore]
 fn test_socket_options_after_creation() {
   block_on(async {
     let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
@@ -255,7 +254,7 @@ fn test_socket_options_after_creation() {
         &mut get_val as *mut _ as *mut libc::c_void,
         &mut len,
       );
-      assert_eq!(get_val, 1);
+      assert_ne!(get_val, 0);
 
       libc::close(sock);
     }

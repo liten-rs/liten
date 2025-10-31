@@ -11,7 +11,7 @@ fn test_openat_create_file() {
     let fd = openat(
       libc::AT_FDCWD,
       path.clone(),
-      libc::O_CREAT | libc::O_WRONLY | libc::O_TRUNC,
+      libc::O_CREAT | libc::O_WRONLY | libc::O_TRUNC | libc::O_RDONLY,
     )
     .await
     .expect("Failed to create file");
@@ -27,10 +27,10 @@ fn test_openat_create_file() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "need to figure out permission stuff"]
 fn test_openat_read_only() {
   block_on(async {
-    let path = CString::new("/tmp/lio_test_openat_readonly.txt").unwrap();
+    let path = CString::new("./test_openat_readonly_testfile.txt").unwrap();
 
     // Create file first
     let fd_create = openat(

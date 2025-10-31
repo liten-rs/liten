@@ -12,11 +12,11 @@ use std::os::fd::RawFd;
 pub struct Write {
   fd: RawFd,
   buf: Option<Vec<u8>>,
-  offset: u64,
+  offset: i64,
 }
 
 impl Write {
-  pub fn new(fd: RawFd, buf: Vec<u8>, offset: u64) -> Write {
+  pub fn new(fd: RawFd, buf: Vec<u8>, offset: i64) -> Write {
     assert!((buf.len()) <= u32::MAX as usize);
     Self { fd, buf: Some(buf), offset }
   }
@@ -36,7 +36,7 @@ impl Operation for Write {
       self.buf.as_ref().unwrap().as_ptr(),
       self.buf.as_ref().unwrap().len() as u32,
     )
-    .offset(self.offset)
+    .offset(self.offset as u64)
     .build()
   }
 
@@ -52,17 +52,13 @@ impl Operation for Write {
       self.fd,
       self.buf.as_ref().unwrap().as_ptr() as *const _,
       self.buf.as_ref().unwrap().len() as usize,
-      // FIXME
-      self.offset as i64
+      self.offset
     ))
     .map(|u| u as i32)
   }
   fn result(&mut self, _ret: std::io::Result<i32>) -> Self::Result {
     let buf = self.buf.take().expect("ran Recv::result more than once.");
 
-    match _ret {
-      Ok(ret) => (Ok(ret), buf),
-      Err(err) => (Err(err), buf),
-    }
+    (_ret, buf)
   }
 }

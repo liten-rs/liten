@@ -6,9 +6,9 @@ use std::mem::MaybeUninit;
 use std::net::SocketAddr;
 use std::thread;
 use std::time::Duration;
+use tracing_subscriber::EnvFilter;
 
 #[test]
-#[ignore]
 fn test_send_basic() {
   let mut pool = LocalPool::new();
   let spawner = pool.spawner();
@@ -85,7 +85,6 @@ fn test_send_basic() {
 }
 
 #[test]
-#[ignore]
 fn test_send_large_data() {
   let mut pool = LocalPool::new();
   let spawner = pool.spawner();
@@ -159,78 +158,87 @@ fn test_send_large_data() {
 }
 
 #[test]
-#[ignore]
 fn test_send_empty() {
-  let mut pool = LocalPool::new();
-  let spawner = pool.spawner();
+  tracing_subscriber::fmt()
+    .with_env_filter(EnvFilter::from_default_env())
+    .init();
+  shuttle::check_random(
+    || {
+      println!("before start");
+      lio::shuttle::test_utils::block_on(async {
+        let server_sock =
+          socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+            .await
+            .expect("Failed to create server socket");
 
-  pool.run_until(async {
-    let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-      .await
-      .expect("Failed to create server socket");
+        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+        bind(server_sock, SockAddr::from(addr)).await.expect("Failed to bind");
 
-    let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    bind(server_sock, SockAddr::from(addr)).await.expect("Failed to bind");
+        let bound_addr = unsafe {
+          let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
+          let mut addr_len =
+            std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+          libc::getsockname(
+            server_sock,
+            addr_storage.as_mut_ptr() as *mut libc::sockaddr,
+            &mut addr_len,
+          );
+          let sockaddr_in = addr_storage.assume_init();
+          let port = u16::from_be(sockaddr_in.sin_port);
+          format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap()
+        };
 
-    let bound_addr = unsafe {
-      let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
-      let mut addr_len =
-        std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-      libc::getsockname(
-        server_sock,
-        addr_storage.as_mut_ptr() as *mut libc::sockaddr,
-        &mut addr_len,
-      );
-      let sockaddr_in = addr_storage.assume_init();
-      let port = u16::from_be(sockaddr_in.sin_port);
-      format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap()
-    };
+        listen(server_sock, 128).await.expect("Failed to listen");
 
-    listen(server_sock, 128).await.expect("Failed to listen");
+        let accept_handle = async move {
+          let mut client_addr_storage =
+            MaybeUninit::<socket2::SockAddrStorage>::uninit();
+          let mut client_addr_len =
+            std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
+          let res = accept(
+            server_sock,
+            &mut client_addr_storage as *mut _,
+            &mut client_addr_len,
+          )
+          .await
+          .expect("Failed to accept");
+          res
+        };
 
-    let accept_handle = spawner
-      .spawn_local_with_handle(async move {
-        let mut client_addr_storage =
-          MaybeUninit::<socket2::SockAddrStorage>::uninit();
-        let mut client_addr_len =
-          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-        accept(
-          server_sock,
-          &mut client_addr_storage as *mut _,
-          &mut client_addr_len,
-        )
-        .await
-        .expect("Failed to accept")
-      })
-      .expect("Failed to spawn task");
+        let client_sock =
+          socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+            .await
+            .expect("Failed to create client socket");
 
-    thread::sleep(Duration::from_millis(10));
+        let (handle, handl2) = tokio::join!(
+          accept_handle,
+          connect(client_sock, SockAddr::from(bound_addr))
+        );
 
-    let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-      .await
-      .expect("Failed to create client socket");
-    connect(client_sock, SockAddr::from(bound_addr))
-      .await
-      .expect("Failed to connect");
+        handl2.unwrap();
 
-    // Send empty data
-    let data = Vec::new();
-    let (bytes_sent, _) = send(client_sock, data, None).await;
-    let bytes_sent = bytes_sent.expect("Failed to send empty data");
+        // Send empty data
+        let data = Vec::new();
+        let (bytes_sent, _) = send(client_sock, data, None).await;
+        let bytes_sent = bytes_sent.expect("Failed to send empty data");
 
-    assert_eq!(bytes_sent, 0);
+        assert_eq!(bytes_sent, 0);
 
-    let server_client_fd = accept_handle.await;
-    unsafe {
-      libc::close(client_sock);
-      libc::close(server_client_fd);
-      libc::close(server_sock);
-    }
-  })
+        let server_client_fd = handle;
+        unsafe {
+          libc::close(client_sock);
+          libc::close(server_client_fd);
+          libc::close(server_sock);
+        }
+      });
+      println!("after close");
+    },
+    100,
+  )
 }
 
 #[test]
-#[ignore]
+// #[ignore = "deadlocks"]
 fn test_send_multiple() {
   let mut pool = LocalPool::new();
   let spawner = pool.spawner();
@@ -304,7 +312,6 @@ fn test_send_multiple() {
 }
 
 #[test]
-#[ignore]
 fn test_send_with_flags() {
   let mut pool = LocalPool::new();
   let spawner = pool.spawner();
@@ -377,7 +384,7 @@ fn test_send_with_flags() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "deadlocks"]
 fn test_send_on_closed_socket() {
   let mut pool = LocalPool::new();
   let spawner = pool.spawner();
@@ -453,7 +460,7 @@ fn test_send_on_closed_socket() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "deadlocks"]
 fn test_send_concurrent() {
   let mut pool = LocalPool::new();
   let spawner = pool.spawner();
