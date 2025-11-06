@@ -95,26 +95,17 @@ impl Driver {
   }
 
   pub(crate) async fn shutdown() {
-    #[cfg(feature = "tracing")]
-    tracing::info!("before");
-
     static DONE_BEFORE: OnceLock<()> = OnceLock::new();
     if DONE_BEFORE.get().is_some() {
       #[cfg(feature = "tracing")]
-      tracing::info!("already shut down, returning");
+      tracing::warn!("already shut down, returning");
       return;
     }
 
     let driver = Driver::get();
-    #[cfg(feature = "tracing")]
-    tracing::info!("got driver");
     let (sender, receiver) = oneshot::channel();
 
-    #[cfg(feature = "tracing")]
-    tracing::info!("before lock");
     let mut _lock = driver.0.shutting_down.lock();
-    #[cfg(feature = "tracing")]
-    tracing::info!("after lock");
     assert!(_lock.replace(sender).is_none());
     drop(_lock);
 
@@ -137,15 +128,11 @@ impl Driver {
       let _ = driver.0.inner.submit();
     };
 
-    #[cfg(feature = "tracing")]
-    tracing::info!("before receiver");
     let _ = receiver.await.unwrap();
 
     let mut _lock = driver.0.background_handle.lock();
 
     let handle = _lock.take().unwrap();
-    #[cfg(feature = "tracing")]
-    tracing::info!("before joining");
     let _ = handle.join();
 
     let _ = DONE_BEFORE.set(());
@@ -308,8 +295,6 @@ impl Driver {
   where
     T: op::Operation,
   {
-    #[cfg(feature = "tracing")]
-    tracing::debug!("submitting op");
     if T::EVENT_TYPE.is_some() {
       let fd = op.fd().expect("operation has event_type but no fd");
       OperationProgress::<T>::new(Driver::get().reserve_driver_entry(fd), op)
@@ -342,8 +327,6 @@ impl Driver {
     waker: Waker,
     fd: RawFd,
   ) -> Option<io::Result<()>> {
-    #[cfg(feature = "tracing")]
-    tracing::debug!("register repoll");
     let mut _lock = self.0.wakers.lock();
     let registration = _lock
       .get_mut(&key)
@@ -352,10 +335,6 @@ impl Driver {
     assert!(fd == registration.fd, "provided fd and registration.fd not same");
 
     registration.set_waker(waker);
-
-    // Try modify first if was registered, otherwise add
-    #[cfg(feature = "tracing")]
-    tracing::debug!("modifying or adding poller");
 
     use std::os::fd::BorrowedFd;
     let result = unsafe {
@@ -407,16 +386,12 @@ impl Driver {
     let driver = self.0.clone();
     let handle = utils::create_worker(move || {
       #[cfg(feature = "tracing")]
-      tracing::info!("launching bg task");
+      tracing::trace!("launching bg task");
       let mut events = polling::Events::new();
       loop {
-        #[cfg(feature = "tracing")]
-        tracing::info!("locking");
         let mut _lock = driver.shutting_down.lock();
 
         if let Some(sender) = _lock.take() {
-          #[cfg(feature = "tracing")]
-          tracing::info!("breaking bg");
           sender.send(()).unwrap();
           break;
         };
@@ -424,15 +399,9 @@ impl Driver {
 
         events.clear();
 
-        #[cfg(feature = "tracing")]
-        tracing::debug!("waiting");
-
         // Under shuttle, use a small timeout to avoid busy-spinning while still
         // allowing shuttle to explore different schedules
         let wait_result = driver.poller.wait(&mut events, None);
-
-        #[cfg(feature = "tracing")]
-        tracing::debug!("got events");
 
         // Ignore timeout errors, just check shutdown flag
         if wait_result.is_err() {
@@ -456,8 +425,6 @@ impl Driver {
             }
           };
 
-          #[cfg(feature = "tracing")]
-          tracing::debug!(key = ?event.key, "woke progress");
           entry.wake();
 
           let mut _lock = driver.wakers.lock();
