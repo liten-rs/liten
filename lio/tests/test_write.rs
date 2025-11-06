@@ -1,5 +1,5 @@
 /// write in append mode is not tested since `pwrite` doesn't support it.
-use futures::executor::block_on;
+use lio::loom::test_utils::block_on;
 use lio::write;
 use std::ffi::CString;
 

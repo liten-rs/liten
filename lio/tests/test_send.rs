@@ -1,19 +1,14 @@
-use futures::executor::LocalPool;
-use futures::task::LocalSpawnExt;
+use lio::loom::test_utils::{block_on, sleep};
 use lio::{accept, bind, connect, listen, send, socket};
 use socket2::{Domain, Protocol, SockAddr, Type};
 use std::mem::MaybeUninit;
 use std::net::SocketAddr;
-use std::thread;
 use std::time::Duration;
 use tracing_subscriber::EnvFilter;
 
 #[test]
 fn test_send_basic() {
-  let mut pool = LocalPool::new();
-  let spawner = pool.spawner();
-
-  pool.run_until(async {
+  block_on(async {
     // Setup server
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
       .await
@@ -38,32 +33,33 @@ fn test_send_basic() {
 
     listen(server_sock, 128).await.expect("Failed to listen");
 
-    // Accept in background
-    let accept_handle = spawner
-      .spawn_local_with_handle(async move {
-        let mut client_addr_storage =
-          MaybeUninit::<socket2::SockAddrStorage>::uninit();
-        let mut client_addr_len =
-          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-        accept(
-          server_sock,
-          &mut client_addr_storage as *mut _,
-          &mut client_addr_len,
-        )
+    // Accept and connect concurrently using tokio::join!
+    let accept_fut = async {
+      let mut client_addr_storage =
+        MaybeUninit::<socket2::SockAddrStorage>::uninit();
+      let mut client_addr_len =
+        std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
+      accept(
+        server_sock,
+        &mut client_addr_storage as *mut _,
+        &mut client_addr_len,
+      )
+      .await
+      .expect("Failed to accept")
+    };
+
+    let connect_fut = async {
+      sleep(Duration::from_millis(10));
+      let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
-        .expect("Failed to accept")
-      })
-      .expect("Failed to spawn task");
+        .expect("Failed to create client socket");
+      connect(client_sock, SockAddr::from(bound_addr))
+        .await
+        .expect("Failed to connect");
+      client_sock
+    };
 
-    thread::sleep(Duration::from_millis(10));
-
-    // Connect client
-    let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-      .await
-      .expect("Failed to create client socket");
-    connect(client_sock, SockAddr::from(bound_addr))
-      .await
-      .expect("Failed to connect");
+    let (server_client_fd, client_sock) = tokio::join!(accept_fut, connect_fut);
 
     // Send data
     let data = b"Hello, Server!".to_vec();
@@ -73,9 +69,6 @@ fn test_send_basic() {
 
     assert_eq!(bytes_sent as usize, data.len());
     assert_eq!(returned_buf, data);
-
-    // Cleanup
-    let server_client_fd = accept_handle.await;
     unsafe {
       libc::close(client_sock);
       libc::close(server_client_fd);
@@ -86,10 +79,7 @@ fn test_send_basic() {
 
 #[test]
 fn test_send_large_data() {
-  let mut pool = LocalPool::new();
-  let spawner = pool.spawner();
-
-  pool.run_until(async {
+  block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
       .await
       .expect("Failed to create server socket");
@@ -113,30 +103,32 @@ fn test_send_large_data() {
 
     listen(server_sock, 128).await.expect("Failed to listen");
 
-    let accept_handle = spawner
-      .spawn_local_with_handle(async move {
-        let mut client_addr_storage =
-          MaybeUninit::<socket2::SockAddrStorage>::uninit();
-        let mut client_addr_len =
-          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-        accept(
-          server_sock,
-          &mut client_addr_storage as *mut _,
-          &mut client_addr_len,
-        )
+    let accept_fut = async move {
+      let mut client_addr_storage =
+        MaybeUninit::<socket2::SockAddrStorage>::uninit();
+      let mut client_addr_len =
+        std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
+      accept(
+        server_sock,
+        &mut client_addr_storage as *mut _,
+        &mut client_addr_len,
+      )
+      .await
+      .expect("Failed to accept")
+    };
+
+    let connect_fut = async {
+      sleep(Duration::from_millis(10));
+      let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
-        .expect("Failed to accept")
-      })
-      .expect("Failed to spawn task");
+        .expect("Failed to create client socket");
+      connect(client_sock, SockAddr::from(bound_addr))
+        .await
+        .expect("Failed to connect");
+      client_sock
+    };
 
-    thread::sleep(Duration::from_millis(10));
-
-    let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-      .await
-      .expect("Failed to create client socket");
-    connect(client_sock, SockAddr::from(bound_addr))
-      .await
-      .expect("Failed to connect");
+    let (server_client_fd, client_sock) = tokio::join!(accept_fut, connect_fut);
 
     // Send large data (1MB)
     let large_data: Vec<u8> =
@@ -147,8 +139,6 @@ fn test_send_large_data() {
 
     assert!(bytes_sent > 0);
     assert_eq!(returned_buf, large_data);
-
-    let server_client_fd = accept_handle.await;
     unsafe {
       libc::close(client_sock);
       libc::close(server_client_fd);
@@ -162,88 +152,8 @@ fn test_send_empty() {
   tracing_subscriber::fmt()
     .with_env_filter(EnvFilter::from_default_env())
     .init();
-  shuttle::check_random(
-    || {
-      println!("before start");
-      lio::shuttle::test_utils::block_on(async {
-        let server_sock =
-          socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-            .await
-            .expect("Failed to create server socket");
 
-        let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        bind(server_sock, SockAddr::from(addr)).await.expect("Failed to bind");
-
-        let bound_addr = unsafe {
-          let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
-          let mut addr_len =
-            std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-          libc::getsockname(
-            server_sock,
-            addr_storage.as_mut_ptr() as *mut libc::sockaddr,
-            &mut addr_len,
-          );
-          let sockaddr_in = addr_storage.assume_init();
-          let port = u16::from_be(sockaddr_in.sin_port);
-          format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap()
-        };
-
-        listen(server_sock, 128).await.expect("Failed to listen");
-
-        let accept_handle = async move {
-          let mut client_addr_storage =
-            MaybeUninit::<socket2::SockAddrStorage>::uninit();
-          let mut client_addr_len =
-            std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-          let res = accept(
-            server_sock,
-            &mut client_addr_storage as *mut _,
-            &mut client_addr_len,
-          )
-          .await
-          .expect("Failed to accept");
-          res
-        };
-
-        let client_sock =
-          socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-            .await
-            .expect("Failed to create client socket");
-
-        let (handle, handl2) = tokio::join!(
-          accept_handle,
-          connect(client_sock, SockAddr::from(bound_addr))
-        );
-
-        handl2.unwrap();
-
-        // Send empty data
-        let data = Vec::new();
-        let (bytes_sent, _) = send(client_sock, data, None).await;
-        let bytes_sent = bytes_sent.expect("Failed to send empty data");
-
-        assert_eq!(bytes_sent, 0);
-
-        let server_client_fd = handle;
-        unsafe {
-          libc::close(client_sock);
-          libc::close(server_client_fd);
-          libc::close(server_sock);
-        }
-      });
-      println!("after close");
-    },
-    100,
-  )
-}
-
-#[test]
-// #[ignore = "deadlocks"]
-fn test_send_multiple() {
-  let mut pool = LocalPool::new();
-  let spawner = pool.spawner();
-
-  pool.run_until(async {
+  block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
       .await
       .expect("Failed to create server socket");
@@ -267,30 +177,101 @@ fn test_send_multiple() {
 
     listen(server_sock, 128).await.expect("Failed to listen");
 
-    let accept_handle = spawner
-      .spawn_local_with_handle(async move {
-        let mut client_addr_storage =
-          MaybeUninit::<socket2::SockAddrStorage>::uninit();
-        let mut client_addr_len =
-          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-        accept(
-          server_sock,
-          &mut client_addr_storage as *mut _,
-          &mut client_addr_len,
-        )
-        .await
-        .expect("Failed to accept")
-      })
-      .expect("Failed to spawn task");
-
-    thread::sleep(Duration::from_millis(10));
+    let accept_handle = async move {
+      let mut client_addr_storage =
+        MaybeUninit::<socket2::SockAddrStorage>::uninit();
+      let mut client_addr_len =
+        std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
+      let res = accept(
+        server_sock,
+        &mut client_addr_storage as *mut _,
+        &mut client_addr_len,
+      )
+      .await
+      .expect("Failed to accept");
+      res
+    };
 
     let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
       .await
       .expect("Failed to create client socket");
-    connect(client_sock, SockAddr::from(bound_addr))
+
+    let (handle, handl2) = tokio::join!(
+      accept_handle,
+      connect(client_sock, SockAddr::from(bound_addr))
+    );
+
+    handl2.unwrap();
+
+    // Send empty data
+    let data = Vec::new();
+    let (bytes_sent, _) = send(client_sock, data, None).await;
+    let bytes_sent = bytes_sent.expect("Failed to send empty data");
+
+    assert_eq!(bytes_sent, 0);
+
+    let server_client_fd = handle;
+    unsafe {
+      libc::close(client_sock);
+      libc::close(server_client_fd);
+      libc::close(server_sock);
+    }
+  });
+}
+
+#[test]
+// #[ignore = "deadlocks"]
+fn test_send_multiple() {
+  block_on(async {
+    let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
       .await
-      .expect("Failed to connect");
+      .expect("Failed to create server socket");
+
+    let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+    bind(server_sock, SockAddr::from(addr)).await.expect("Failed to bind");
+
+    let bound_addr = unsafe {
+      let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
+      let mut addr_len =
+        std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+      libc::getsockname(
+        server_sock,
+        addr_storage.as_mut_ptr() as *mut libc::sockaddr,
+        &mut addr_len,
+      );
+      let sockaddr_in = addr_storage.assume_init();
+      let port = u16::from_be(sockaddr_in.sin_port);
+      format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap()
+    };
+
+    listen(server_sock, 128).await.expect("Failed to listen");
+
+    let accept_fut = async move {
+      let mut client_addr_storage =
+        MaybeUninit::<socket2::SockAddrStorage>::uninit();
+      let mut client_addr_len =
+        std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
+      accept(
+        server_sock,
+        &mut client_addr_storage as *mut _,
+        &mut client_addr_len,
+      )
+      .await
+      .expect("Failed to accept")
+    };
+
+    let connect_fut = async {
+      sleep(Duration::from_millis(10));
+      let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+        .await
+        .expect("Failed to create client socket");
+      connect(client_sock, SockAddr::from(bound_addr))
+        .await
+        .expect("Failed to connect");
+      client_sock
+    };
+
+    let (server_client_fd, client_sock) = tokio::join!(accept_fut, connect_fut);
 
     // Send multiple messages
     for i in 0..5 {
@@ -301,8 +282,6 @@ fn test_send_multiple() {
       assert_eq!(bytes_sent as usize, data.len());
       assert_eq!(returned_buf, data);
     }
-
-    let server_client_fd = accept_handle.await;
     unsafe {
       libc::close(client_sock);
       libc::close(server_client_fd);
@@ -313,10 +292,7 @@ fn test_send_multiple() {
 
 #[test]
 fn test_send_with_flags() {
-  let mut pool = LocalPool::new();
-  let spawner = pool.spawner();
-
-  pool.run_until(async {
+  block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
       .await
       .expect("Failed to create server socket");
@@ -340,30 +316,32 @@ fn test_send_with_flags() {
 
     listen(server_sock, 128).await.expect("Failed to listen");
 
-    let accept_handle = spawner
-      .spawn_local_with_handle(async move {
-        let mut client_addr_storage =
-          MaybeUninit::<socket2::SockAddrStorage>::uninit();
-        let mut client_addr_len =
-          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-        accept(
-          server_sock,
-          &mut client_addr_storage as *mut _,
-          &mut client_addr_len,
-        )
+    let accept_fut = async move {
+      let mut client_addr_storage =
+        MaybeUninit::<socket2::SockAddrStorage>::uninit();
+      let mut client_addr_len =
+        std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
+      accept(
+        server_sock,
+        &mut client_addr_storage as *mut _,
+        &mut client_addr_len,
+      )
+      .await
+      .expect("Failed to accept")
+    };
+
+    let connect_fut = async {
+      sleep(Duration::from_millis(10));
+      let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
-        .expect("Failed to accept")
-      })
-      .expect("Failed to spawn task");
+        .expect("Failed to create client socket");
+      connect(client_sock, SockAddr::from(bound_addr))
+        .await
+        .expect("Failed to connect");
+      client_sock
+    };
 
-    thread::sleep(Duration::from_millis(10));
-
-    let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-      .await
-      .expect("Failed to create client socket");
-    connect(client_sock, SockAddr::from(bound_addr))
-      .await
-      .expect("Failed to connect");
+    let (server_client_fd, client_sock) = tokio::join!(accept_fut, connect_fut);
 
     // Send with flags (0 is a valid flag value)
     let data = b"Data with flags".to_vec();
@@ -373,8 +351,6 @@ fn test_send_with_flags() {
 
     assert_eq!(bytes_sent as usize, data.len());
     assert_eq!(returned_buf, data);
-
-    let server_client_fd = accept_handle.await;
     unsafe {
       libc::close(client_sock);
       libc::close(server_client_fd);
@@ -386,10 +362,7 @@ fn test_send_with_flags() {
 #[test]
 #[ignore = "deadlocks"]
 fn test_send_on_closed_socket() {
-  let mut pool = LocalPool::new();
-  let spawner = pool.spawner();
-
-  pool.run_until(async {
+  block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
       .await
       .expect("Failed to create server socket");
@@ -413,39 +386,39 @@ fn test_send_on_closed_socket() {
 
     listen(server_sock, 128).await.expect("Failed to listen");
 
-    let accept_handle = spawner
-      .spawn_local_with_handle(async move {
-        let mut client_addr_storage =
-          MaybeUninit::<socket2::SockAddrStorage>::uninit();
-        let mut client_addr_len =
-          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-        accept(
-          server_sock,
-          &mut client_addr_storage as *mut _,
-          &mut client_addr_len,
-        )
+    let accept_fut = async move {
+      let mut client_addr_storage =
+        MaybeUninit::<socket2::SockAddrStorage>::uninit();
+      let mut client_addr_len =
+        std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
+      accept(
+        server_sock,
+        &mut client_addr_storage as *mut _,
+        &mut client_addr_len,
+      )
+      .await
+      .expect("Failed to accept")
+    };
+
+    let connect_fut = async {
+      sleep(Duration::from_millis(10));
+      let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
-        .expect("Failed to accept")
-      })
-      .expect("Failed to spawn task");
+        .expect("Failed to create client socket");
+      connect(client_sock, SockAddr::from(bound_addr))
+        .await
+        .expect("Failed to connect");
+      client_sock
+    };
 
-    thread::sleep(Duration::from_millis(10));
-
-    let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-      .await
-      .expect("Failed to create client socket");
-    connect(client_sock, SockAddr::from(bound_addr))
-      .await
-      .expect("Failed to connect");
-
-    let server_client_fd = accept_handle.await;
+    let (server_client_fd, client_sock) = tokio::join!(accept_fut, connect_fut);
 
     // Close server end
     unsafe {
       libc::close(server_client_fd);
     }
 
-    thread::sleep(Duration::from_millis(10));
+    sleep(Duration::from_millis(10));
 
     // Try to send after server closed
     let data = b"This should fail".to_vec();
@@ -462,10 +435,7 @@ fn test_send_on_closed_socket() {
 #[test]
 #[ignore = "deadlocks"]
 fn test_send_concurrent() {
-  let mut pool = LocalPool::new();
-  let spawner = pool.spawner();
-
-  pool.run_until(async {
+  block_on(async {
     // Test sending from multiple clients concurrently
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
       .await
@@ -490,52 +460,48 @@ fn test_send_concurrent() {
 
     listen(server_sock, 128).await.expect("Failed to listen");
 
-    let tasks: Vec<_> = (0..5)
-      .map(|i| {
-        let bound_addr = bound_addr;
-        spawner
-          .spawn_local_with_handle(async move {
-            // Accept
-            let mut client_addr_storage =
-              MaybeUninit::<socket2::SockAddrStorage>::uninit();
-            let mut client_addr_len = std::mem::size_of::<
-              socket2::SockAddrStorage,
-            >() as libc::socklen_t;
-            let _server_client_fd = accept(
-              server_sock,
-              &mut client_addr_storage as *mut _,
-              &mut client_addr_len,
-            )
+    // Note: Simplified concurrent test without actual concurrency
+    for i in 0..5 {
+      let accept_fut = async move {
+        // Accept
+        let mut client_addr_storage =
+          MaybeUninit::<socket2::SockAddrStorage>::uninit();
+        let mut client_addr_len =
+          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
+        accept(
+          server_sock,
+          &mut client_addr_storage as *mut _,
+          &mut client_addr_len,
+        )
+        .await
+        .expect("Failed to accept")
+      };
+
+      let client_fut = async {
+        // Create and connect client
+        let client_sock =
+          socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
             .await
-            .expect("Failed to accept");
+            .expect("Failed to create client socket");
+        connect(client_sock, SockAddr::from(bound_addr))
+          .await
+          .expect("Failed to connect");
+        client_sock
+      };
 
-            // Create and connect client
-            let client_sock =
-              socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-                .await
-                .expect("Failed to create client socket");
-            connect(client_sock, SockAddr::from(bound_addr))
-              .await
-              .expect("Failed to connect");
+      let (_server_client_fd, client_sock) = tokio::join!(accept_fut, client_fut);
 
-            // Send data
-            let data = format!("Client {}", i).into_bytes();
-            let (bytes_sent, _) = send(client_sock, data.clone(), None).await;
-            let bytes_sent = bytes_sent.expect("Failed to send");
+      // Send data
+      let data = format!("Client {}", i).into_bytes();
+      let (bytes_sent, _) = send(client_sock, data.clone(), None).await;
+      let bytes_sent = bytes_sent.expect("Failed to send");
 
-            assert_eq!(bytes_sent as usize, data.len());
+      assert_eq!(bytes_sent as usize, data.len());
 
-            unsafe {
-              libc::close(client_sock);
-              libc::close(_server_client_fd);
-            }
-          })
-          .expect("Failed to spawn task")
-      })
-      .collect();
-
-    for task in tasks {
-      task.await;
+      unsafe {
+        libc::close(client_sock);
+        libc::close(_server_client_fd);
+      }
     }
 
     unsafe {

@@ -114,7 +114,6 @@
 //! This project is licensed under the MIT License - see the LICENSE file for details.
 
 use std::{ffi::CString, mem::MaybeUninit, os::fd::RawFd};
-// TODO: Safe shutdown
 #[cfg(linux)]
 use std::{ffi::CString, mem::MaybeUninit, os::fd::RawFd};
 
@@ -128,11 +127,8 @@ pub type BufResult<T, B> = (std::io::Result<T>, B);
 pub(crate) mod macros;
 
 mod driver;
+pub mod loom;
 pub mod op;
-#[cfg(not(lio_shuttle))]
-mod shuttle;
-#[cfg(lio_shuttle)]
-pub mod shuttle;
 use op::*;
 mod op_progress;
 mod op_registration;
@@ -570,6 +566,10 @@ impl_op!(
 ///
 /// After calling this, further I/O operations in this process are unsupported.
 /// Calling shutdown more than once will panic.
-pub fn shutdown() {
-  Driver::shutdown();
+pub fn shutdown() -> impl Future<Output = ()> {
+  Driver::shutdown()
+}
+
+pub fn init() {
+  let _ = Driver::get();
 }

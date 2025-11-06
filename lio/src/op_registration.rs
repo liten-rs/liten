@@ -1,4 +1,4 @@
-use std::{cell::Cell, task::Waker};
+use std::task::Waker;
 
 #[cfg(not(linux))]
 use std::os::fd::RawFd;
@@ -14,39 +14,36 @@ unsafe impl Send for OpRegistration {}
 
 #[cfg(not(linux))]
 pub struct OpRegistration {
-  registered_waker: Cell<Option<Waker>>,
-  pub(crate) registered_listener: bool,
+  registered_waker: Option<Waker>,
   pub(crate) fd: RawFd,
 }
 
 #[cfg(not(linux))]
 impl OpRegistration {
   pub fn new(fd: RawFd) -> Self {
-    OpRegistration {
-      registered_waker: Cell::new(None),
-      registered_listener: false,
-      fd,
-    }
+    assert!(fd != 0);
+    OpRegistration { registered_waker: None, fd }
   }
 
   pub fn wake(&mut self) {
     if let Some(wake) = self.registered_waker.take() {
       wake.wake();
+    } else {
+      panic!("no waker found");
     }
-    self.registered_listener = false;
   }
 
   /// Returns "if event has been registered"
-  pub fn on_event_register(&mut self, waker: Waker) -> bool {
-    let old = self.registered_listener;
-    self.registered_listener = true;
-    self.registered_waker.set(Some(waker));
-
-    old
+  pub fn set_waker(&mut self, waker: Waker) {
+    let _result = self.registered_waker.replace(waker).is_none();
+    #[cfg(feature = "tracing")]
+    if _result {
+      tracing::warn!(fd = fd, "waker set before woken operation");
+    }
   }
 
   pub fn has_waker(&self) -> bool {
-    self.registered_listener
+    self.registered_waker.is_some()
   }
 }
 

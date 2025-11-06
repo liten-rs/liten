@@ -40,6 +40,7 @@ impl Operation for Write {
     .build()
   }
 
+  #[cfg(not(linux))]
   const EVENT_TYPE: Option<EventType> = None;
 
   #[cfg(not(linux))]

@@ -1,4 +1,4 @@
-use futures::executor::block_on;
+use lio::loom::test_utils::block_on;
 use lio::{bind, connect, listen, socket};
 use socket2::{Domain, Protocol, SockAddr, Type};
 use std::mem::MaybeUninit;
@@ -139,7 +139,6 @@ fn test_connect_to_nonexistent() {
 }
 
 #[test]
-#[ignore = "deadlocking"]
 fn test_connect_multiple_clients() {
   block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
@@ -295,7 +294,6 @@ fn test_connect_to_localhost() {
 }
 
 #[test]
-#[ignore = "deadlocking"]
 fn test_connect_concurrent() {
   block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))

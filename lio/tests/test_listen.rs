@@ -1,4 +1,4 @@
-use futures::executor::block_on;
+use lio::loom::test_utils::block_on;
 use lio::{bind, listen, socket};
 use socket2::{Domain, Protocol, SockAddr, Type};
 use std::net::SocketAddr;

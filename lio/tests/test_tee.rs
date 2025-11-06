@@ -1,7 +1,7 @@
 #[cfg(target_os = "linux")]
 use lio::tee;
 #[cfg(target_os = "linux")]
-use futures::executor::block_on;
+use lio::loom::test_utils::block_on;
 
 #[cfg(target_os = "linux")]
 #[test]

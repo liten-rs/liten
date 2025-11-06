@@ -1,6 +1,6 @@
 use lio::read;
 use std::ffi::CString;
-use futures::executor::block_on;
+use lio::loom::test_utils::block_on;
 
 #[test]
 fn test_read_basic() {

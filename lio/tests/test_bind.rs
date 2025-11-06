@@ -1,7 +1,7 @@
 use lio::{bind, socket};
 use socket2::{Domain, Protocol, SockAddr, Type};
 use std::net::SocketAddr;
-use futures::executor::block_on;
+use lio::loom::test_utils::block_on;
 
 #[test]
 fn test_bind_ipv4_any_port() {

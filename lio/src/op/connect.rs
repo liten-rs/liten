@@ -5,9 +5,9 @@ use io_uring::types::Fd;
 use socket2::SockAddr;
 
 #[cfg(not(linux))]
-use crate::op::EventType;
+use crate::loom::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(linux))]
-use crate::shuttle::sync::atomic::{AtomicBool, Ordering};
+use crate::op::EventType;
 
 use super::Operation;
 

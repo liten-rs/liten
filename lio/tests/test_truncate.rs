@@ -1,5 +1,5 @@
 use lio::truncate;
-use futures::executor::block_on;
+use lio::loom::test_utils::block_on;
 use std::ffi::CString;
 
 #[test]

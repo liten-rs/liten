@@ -1,6 +1,32 @@
-use futures::executor::block_on;
+use lio::loom::test_utils::block_on;
 use lio::socket;
 use socket2::{Domain, Protocol, Type};
+
+#[test]
+fn test_socket_simple() {
+  block_on(async {
+    let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+      .await
+      .expect("Failed to create TCP IPv4 socket");
+
+    assert!(sock >= 0, "Socket fd should be valid");
+
+    // Verify it's a TCP socket
+    unsafe {
+      let mut sock_type: i32 = 0;
+      let mut len = std::mem::size_of::<i32>() as libc::socklen_t;
+      libc::getsockopt(
+        sock,
+        libc::SOL_SOCKET,
+        libc::SO_TYPE,
+        &mut sock_type as *mut _ as *mut libc::c_void,
+        &mut len,
+      );
+      assert_eq!(sock_type, libc::SOCK_STREAM);
+      lio::close(sock).await.unwrap();
+    }
+  })
+}
 
 #[test]
 fn test_socket_tcp_ipv4() {

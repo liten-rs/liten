@@ -1,4 +1,4 @@
-use futures::executor::block_on;
+use lio::loom::test_utils::block_on;
 use lio::openat;
 use std::ffi::CString;
 
