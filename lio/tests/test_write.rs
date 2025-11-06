@@ -1,83 +1,87 @@
 /// write in append mode is not tested since `pwrite` doesn't support it.
-use lio::loom::test_utils::block_on;
+use lio::loom::test_utils::{self, block_on};
 use lio::write;
 use std::ffi::CString;
 
 #[test]
 fn test_write_basic() {
-  block_on(async {
-    let path = CString::new("/tmp/lio_test_write_basic.txt").unwrap();
+  test_utils::model(|| {
+    block_on(async {
+      let path = CString::new("/tmp/lio_test_write_basic.txt").unwrap();
 
-    // Create file
-    let fd = unsafe {
-      libc::open(
-        path.as_ptr(),
-        libc::O_CREAT | libc::O_WRONLY | libc::O_TRUNC,
-        0o644,
-      )
-    };
+      // Create file
+      let fd = unsafe {
+        libc::open(
+          path.as_ptr(),
+          libc::O_CREAT | libc::O_WRONLY | libc::O_TRUNC,
+          0o644,
+        )
+      };
 
-    // Write data
-    let data = b"Hello, write test!".to_vec();
-    let (bytes_written, returned_buf) = write(fd, data.clone(), 0).await;
-    let bytes_written = bytes_written.expect("Failed to write") as usize;
+      // Write data
+      let data = b"Hello, write test!".to_vec();
+      let (bytes_written, returned_buf) = write(fd, data.clone(), 0).await;
+      let bytes_written = bytes_written.expect("Failed to write") as usize;
 
-    assert_eq!(bytes_written, data.len());
-    assert_eq!(returned_buf, data);
+      assert_eq!(bytes_written, data.len());
+      assert_eq!(returned_buf, data);
 
-    // Verify by reading back
-    let mut verify_buf = vec![0u8; data.len()];
-    unsafe {
-      let read_fd = libc::open(path.as_ptr(), libc::O_RDONLY);
-      let read_bytes = libc::read(
-        read_fd,
-        verify_buf.as_mut_ptr() as *mut libc::c_void,
-        data.len(),
-      );
-      assert_eq!(read_bytes as usize, data.len());
-      assert_eq!(verify_buf, data);
-      libc::close(read_fd);
-      libc::close(fd);
-      libc::unlink(path.as_ptr());
-    }
+      // Verify by reading back
+      let mut verify_buf = vec![0u8; data.len()];
+      unsafe {
+        let read_fd = libc::open(path.as_ptr(), libc::O_RDONLY);
+        let read_bytes = libc::read(
+          read_fd,
+          verify_buf.as_mut_ptr() as *mut libc::c_void,
+          data.len(),
+        );
+        assert_eq!(read_bytes as usize, data.len());
+        assert_eq!(verify_buf, data);
+        libc::close(read_fd);
+        libc::close(fd);
+        libc::unlink(path.as_ptr());
+      }
+    });
   });
 }
 
 #[test]
 fn test_write_with_offset() {
-  block_on(async {
-    let path = CString::new("/tmp/lio_test_write_offset.txt").unwrap();
+  test_utils::model(|| {
+    block_on(async {
+      let path = CString::new("/tmp/lio_test_write_offset.txt").unwrap();
 
-    let fd = unsafe {
-      libc::open(
-        path.as_ptr(),
-        libc::O_CREAT | libc::O_RDWR | libc::O_TRUNC,
-        0o644,
-      )
-    };
+      let fd = unsafe {
+        libc::open(
+          path.as_ptr(),
+          libc::O_CREAT | libc::O_RDWR | libc::O_TRUNC,
+          0o644,
+        )
+      };
 
-    // Write initial data
-    let data1 = b"AAAAAAAAAA".to_vec();
-    let (bytes_written, _) = write(fd, data1, 0).await;
-    bytes_written.expect("Failed to write initial data");
+      // Write initial data
+      let data1 = b"AAAAAAAAAA".to_vec();
+      let (bytes_written, _) = write(fd, data1, 0).await;
+      bytes_written.expect("Failed to write initial data");
 
-    // Write at offset
-    let data2 = b"BBB".to_vec();
-    let (bytes_written, _) = write(fd, data2, 5).await;
-    bytes_written.expect("Failed to write at offset");
+      // Write at offset
+      let data2 = b"BBB".to_vec();
+      let (bytes_written, _) = write(fd, data2, 5).await;
+      bytes_written.expect("Failed to write at offset");
 
-    // Verify
-    let mut verify_buf = vec![0u8; 10];
-    unsafe {
-      libc::lseek(fd, 0, libc::SEEK_SET);
-      libc::read(fd, verify_buf.as_mut_ptr() as *mut libc::c_void, 10);
-      assert_eq!(&verify_buf[0..5], b"AAAAA");
-      assert_eq!(&verify_buf[5..8], b"BBB");
-      assert_eq!(&verify_buf[8..10], b"AA");
-      libc::close(fd);
-      libc::unlink(path.as_ptr());
-    }
-  });
+      // Verify
+      let mut verify_buf = vec![0u8; 10];
+      unsafe {
+        libc::lseek(fd, 0, libc::SEEK_SET);
+        libc::read(fd, verify_buf.as_mut_ptr() as *mut libc::c_void, 10);
+        assert_eq!(&verify_buf[0..5], b"AAAAA");
+        assert_eq!(&verify_buf[5..8], b"BBB");
+        assert_eq!(&verify_buf[8..10], b"AA");
+        libc::close(fd);
+        libc::unlink(path.as_ptr());
+      }
+    });
+  })
 }
 
 #[test]

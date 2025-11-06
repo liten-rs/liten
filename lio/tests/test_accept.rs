@@ -1,4 +1,4 @@
-use lio::loom::test_utils::block_on;
+use lio::loom::test_utils::{block_on, model};
 use lio::{accept, bind, connect, listen, socket};
 use socket2::{Domain, Protocol, SockAddr, Type};
 use std::mem::MaybeUninit;
@@ -7,36 +7,36 @@ use std::time::Duration;
 
 #[test]
 fn test_accept_basic() {
-  block_on(async {
-    // Create and setup server socket
-    let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-      .await
-      .expect("Failed to create server socket");
+  model(|| {
+    block_on(async {
+      // Create and setup server socket
+      let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+        .await
+        .expect("Failed to create server socket");
 
-    let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let sock_addr = SockAddr::from(addr);
-    bind(server_sock, sock_addr).await.expect("Failed to bind");
+      let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+      let sock_addr = SockAddr::from(addr);
+      bind(server_sock, sock_addr).await.expect("Failed to bind");
 
-    // Get the bound address
-    let bound_addr = unsafe {
-      let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
-      let mut addr_len =
-        std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-      libc::getsockname(
-        server_sock,
-        addr_storage.as_mut_ptr() as *mut libc::sockaddr,
-        &mut addr_len,
-      );
-      let sockaddr_in = addr_storage.assume_init();
-      let port = u16::from_be(sockaddr_in.sin_port);
-      format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap()
-    };
+      // Get the bound address
+      let bound_addr = unsafe {
+        let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
+        let mut addr_len =
+          std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+        libc::getsockname(
+          server_sock,
+          addr_storage.as_mut_ptr() as *mut libc::sockaddr,
+          &mut addr_len,
+        );
+        let sockaddr_in = addr_storage.assume_init();
+        let port = u16::from_be(sockaddr_in.sin_port);
+        format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap()
+      };
 
-    listen(server_sock, 128).await.expect("Failed to listen");
+      listen(server_sock, 128).await.expect("Failed to listen");
 
-    // Spawn accept task
-    let accept_handle = spawner
-      .spawn_local_with_handle(async move {
+      // Spawn accept task
+      let accept_fut = async move {
         let mut client_addr_storage =
           MaybeUninit::<socket2::SockAddrStorage>::uninit();
         let mut client_addr_len =
@@ -51,38 +51,44 @@ fn test_accept_basic() {
         .expect("Failed to accept");
 
         (client_fd, server_sock)
-      })
-      .expect("Failed to spawn task");
+      };
 
-    // Give accept time to start
-    lio::loom::test_utils::sleep(Duration::from_millis(10));
+      // Give accept time to start
+      let client_fut = async {
+        lio::loom::test_utils::sleep(Duration::from_millis(10));
 
-    // Connect client
-    let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-      .await
-      .expect("Failed to create client socket");
+        // Connect client
+        let client_sock =
+          socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+            .await
+            .expect("Failed to create client socket");
 
-    connect(client_sock, SockAddr::from(bound_addr))
-      .await
-      .expect("Failed to connect");
+        connect(client_sock, SockAddr::from(bound_addr))
+          .await
+          .expect("Failed to connect");
 
-    // Wait for accept
-    let (accepted_fd, server_sock) = accept_handle.await;
+        client_sock
+      };
 
-    assert!(accepted_fd >= 0, "Accepted fd should be valid");
+      // Wait for accept
+      let ((accepted_fd, server_sock), client_sock) =
+        tokio::join!(accept_fut, client_fut);
 
-    // Cleanup
-    unsafe {
-      libc::close(client_sock);
-      libc::close(accepted_fd);
-      libc::close(server_sock);
-    }
-  })
+      assert!(accepted_fd >= 0, "Accepted fd should be valid");
+
+      // Cleanup
+      unsafe {
+        libc::close(client_sock);
+        libc::close(accepted_fd);
+        libc::close(server_sock);
+      }
+    })
+  });
 }
 
 #[test]
 fn test_accept_multiple() {
-  lio::loom::test_utils::model(|| {
+  model(|| {
     lio::loom::test_utils::block_on(async {
       // Create server socket
       let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
@@ -115,7 +121,7 @@ fn test_accept_multiple() {
 
       for _ in 0..num_clients {
         // Spawn accept task
-        let accept_handle = spawner.spawn_local_with_handle(async move {
+        let accept_fut = async move {
           let mut client_addr_storage =
             MaybeUninit::<socket2::SockAddrStorage>::uninit();
           let mut client_addr_len =
@@ -130,25 +136,28 @@ fn test_accept_multiple() {
           .expect("Failed to accept");
 
           (client_fd, server_sock)
-        });
+        };
 
-        lio::loom::test_utils::sleep(Duration::from_millis(5));
+        let client_fut = async {
+          lio::loom::test_utils::sleep(Duration::from_millis(5));
 
-        // Connect client
-        let client_sock =
-          socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+          // Connect client
+          let client_sock =
+            socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+              .await
+              .expect("Failed to create client socket");
+
+          connect(client_sock, SockAddr::from(bound_addr))
             .await
-            .expect("Failed to create client socket");
+            .expect("Failed to connect");
 
-        connect(client_sock, SockAddr::from(bound_addr))
-          .await
-          .expect("Failed to connect");
+          client_sock
+        };
 
-        client_fds.push(client_sock);
-
-        let (accepted_fd, _server_sock_returned) =
-          accept_handle.expect("Failed to spawn task").await;
+        let ((accepted_fd, _server_sock_returned), client_sock) =
+          tokio::join!(accept_fut, client_fut);
         accepted_fds.push(accepted_fd);
+        client_fds.push(client_sock);
       }
 
       // Verify all connections
@@ -171,7 +180,7 @@ fn test_accept_multiple() {
 
 #[test]
 fn test_accept_with_client_info() {
-  lio::loom::test_utils::model(|| {
+  model(|| {
     lio::loom::test_utils::block_on(async {
       let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
@@ -197,44 +206,45 @@ fn test_accept_with_client_info() {
 
       listen(server_sock, 128).await.expect("Failed to listen");
 
-      let accept_handle = spawner
-        .spawn_local_with_handle(async move {
-          let mut client_addr_storage =
-            MaybeUninit::<socket2::SockAddrStorage>::uninit();
-          let mut client_addr_len =
-            std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
+      let accept_fut = async move {
+        let mut client_addr_storage =
+          MaybeUninit::<socket2::SockAddrStorage>::uninit();
+        let mut client_addr_len =
+          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
 
-          let client_fd = accept(
-            server_sock,
-            &mut client_addr_storage as *mut _,
-            &mut client_addr_len,
-          )
+        let client_fd = accept(
+          server_sock,
+          &mut client_addr_storage as *mut _,
+          &mut client_addr_len,
+        )
+        .await
+        .expect("Failed to accept");
+
+        // Get client address info
+        let client_addr = unsafe {
+          SockAddr::new(client_addr_storage.assume_init_read(), client_addr_len)
+        };
+
+        (client_fd, client_addr, server_sock)
+      };
+
+      let client_fut = async {
+        lio::loom::test_utils::sleep(Duration::from_millis(10));
+
+        let client_sock =
+          socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+            .await
+            .expect("Failed to create client socket");
+
+        connect(client_sock, SockAddr::from(bound_addr))
           .await
-          .expect("Failed to accept");
+          .expect("Failed to connect");
 
-          // Get client address info
-          let client_addr = unsafe {
-            SockAddr::new(
-              client_addr_storage.assume_init_read(),
-              client_addr_len,
-            )
-          };
+        client_sock
+      };
 
-          (client_fd, client_addr, server_sock)
-        })
-        .expect("Failed to spawn task");
-
-      lio::loom::test_utils::sleep(Duration::from_millis(10));
-
-      let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-        .await
-        .expect("Failed to create client socket");
-
-      connect(client_sock, SockAddr::from(bound_addr))
-        .await
-        .expect("Failed to connect");
-
-      let (accepted_fd, client_addr, server_sock) = accept_handle.await;
+      let ((accepted_fd, client_addr, server_sock), client_sock) =
+        tokio::join!(accept_fut, client_fut);
 
       // Verify client address is valid
       assert!(client_addr.as_socket_ipv4().is_some());
@@ -251,7 +261,7 @@ fn test_accept_with_client_info() {
 
 #[test]
 fn test_accept_ipv6() {
-  lio::loom::test_utils::model(|| {
+  model(|| {
     lio::loom::test_utils::block_on(async {
       let server_sock = socket(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))
         .await
@@ -277,36 +287,40 @@ fn test_accept_ipv6() {
 
       listen(server_sock, 128).await.expect("Failed to listen");
 
-      let accept_handle = spawner
-        .spawn_local_with_handle(async move {
-          let mut client_addr_storage =
-            MaybeUninit::<socket2::SockAddrStorage>::uninit();
-          let mut client_addr_len =
-            std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
+      let accept_fut = async move {
+        let mut client_addr_storage =
+          MaybeUninit::<socket2::SockAddrStorage>::uninit();
+        let mut client_addr_len =
+          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
 
-          let client_fd = accept(
-            server_sock,
-            &mut client_addr_storage as *mut _,
-            &mut client_addr_len,
-          )
+        let client_fd = accept(
+          server_sock,
+          &mut client_addr_storage as *mut _,
+          &mut client_addr_len,
+        )
+        .await
+        .expect("Failed to accept IPv6");
+
+        (client_fd, server_sock)
+      };
+
+      let client_fut = async {
+        lio::loom::test_utils::sleep(Duration::from_millis(10));
+
+        let client_sock =
+          socket(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))
+            .await
+            .expect("Failed to create IPv6 client socket");
+
+        connect(client_sock, SockAddr::from(bound_addr))
           .await
-          .expect("Failed to accept IPv6");
+          .expect("Failed to connect IPv6");
 
-          (client_fd, server_sock)
-        })
-        .expect("Failed to spawn task");
+        client_sock
+      };
 
-      lio::loom::test_utils::sleep(Duration::from_millis(10));
-
-      let client_sock = socket(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))
-        .await
-        .expect("Failed to create IPv6 client socket");
-
-      connect(client_sock, SockAddr::from(bound_addr))
-        .await
-        .expect("Failed to connect IPv6");
-
-      let (accepted_fd, server_sock) = accept_handle.await;
+      let ((accepted_fd, server_sock), client_sock) =
+        tokio::join!(accept_fut, client_fut);
 
       assert!(accepted_fd >= 0);
 
@@ -322,7 +336,7 @@ fn test_accept_ipv6() {
 
 #[test]
 fn test_accept_concurrent() {
-  lio::loom::test_utils::model(|| {
+  model(|| {
     lio::loom::test_utils::block_on(async {
       let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
@@ -348,50 +362,49 @@ fn test_accept_concurrent() {
 
       listen(server_sock, 128).await.expect("Failed to listen");
 
-      let accept_task = || async {
-        let mut client_addr_storage =
-          MaybeUninit::<socket2::SockAddrStorage>::uninit();
-        let mut client_addr_len =
-          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
+      // Run accepts and connects concurrently
+      let accept_fut = async {
+        let mut accepted_fds = Vec::new();
+        for _ in 0..3 {
+          let mut client_addr_storage =
+            MaybeUninit::<socket2::SockAddrStorage>::uninit();
+          let mut client_addr_len =
+            std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
 
-        let client_fd = accept(
-          server_sock,
-          &mut client_addr_storage as *mut _,
-          &mut client_addr_len,
-        )
-        .await
-        .expect("Failed to accept");
+          let client_fd = accept(
+            server_sock,
+            &mut client_addr_storage as *mut _,
+            &mut client_addr_len,
+          )
+          .await
+          .expect("Failed to accept");
 
-        client_fd
+          accepted_fds.push(client_fd);
+        }
+        (accepted_fds, server_sock)
       };
 
-      // Spawn multiple concurrent accept tasks
-      let (at1, at2, at3) =
-        tokio::join!(accept_task(), accept_task(), accept_task());
+      let connect_fut = async {
+        lio::loom::test_utils::sleep(Duration::from_millis(10));
 
-      lio::loom::test_utils::sleep(Duration::from_millis(20));
+        let mut client_fds = Vec::new();
+        for _ in 0..3 {
+          let client_sock =
+            socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+              .await
+              .expect("Failed to create client socket");
 
-      // Connect multiple clients
-      let mut client_fds = Vec::new();
-      for _ in 0..3 {
-        let client_sock =
-          socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+          connect(client_sock, SockAddr::from(bound_addr))
             .await
-            .expect("Failed to create client socket");
+            .expect("Failed to connect");
 
-        connect(client_sock, SockAddr::from(bound_addr))
-          .await
-          .expect("Failed to connect");
+          client_fds.push(client_sock);
+        }
+        client_fds
+      };
 
-        client_fds.push(client_sock);
-        lio::loom::test_utils::sleep(Duration::from_millis(5));
-      }
-
-      // Wait for all accepts
-      let mut accepted_fds = Vec::new();
-      for fd in &[at1, at2, at3] {
-        accepted_fds.push(*fd);
-      }
+      let ((accepted_fds, server_sock), client_fds) =
+        tokio::join!(accept_fut, connect_fut);
 
       assert_eq!(accepted_fds.len(), 3);
 

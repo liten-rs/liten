@@ -1,17 +1,76 @@
 pub mod sync {
-  // When using loom for concurrency testing
+  // Re-export Arc and OnceLock
   #[cfg(loom)]
-  pub use loom::sync::{Arc, Mutex};
+  pub use loom::sync::Arc;
 
   #[cfg(loom)]
   pub use std::sync::OnceLock;
 
-  // Normal runtime (not loom)
   #[cfg(not(loom))]
   pub use std::sync::{Arc, OnceLock};
 
-  #[cfg(not(loom))]
-  pub use parking_lot::Mutex;
+  // Custom Mutex wrapper that removes poisoning
+  pub struct Mutex<T> {
+    #[cfg(not(loom))]
+    inner: parking_lot::Mutex<T>,
+    #[cfg(loom)]
+    inner: loom::sync::Mutex<T>,
+  }
+
+  impl<T> Mutex<T> {
+    pub fn new(value: T) -> Self {
+      Self {
+        inner: {
+          #[cfg(not(loom))]
+          {
+            parking_lot::Mutex::new(value)
+          }
+          #[cfg(loom)]
+          {
+            loom::sync::Mutex::new(value)
+          }
+        },
+      }
+    }
+
+    pub fn lock(&self) -> MutexGuard<'_, T> {
+      #[cfg(not(loom))]
+      {
+        MutexGuard { inner: self.inner.lock() }
+      }
+      #[cfg(loom)]
+      {
+        // Remove poisoning by using unwrap_or_else to recover
+        MutexGuard {
+          inner: self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        }
+      }
+    }
+  }
+
+  pub struct MutexGuard<'a, T> {
+    #[cfg(not(loom))]
+    inner: parking_lot::MutexGuard<'a, T>,
+    #[cfg(loom)]
+    inner: loom::sync::MutexGuard<'a, T>,
+  }
+
+  impl<'a, T> std::ops::Deref for MutexGuard<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+      &self.inner
+    }
+  }
+
+  impl<'a, T> std::ops::DerefMut for MutexGuard<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+      &mut self.inner
+    }
+  }
 
   pub mod atomic {
     #[cfg(loom)]
@@ -37,11 +96,11 @@ pub mod test_utils {
   // Async runtime abstraction
   // ============================================================================
 
-  /// Run an async function to completion
+  /// Run an async function to completion with a timeout
   ///
   /// This abstracts over different test modes:
-  /// - Normal mode: Uses tokio
-  /// - Loom mode: Uses loom's futures executor
+  /// - Normal mode: Uses tokio with 30 second timeout
+  /// - Loom mode: Uses loom's futures executor (no timeout)
   pub fn block_on<F, O>(fut: F) -> O
   where
     F: Future<Output = O>,

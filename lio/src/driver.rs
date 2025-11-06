@@ -52,8 +52,8 @@ struct DriverInner {
 
 impl Driver {
   fn next_id() -> u64 {
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    NEXT.fetch_add(1, Ordering::AcqRel)
+    static NEXT: OnceLock<AtomicU64> = OnceLock::new();
+    NEXT.get_or_init(|| AtomicU64::new(0)).fetch_add(1, Ordering::AcqRel)
   }
 
   pub(crate) fn get() -> &'static Driver {

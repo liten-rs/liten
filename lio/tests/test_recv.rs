@@ -1,5 +1,4 @@
-use lio::loom::test_utils::{block_on, sleep};
-use lio::loom::thread;
+use lio::loom::test_utils::{block_on, model, sleep};
 use lio::{accept, bind, connect, listen, recv, send, socket};
 use socket2::{Domain, Protocol, SockAddr, Type};
 use std::mem::MaybeUninit;
@@ -8,7 +7,7 @@ use std::time::Duration;
 
 #[test]
 fn test_recv_basic() {
-  lio::loom::test_utils::model(|| {
+  model(|| {
     block_on(async {
       let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
@@ -54,23 +53,26 @@ fn test_recv_basic() {
         (bytes_received, received_buf, client_fd, server_sock)
       };
 
+      let send_data = b"Hello, Server!".to_vec();
       let client_fut = async {
         sleep(Duration::from_millis(10));
-        let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-          .await
-          .expect("Failed to create client socket");
+        let client_sock =
+          socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+            .await
+            .expect("Failed to create client socket");
         connect(client_sock, SockAddr::from(bound_addr))
           .await
           .expect("Failed to connect");
 
-        let send_data = b"Hello, Server!".to_vec();
         let (bytes_sent, _) = send(client_sock, send_data.clone(), None).await;
         bytes_sent.expect("Failed to send");
         client_sock
       };
 
-      let ((bytes_received, received_buf, server_client_fd, server_sock), client_sock) =
-        tokio::join!(server_fut, client_fut);
+      let (
+        (bytes_received, received_buf, server_client_fd, server_sock),
+        client_sock,
+      ) = tokio::join!(server_fut, client_fut);
 
       assert_eq!(bytes_received as usize, send_data.len());
       assert_eq!(
@@ -89,7 +91,7 @@ fn test_recv_basic() {
 
 #[test]
 fn test_recv_large_data() {
-  lio::loom::test_utils::model(|| {
+  model(|| {
     block_on(async {
       let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
@@ -135,8 +137,7 @@ fn test_recv_large_data() {
         let mut total_received = Vec::new();
         loop {
           let buf = vec![0u8; 8192];
-          let (bytes_received, received_buf) =
-            recv(client_fd, buf, None).await;
+          let (bytes_received, received_buf) = recv(client_fd, buf, None).await;
           let bytes_received =
             bytes_received.expect("Failed to receive") as usize;
 
@@ -156,15 +157,27 @@ fn test_recv_large_data() {
 
       let client_fut = async {
         sleep(Duration::from_millis(10));
-        let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-          .await
-          .expect("Failed to create client socket");
+        let client_sock =
+          socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+            .await
+            .expect("Failed to create client socket");
         connect(client_sock, SockAddr::from(bound_addr))
           .await
           .expect("Failed to connect");
 
-        let (bytes_sent, _) = send(client_sock, large_data.clone(), None).await;
-        bytes_sent.expect("Failed to send");
+        // Send all data (may require multiple sends due to partial writes)
+        let mut total_sent = 0;
+        while total_sent < large_data.len() {
+          let (bytes_sent, _) =
+            send(client_sock, large_data[total_sent..].to_vec(), None).await;
+          total_sent += bytes_sent.expect("Failed to send") as usize;
+        }
+
+        // Shutdown write side to signal EOF to server
+        unsafe {
+          libc::shutdown(client_sock, libc::SHUT_WR);
+        }
+
         client_sock
       };
 
@@ -265,7 +278,7 @@ fn test_recv_partial() {
 
 #[test]
 fn test_recv_multiple() {
-  lio::loom::test_utils::model(|| {
+  model(|| {
     block_on(async {
       let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
@@ -304,25 +317,30 @@ fn test_recv_multiple() {
         .await
         .expect("Failed to accept");
 
-        // Receive multiple times
-        let mut messages = Vec::new();
-        for _ in 0..3 {
+        // Receive until EOF
+        let mut all_data = Vec::new();
+        loop {
           let buf = vec![0u8; 1024];
-          let (bytes_received, received_buf) =
-            recv(client_fd, buf, None).await;
+          let (bytes_received, received_buf) = recv(client_fd, buf, None).await;
           let bytes_received =
             bytes_received.expect("Failed to receive") as usize;
-          messages.push(received_buf[..bytes_received].to_vec());
+
+          if bytes_received == 0 {
+            break; // EOF
+          }
+
+          all_data.extend_from_slice(&received_buf[..bytes_received]);
         }
 
-        (messages, client_fd, server_sock)
+        (all_data, client_fd, server_sock)
       };
 
       let client_fut = async {
         sleep(Duration::from_millis(10));
-        let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-          .await
-          .expect("Failed to create client socket");
+        let client_sock =
+          socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+            .await
+            .expect("Failed to create client socket");
         connect(client_sock, SockAddr::from(bound_addr))
           .await
           .expect("Failed to connect");
@@ -334,13 +352,21 @@ fn test_recv_multiple() {
           bytes_sent.expect("Failed to send");
           sleep(Duration::from_millis(5));
         }
+
+        // Shutdown write side to signal EOF to server
+        unsafe {
+          libc::shutdown(client_sock, libc::SHUT_WR);
+        }
+
         client_sock
       };
 
-      let ((messages, server_client_fd, server_sock), client_sock) =
+      let ((all_data, server_client_fd, server_sock), client_sock) =
         tokio::join!(server_fut, client_fut);
 
-      assert_eq!(messages.len(), 3);
+      // Verify we received all 3 messages concatenated
+      let expected = b"Message 0Message 1Message 2";
+      assert_eq!(all_data, expected);
 
       unsafe {
         libc::close(client_sock);
@@ -353,7 +379,7 @@ fn test_recv_multiple() {
 
 #[test]
 fn test_recv_with_flags() {
-  lio::loom::test_utils::model(|| {
+  model(|| {
     block_on(async {
       let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
@@ -405,9 +431,10 @@ fn test_recv_with_flags() {
 
       let client_fut = async {
         sleep(Duration::from_millis(10));
-        let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-          .await
-          .expect("Failed to create client socket");
+        let client_sock =
+          socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+            .await
+            .expect("Failed to create client socket");
         connect(client_sock, SockAddr::from(bound_addr))
           .await
           .expect("Failed to connect");
@@ -417,8 +444,10 @@ fn test_recv_with_flags() {
         client_sock
       };
 
-      let ((bytes_received, received_buf, server_client_fd, server_sock), client_sock) =
-        tokio::join!(server_fut, client_fut);
+      let (
+        (bytes_received, received_buf, server_client_fd, server_sock),
+        client_sock,
+      ) = tokio::join!(server_fut, client_fut);
 
       assert_eq!(bytes_received as usize, send_data.len());
       assert_eq!(
@@ -437,7 +466,7 @@ fn test_recv_with_flags() {
 
 #[test]
 fn test_recv_on_closed() {
-  lio::loom::test_utils::model(|| {
+  model(|| {
     block_on(async {
       let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
@@ -481,9 +510,10 @@ fn test_recv_on_closed() {
 
       let client_fut = async {
         sleep(Duration::from_millis(10));
-        let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-          .await
-          .expect("Failed to create client socket");
+        let client_sock =
+          socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+            .await
+            .expect("Failed to create client socket");
         connect(client_sock, SockAddr::from(bound_addr))
           .await
           .expect("Failed to connect");

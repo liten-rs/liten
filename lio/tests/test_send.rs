@@ -220,7 +220,6 @@ fn test_send_empty() {
 }
 
 #[test]
-// #[ignore = "deadlocks"]
 fn test_send_multiple() {
   block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
@@ -360,7 +359,6 @@ fn test_send_with_flags() {
 }
 
 #[test]
-#[ignore = "deadlocks"]
 fn test_send_on_closed_socket() {
   block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
@@ -433,7 +431,6 @@ fn test_send_on_closed_socket() {
 }
 
 #[test]
-#[ignore = "deadlocks"]
 fn test_send_concurrent() {
   block_on(async {
     // Test sending from multiple clients concurrently
@@ -489,7 +486,8 @@ fn test_send_concurrent() {
         client_sock
       };
 
-      let (_server_client_fd, client_sock) = tokio::join!(accept_fut, client_fut);
+      let (_server_client_fd, client_sock) =
+        tokio::join!(accept_fut, client_fut);
 
       // Send data
       let data = format!("Client {}", i).into_bytes();
