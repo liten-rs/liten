@@ -4,6 +4,9 @@ use std::task::Waker;
 use std::os::fd::RawFd;
 
 #[cfg(linux)]
+use crate::loom::Cell;
+
+#[cfg(linux)]
 pub struct OpRegistration {
   pub op: *const (),
   pub status: OpRegistrationStatus,
@@ -25,20 +28,16 @@ impl OpRegistration {
     OpRegistration { registered_waker: None, fd }
   }
 
-  pub fn wake(&mut self) {
-    if let Some(wake) = self.registered_waker.take() {
-      wake.wake();
-    } else {
-      panic!("no waker found");
-    }
+  pub fn waker(&mut self) -> Option<Waker> {
+    self.registered_waker.take()
   }
 
-  /// Returns "if event has been registered"
+  /// Sets the waker, replacing any existing waker
   pub fn set_waker(&mut self, waker: Waker) {
-    let _result = self.registered_waker.replace(waker).is_none();
+    let had_previous_waker = self.registered_waker.replace(waker).is_some();
     #[cfg(feature = "tracing")]
-    if _result {
-      tracing::warn!(fd = fd, "waker set before woken operation");
+    if had_previous_waker {
+      tracing::debug!(fd = self.fd, "waker replaced (spurious poll or context change)");
     }
   }
 

@@ -50,10 +50,8 @@ impl Operation for Send {
 
   fn run_blocking(&self) -> io::Result<i32> {
     let buf = self.buf.as_ref().unwrap();
-    dbg!(
-      syscall!(send(self.fd, buf.as_ptr() as *mut _, buf.len(), self.flags))
-        .map(|t| t as i32)
-    )
+    syscall!(send(self.fd, buf.as_ptr() as *mut _, buf.len(), self.flags))
+      .map(|t| t as i32)
   }
   fn result(&mut self, _ret: std::io::Result<i32>) -> Self::Result {
     let buf = self.buf.take().expect("ran Recv::result more than once.");

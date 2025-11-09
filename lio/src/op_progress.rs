@@ -5,6 +5,8 @@ use crate::op::Operation;
 #[cfg(linux)]
 use std::marker::PhantomData;
 
+use crate::loom::thread;
+
 use std::{
   future::Future,
   pin::Pin,
@@ -80,6 +82,8 @@ pub enum OperationProgress<T> {
   Poll { event: polling::Event, id: u64, operation: T },
   Blocking { operation: T },
 }
+
+unsafe impl<T> Send for OperationProgress<T> where T: Send {}
 
 impl<T> OperationProgress<T> {
   /// Detaches this progress tracker from the driver without binding it to any object.
@@ -196,42 +200,61 @@ where
     mut self: Pin<&mut Self>,
     cx: &mut Context<'_>,
   ) -> Poll<Self::Output> {
-    match *self {
+    let result = match *self {
+      OperationProgress::Blocking { ref mut operation } => {
+        let result = operation.run_blocking();
+        Poll::Ready(operation.result(result))
+      }
       OperationProgress::Poll { id, ref mut operation, event } => {
         use std::io;
 
         match operation.run_blocking() {
-          Ok(result) => Poll::Ready(operation.result(Ok(result))),
+          Ok(result) => {
+            #[cfg(feature = "tracing")]
+            tracing::debug!(
+              operation_id = id,
+              result = result,
+              "poll: operation succeeded"
+            );
+            Poll::Ready(operation.result(Ok(result)))
+          }
           Err(err) => {
             if err.kind() == io::ErrorKind::WouldBlock
               || err.raw_os_error() == Some(libc::EINPROGRESS)
             {
+              #[cfg(feature = "tracing")]
+              tracing::debug!(operation_id = id, error = ?err, "poll: got WouldBlock/EINPROGRESS, registering repoll");
+              let fd = operation.fd().expect(
+                "operation has event_type.is_some(), but not fd Some(...)",
+              );
               let result = Driver::get()
-                .register_repoll(
-                  id,
-                  event,
-                  cx.waker().clone(),
-                  operation.fd().expect(
-                    "operation has event_type.is_some(), but not fd Some(...)",
-                  ),
-                )
+                .register_repoll(id, event, cx.waker().clone(), fd)
                 .expect("why didn't exist");
               if let Err(err) = result {
+                #[cfg(feature = "tracing")]
+                tracing::error!(operation_id = id, error = ?err, "poll: register_repoll failed");
                 Poll::Ready(operation.result(Err(err)))
               } else {
+                #[cfg(feature = "tracing")]
+                tracing::debug!(
+                  operation_id = id,
+                  "poll: registered repoll, returning Pending"
+                );
                 Poll::Pending
               }
             } else {
+              #[cfg(feature = "tracing")]
+              tracing::debug!(operation_id = id, error = ?err, "poll: got non-WouldBlock error, returning Ready");
               Poll::Ready(operation.result(Err(err)))
             }
           }
         }
       }
-      OperationProgress::Blocking { ref mut operation } => {
-        let result = operation.run_blocking();
-        Poll::Ready(operation.result(result))
-      }
-    }
+    };
+
+    thread::yield_now();
+
+    result
   }
 }
 
@@ -256,20 +279,15 @@ impl<T> Drop for OperationProgress<T> {
 impl<T> Drop for OperationProgress<T> {
   fn drop(&mut self) {
     if let OperationProgress::Poll { id, .. } = *self {
+      #[cfg(feature = "tracing")]
+      tracing::debug!(
+        operation_id = id,
+        "OperationProgress: dropping, calling detach"
+      );
       Driver::get().detach(id);
+
+      #[cfg(loom)]
+      loom::thread::yield_now();
     }
   }
 }
-
-// /// Implements automatic cleanup for polling operations on non-Linux platforms.
-// ///
-// /// When an `OperationProgress` is dropped, this implementation ensures
-// /// that the operation is properly cancelled and cleaned up from the driver.
-// #[cfg(not(linux))]
-// impl<T> Drop for OperationProgress<T> {
-//   fn drop(&mut self) {
-//     if let OperationProgress::Poll { id, .. } = *self {
-//       Driver::get().detach(id);
-//     }
-//   }
-// }

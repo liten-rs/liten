@@ -1,12 +1,14 @@
-use crate::OperationProgress;
+#[cfg(not(linux))]
+use crate::loom::sync::mpsc;
+use crate::{OperationProgress, loom};
 use std::collections::HashMap;
 
 use crate::loom::{
   sync::{
-    Arc, Mutex, OnceLock,
+    Mutex, OnceLock,
     atomic::{AtomicU64, Ordering},
   },
-  thread::JoinHandle,
+  thread,
 };
 
 #[cfg(not(linux))]
@@ -21,15 +23,13 @@ use polling::PollMode;
 use io_uring::{IoUring, Probe};
 use tokio::sync::oneshot;
 
-#[cfg(not(linux))]
 use crate::op;
 use crate::op_registration::OpRegistration;
+
 #[cfg(linux)]
 use crate::op_registration::OpRegistrationStatus;
 
-pub(crate) struct Driver(Arc<DriverInner>);
-
-struct DriverInner {
+pub(crate) struct Driver {
   #[cfg(linux)]
   inner: IoUring,
 
@@ -47,7 +47,7 @@ struct DriverInner {
   wakers: Mutex<HashMap<u64, OpRegistration>>,
   // Shared shutdown state and background thread handle
   shutting_down: Mutex<Option<oneshot::Sender<()>>>,
-  background_handle: Mutex<Option<JoinHandle<()>>>,
+  background_handle: Mutex<Option<thread::JoinHandle<()>>>,
 }
 
 impl Driver {
@@ -59,83 +59,99 @@ impl Driver {
   pub(crate) fn get() -> &'static Driver {
     static DRIVER: OnceLock<Driver> = OnceLock::new();
 
-    DRIVER.get_or_init(|| {
-      #[cfg(linux)]
-      let (io_uring, probe) = {
-        let io_uring = IoUring::new(256).unwrap();
-        let mut probe = Probe::new();
-        io_uring.submitter().register_probe(&mut probe).unwrap();
-        (io_uring, probe)
-      };
-
-      let driver = Driver(Arc::new(DriverInner {
-        #[cfg(linux)]
-        inner: io_uring,
-
-        #[cfg(linux)]
-        probe,
-
-        #[cfg(linux)]
-        submission_guard: Mutex::new(()),
-        #[cfg(linux)]
-        has_done_work: AtomicBool::new(false),
-
-        #[cfg(not(linux))]
-        poller: polling::Poller::new().unwrap(),
-
-        wakers: Mutex::new(HashMap::default()),
-        shutting_down: Mutex::new(None),
-        background_handle: Mutex::new(None),
-      }));
-
-      driver.background();
-
-      driver
-    })
-  }
-
-  pub(crate) async fn shutdown() {
-    static DONE_BEFORE: OnceLock<()> = OnceLock::new();
-    if DONE_BEFORE.get().is_some() {
-      #[cfg(feature = "tracing")]
-      tracing::warn!("already shut down, returning");
-      return;
+    if let Some(driver) = DRIVER.get() {
+      return driver;
     }
 
-    let driver = Driver::get();
-    let (sender, receiver) = oneshot::channel();
+    #[cfg(linux)]
+    let (io_uring, probe) = {
+      let io_uring = IoUring::new(256).unwrap();
+      let mut probe = Probe::new();
+      io_uring.submitter().register_probe(&mut probe).unwrap();
+      (io_uring, probe)
+    };
 
-    let mut _lock = driver.0.shutting_down.lock();
-    assert!(_lock.replace(sender).is_none());
+    let driver = Driver {
+      #[cfg(linux)]
+      inner: io_uring,
+
+      #[cfg(linux)]
+      probe,
+
+      #[cfg(linux)]
+      submission_guard: Mutex::new(()),
+      #[cfg(linux)]
+      has_done_work: AtomicBool::new(false),
+
+      #[cfg(not(linux))]
+      poller: polling::Poller::new().unwrap(),
+
+      wakers: Mutex::new(HashMap::with_capacity(256)),
+      shutting_down: Mutex::new(None),
+      background_handle: Mutex::new(None),
+    };
+
+    if DRIVER.set(driver).is_err() {
+      DRIVER.get().unwrap()
+    } else {
+      let driver = DRIVER.get().unwrap();
+      let (sender, receiver) = oneshot::channel();
+      #[cfg(feature = "tracing")]
+      tracing::debug!("Driver::get: starting background thread");
+      let handle = driver.background(receiver);
+      *driver.background_handle.lock() = Some(handle);
+
+      // Verify background thread handle was set
+      {
+        let handle_lock = driver.background_handle.lock();
+        assert!(
+          handle_lock.is_some(),
+          "Driver::get: background thread handle was not set after background() call"
+        );
+      }
+
+      #[cfg(feature = "tracing")]
+      tracing::debug!(
+        "Driver::get: background thread started, setting shutdown sender"
+      );
+      *driver.shutting_down.lock() = Some(sender);
+      driver
+    }
+  }
+
+  pub(crate) fn shutdown() {
+    let driver = Driver::get();
+
+    let mut _lock = driver.shutting_down.lock();
+    let sender = _lock.take().expect("cannot find sender");
     drop(_lock);
 
     #[cfg(not(linux))]
     {
       // Wake the poller so it can observe the shutdown flag
-      let _ = driver.0.poller.notify().unwrap();
+      let _ = driver.poller.notify().unwrap();
     };
     #[cfg(linux)]
     {
       // Submit a NOP to wake submit_and_wait
       unsafe {
-        let _g = driver.0.submission_guard.lock();
-        let mut sub = driver.0.inner.submission_shared();
+        let _g = driver.submission_guard.lock();
+        let mut sub = driver.inner.submission_shared();
         let entry = io_uring::opcode::Nop::new().build().user_data(0);
         let _ = sub.push(&entry);
         sub.sync();
         drop(sub);
       }
-      let _ = driver.0.inner.submit();
+      let _ = driver.inner.submit();
     };
 
-    let _ = receiver.await.unwrap();
+    let _ = sender.send(()).unwrap();
 
-    let mut _lock = driver.0.background_handle.lock();
-
+    let mut _lock = driver.background_handle.lock();
     let handle = _lock.take().unwrap();
+    drop(_lock);
+    thread::yield_now();
     let _ = handle.join();
-
-    let _ = DONE_BEFORE.set(());
   }
 }
 
@@ -150,7 +166,7 @@ pub(crate) enum CheckRegistrationResult<V> {
 #[cfg(linux)]
 impl Driver {
   pub(crate) fn detach(&self, id: u64) -> Option<()> {
-    let mut _lock = Driver::get().0.wakers.lock();
+    let mut _lock = Driver::get().wakers.lock();
 
     let thing = _lock.get_mut(&id)?;
     thing.status = OpRegistrationStatus::Cancelling;
@@ -158,29 +174,32 @@ impl Driver {
     Some(())
   }
 
-  pub fn background(&self) {
+  pub fn background(&'static self) {
     // SAFETY: completion_shared is only accessed here so it's a singlethreaded access, hence
     // guaranteed only to have one completion queue.
-    let driver = self.0.clone();
     let handle = utils::create_worker(move || {
       loop {
         use io_uring::cqueue::Entry;
 
-        if driver.shutting_down.load(Ordering::Acquire) {
-          break;
+        {
+          let _lock = self.shutting_down.lock();
+          if _lock.is_some() {
+            break;
+          }
         }
-        driver.inner.submit_and_wait(1).unwrap();
+
+        self.inner.submit_and_wait(1).unwrap();
 
         let entries: Vec<Entry> =
             // SAFETY: The only thread that is concerned with completion queue.
-            unsafe { driver.inner.completion_shared() }.collect();
+            unsafe { self.inner.completion_shared() }.collect();
 
         for entry in entries {
           use std::mem;
 
           let operation_id = entry.user_data();
 
-          let mut wakers = driver.wakers.lock();
+          let mut wakers = self.wakers.lock();
 
           // If the operation id is not registered (e.g., wake-up NOP), skip.
           let Some(op_registration) = wakers.get_mut(&operation_id) else {
@@ -209,18 +228,18 @@ impl Driver {
             }
           };
         }
-        unsafe { driver.inner.completion_shared() }.sync();
+        unsafe { self.inner.completion_shared() }.sync();
       }
     });
 
-    *self.0.background_handle.lock() = Some(handle);
+    *self.background_handle.lock() = Some(handle);
   }
   pub(crate) fn submit<T>(op: T) -> OperationProgress<T>
   where
     T: op::Operation,
   {
     let driver = Self::get();
-    if T::entry_supported(&driver.0.probe) {
+    if T::entry_supported(&driver.probe) {
       let operation_id = driver.push::<T>(op);
       OperationProgress::<T>::new_uring(operation_id)
     } else {
@@ -231,13 +250,18 @@ impl Driver {
     let operation_id = Self::next_id();
     let entry = op.create_entry().user_data(operation_id);
 
-    let mut _lock = self.0.wakers.lock();
+    // Insert the operation into wakers first
+    {
+      let mut _lock = self.wakers.lock();
+      _lock.insert(operation_id, OpRegistration::new(op));
+    }
 
+    // Then submit to io_uring
     // SAFETY: because of references rules, a "fake" lock has to be implemented here, but because
     // of it, this is safe.
-    let _g = self.0.submission_guard.lock();
+    let _g = self.submission_guard.lock();
     unsafe {
-      let mut sub = self.0.inner.submission_shared();
+      let mut sub = self.inner.submission_shared();
       // FIXME
       sub.push(&entry).expect("unwrapping for now");
       sub.sync();
@@ -245,19 +269,21 @@ impl Driver {
     }
     drop(_g);
 
-    _lock.insert(operation_id, OpRegistration::new(op));
-    self.0.inner.submit().unwrap();
-    self.0.has_done_work.store(true, Ordering::SeqCst);
+    self.inner.submit().unwrap();
+    self.has_done_work.store(true, Ordering::SeqCst);
 
     operation_id
   }
 
-  pub(crate) fn check_registration<T: op::Operation>(
+  pub(crate) fn check_registration<T>(
     &self,
     id: u64,
     waker: Waker,
-  ) -> Option<CheckRegistrationResult<T::Result>> {
-    let mut _lock = self.0.wakers.lock();
+  ) -> Option<CheckRegistrationResult<T::Result>>
+  where
+    T: op::Operation,
+  {
+    let mut _lock = self.wakers.lock();
     let op_registration = _lock.get_mut(&id)?;
 
     Some(match op_registration.status {
@@ -297,25 +323,54 @@ impl Driver {
   {
     if T::EVENT_TYPE.is_some() {
       let fd = op.fd().expect("operation has event_type but no fd");
-      OperationProgress::<T>::new(Driver::get().reserve_driver_entry(fd), op)
+      let operation_id = Driver::get().reserve_driver_entry(fd);
+      #[cfg(feature = "tracing")]
+      tracing::debug!(
+        operation_id = operation_id,
+        fd = fd,
+        operation = std::any::type_name::<T>(),
+        "submit: created polling operation"
+      );
+      OperationProgress::<T>::new(operation_id, op)
     } else {
+      #[cfg(feature = "tracing")]
+      tracing::debug!(
+        operation = std::any::type_name::<T>(),
+        "submit: created blocking operation"
+      );
       OperationProgress::<T>::new_blocking(op)
     }
   }
 
   /// Returns None operation should be run blocking.
   fn reserve_driver_entry(&self, fd: RawFd) -> u64 {
+    assert!(fd > 0, "reserve_driver_entry: invalid fd {}", fd);
+
     let operation_id = Self::next_id();
 
-    let mut _lock = self.0.wakers.lock();
+    let mut _lock = self.wakers.lock();
 
     assert!(
       !_lock.contains_key(&operation_id),
-      "operation_id {} collision - already exists!",
+      "reserve_driver_entry: operation_id {} collision - already exists! (ID generation bug)",
       operation_id
     );
 
     _lock.insert(operation_id, OpRegistration::new(fd));
+
+    // Verify insertion
+    assert!(
+      _lock.contains_key(&operation_id),
+      "reserve_driver_entry: failed to insert operation_id {}",
+      operation_id
+    );
+
+    #[cfg(feature = "tracing")]
+    tracing::debug!(
+      operation_id = operation_id,
+      fd = fd,
+      "reserved driver entry"
+    );
 
     operation_id
   }
@@ -327,18 +382,91 @@ impl Driver {
     waker: Waker,
     fd: RawFd,
   ) -> Option<io::Result<()>> {
-    let mut _lock = self.0.wakers.lock();
-    let registration = _lock
-      .get_mut(&key)
-      .expect("tried to register poll on operation which doesn't exist");
+    #[cfg(feature = "tracing")]
+    tracing::debug!(operation_id = key, fd = fd, "register_repoll: starting");
 
-    assert!(fd == registration.fd, "provided fd and registration.fd not same");
+    // Validate inputs
+    assert!(fd > 0, "register_repoll: invalid fd {}", fd);
 
-    registration.set_waker(waker);
+    // Set the waker first, then release the lock before doing poller operations
+    {
+      let mut _lock = self.wakers.lock();
+      #[cfg(feature = "tracing")]
+      tracing::trace!(
+        operation_id = key,
+        "register_repoll: acquired wakers lock"
+      );
 
+      let registration = _lock
+        .get_mut(&key)
+        .unwrap_or_else(|| {
+          panic!(
+            "register_repoll: operation_id {} does not exist in wakers map (race condition or double detach?)",
+            key
+          );
+        });
+
+      assert!(
+        fd == registration.fd,
+        "register_repoll: fd mismatch - provided {}, registration has {}",
+        fd,
+        registration.fd
+      );
+
+      // Check if a waker already exists. If it does, we update it with the new one.
+      // This can happen legitimately if:
+      // 1. The future is polled spuriously by the executor before the background thread processes the event
+      // 2. The context/waker has changed between polls
+      // The background thread will take the waker when it processes the event, so we need to ensure
+      // the most recent waker is always set.
+      let had_waker = registration.has_waker();
+
+      #[cfg(feature = "tracing")]
+      tracing::trace!(
+        operation_id = key,
+        had_waker = had_waker,
+        "register_repoll: setting waker (replacing if already set)"
+      );
+
+      registration.set_waker(waker);
+
+      // Verify waker was set
+      assert!(
+        registration.has_waker(),
+        "register_repoll: waker was not set after set_waker() call"
+      );
+    };
+
+    #[cfg(feature = "tracing")]
+    tracing::trace!(
+      operation_id = key,
+      "register_repoll: released wakers lock, modifying poller"
+    );
+
+    // Verify background thread is running before modifying poller
+    {
+      let handle_lock = self.background_handle.lock();
+      assert!(
+        handle_lock.is_some(),
+        "register_repoll: background thread not running (handle is None) - cannot register poll"
+      );
+    }
+
+    // Now do poller operations without holding the wakers lock.
+    // CRITICAL: We must hold the wakers lock while modifying poller to prevent
+    // the background thread from processing events before the waker is set.
+    // Actually, we already set the waker above, so the background thread can
+    // safely process events. But we need to ensure the poller modification
+    // happens atomically with respect to event processing.
+    //
+    // The issue is: if we modify poller after setting waker, there's a window
+    // where the background thread could process an event but the poller isn't
+    // updated yet. However, with Oneshot mode, once an event fires, the fd
+    // is removed, so we need to re-add it. This is fine.
     use std::os::fd::BorrowedFd;
+
     let result = unsafe {
-      self.0.poller.modify_with_mode(
+      self.poller.modify_with_mode(
         &BorrowedFd::borrow_raw(fd),
         event,
         PollMode::Oneshot,
@@ -346,105 +474,340 @@ impl Driver {
     };
     if let Err(e) = result {
       if e.kind() == io::ErrorKind::NotFound {
-        // Fd not registered yet, add it
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+          operation_id = key,
+          fd = fd,
+          "register_repoll: fd not in poller, adding"
+        );
+        // Fd not registered yet (or was removed by Oneshot mode after event fired), add it
         unsafe {
-          self.0.poller.add_with_mode(
+          self.poller.add_with_mode(
             &BorrowedFd::borrow_raw(fd),
             event,
             PollMode::Oneshot,
           )
         }
-        .expect("failed to add fd to poller");
+        .unwrap_or_else(|e| {
+          panic!(
+            "register_repoll: failed to add fd {} to poller for operation_id {}: {:?}",
+            fd, key, e
+          );
+        });
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+          operation_id = key,
+          fd = fd,
+          "register_repoll: added to poller"
+        );
       } else {
+        #[cfg(feature = "tracing")]
+        tracing::error!(operation_id = key, fd = fd, error = ?e, "register_repoll: modify failed with error");
         // Some other error with modify
         return Some(Err(e));
       }
+    } else {
+      #[cfg(feature = "tracing")]
+      tracing::debug!(
+        operation_id = key,
+        fd = fd,
+        "register_repoll: modified poller successfully"
+      );
     }
 
-    // Wake the background thread so it can monitor this new event
-    let _ = self.0.poller.notify();
+    #[cfg(feature = "tracing")]
+    tracing::debug!(operation_id = key, fd = fd, "register_repoll: completed");
+
+    thread::yield_now();
 
     Some(Ok(()))
   }
 
   pub(crate) fn detach(&self, key: u64) {
-    let mut _lock = self.0.wakers.lock();
-    if let Some(reg) = _lock.remove(&key) {
+    #[cfg(feature = "tracing")]
+    tracing::debug!(operation_id = key, "detach: starting");
+
+    let reg = {
+      let mut _lock = self.wakers.lock();
+      #[cfg(feature = "tracing")]
+      tracing::trace!(operation_id = key, "detach: acquired wakers lock");
+
+      // Check if entry exists before removing
+      let entry_existed = _lock.contains_key(&key);
+      let reg = _lock.remove(&key);
+
+      // If we expected an entry but it's gone, this might indicate a double detach
+      // However, it's also possible the background thread already processed it.
+      // We'll be lenient here but log it.
+      #[cfg(feature = "tracing")]
+      if reg.is_some() {
+        tracing::trace!(
+          operation_id = key,
+          "detach: removed entry from wakers"
+        );
+      } else if entry_existed {
+        tracing::warn!(
+          operation_id = key,
+          "detach: entry existed but was already removed (possible race condition)"
+        );
+      } else {
+        tracing::trace!(
+          operation_id = key,
+          "detach: entry not found in wakers"
+        );
+      }
+      reg
+    };
+
+    // Delete from poller without holding the wakers lock
+    if let Some(mut reg) = reg {
+      assert!(
+        reg.fd > 0,
+        "detach: invalid fd {} in registration for operation_id {}",
+        reg.fd,
+        key
+      );
+
       if reg.has_waker() {
-        let _ = unsafe {
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+          operation_id = key,
+          fd = reg.fd,
+          "detach: entry has waker, deleting from poller"
+        );
+        let delete_result = unsafe {
           use std::os::fd::BorrowedFd;
 
           // Remove from poller to prevent stale events
-          self.0.poller.delete(&BorrowedFd::borrow_raw(reg.fd)).unwrap();
+          self.poller.delete(&BorrowedFd::borrow_raw(reg.fd))
         };
+
+        // If delete fails, it might mean the fd was already removed (e.g., by Oneshot mode)
+        // This is OK, but we should log it
+        if let Err(e) = delete_result {
+          #[cfg(feature = "tracing")]
+          tracing::warn!(
+            operation_id = key,
+            fd = reg.fd,
+            error = ?e,
+            "detach: failed to delete from poller (may already be removed by Oneshot mode)"
+          );
+          // Don't panic - this can happen legitimately with Oneshot mode
+        } else {
+          #[cfg(feature = "tracing")]
+          tracing::debug!(
+            operation_id = key,
+            fd = reg.fd,
+            "detach: deleted from poller"
+          );
+        }
+
+        if let Some(waker) = reg.waker() {
+          #[cfg(feature = "tracing")]
+          tracing::trace!(operation_id = key, "detach: waking waker");
+          waker.wake();
+        } else {
+          panic!(
+            "detach: entry.has_waker() returned true but waker() returned None for operation_id {}",
+            key
+          );
+        }
+      } else {
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+          operation_id = key,
+          fd = reg.fd,
+          "detach: entry has no waker, skipping poller delete"
+        );
       }
     }
     // If registration doesn't exist, it was likely already processed and removed by background thread
+    #[cfg(feature = "tracing")]
+    tracing::debug!(operation_id = key, "detach: completed");
   }
 
-  pub fn background(&self) {
-    let driver = self.0.clone();
-    let handle = utils::create_worker(move || {
+  pub fn background(
+    &'static self,
+    mut sender: oneshot::Receiver<()>,
+  ) -> crate::loom::thread::JoinHandle<()> {
+    utils::create_worker(move || {
       #[cfg(feature = "tracing")]
-      tracing::trace!("launching bg task");
+      tracing::info!("background thread: started");
       let mut events = polling::Events::new();
       loop {
-        let mut _lock = driver.shutting_down.lock();
-
-        if let Some(sender) = _lock.take() {
-          sender.send(()).unwrap();
-          break;
-        };
-        drop(_lock);
+        match sender.try_recv() {
+          Ok(()) => {
+            #[cfg(feature = "tracing")]
+            tracing::info!("background thread: shutdown signal received");
+            break;
+          }
+          Err(err) => match err {
+            oneshot::error::TryRecvError::Empty => {
+              #[cfg(feature = "tracing")]
+              tracing::info!("background thread, haven't seen");
+            }
+            oneshot::error::TryRecvError::Closed => {
+              #[cfg(feature = "tracing")]
+              tracing::info!("background thread: sender closed");
+              break;
+            }
+          },
+        }
 
         events.clear();
 
-        // Under shuttle, use a small timeout to avoid busy-spinning while still
-        // allowing shuttle to explore different schedules
-        let wait_result = driver.poller.wait(&mut events, None);
+        #[cfg(feature = "tracing")]
+        tracing::trace!("background thread: waiting on poller");
 
-        // Ignore timeout errors, just check shutdown flag
-        if wait_result.is_err() {
-          continue;
+        #[cfg(loom)]
+        let timeout = Some(std::time::Duration::from_millis(100));
+
+        #[cfg(not(loom))]
+        let timeout = None;
+
+        let wait_result = self.poller.wait(&mut events, timeout);
+
+        thread::yield_now();
+
+        if let Err(e) = wait_result {
+          #[cfg(feature = "tracing")]
+          tracing::error!(error = ?e, "background thread: poller.wait() failed");
+          panic!(
+            "background thread: poller.wait() failed with error: {:#?}",
+            e
+          );
         }
 
-        // Having zero events is normal (timeout or no I/O ready), just loop again
+        // Validate events - check for invalid operation IDs
         for event in events.iter() {
-          let mut _lock = driver.wakers.lock();
-          let mut entry = match _lock.remove(&(event.key as u64)) {
-            Some(entry) => {
-              drop(_lock);
-              entry
-            }
-            None => {
-              drop(_lock);
-              // Notification events from poller.notify() don't have waker entries, skip them
-              #[cfg(feature = "tracing")]
-              tracing::debug!(key = ?event.key, "skipping event with no waker (likely notification)");
-              continue;
+          let operation_id = event.key as u64;
+        }
+
+        let event_count = events.len();
+        #[cfg(feature = "tracing")]
+        if event_count > 0 {
+          tracing::debug!(
+            event_count = event_count,
+            "background thread: received events"
+          );
+        }
+
+        for event in events.iter() {
+          let operation_id = event.key as u64;
+          #[cfg(feature = "tracing")]
+          tracing::debug!(
+            operation_id = operation_id,
+            "background thread: processing event"
+          );
+
+          let waker = {
+            #[cfg(feature = "tracing")]
+            tracing::trace!(
+              operation_id = operation_id,
+              "background thread: acquiring wakers lock"
+            );
+            let mut _lock = self.wakers.lock();
+            #[cfg(feature = "tracing")]
+            tracing::trace!(
+              operation_id = operation_id,
+              "background thread: acquired wakers lock"
+            );
+
+            let entry = match _lock.get_mut(&operation_id) {
+              Some(entry) => {
+                #[cfg(feature = "tracing")]
+                tracing::trace!(
+                  operation_id = operation_id,
+                  fd = entry.fd,
+                  "background thread: found entry"
+                );
+
+                // Validate entry state
+                assert!(
+                  entry.fd > 0,
+                  "background thread: invalid fd {} in entry for operation_id {}",
+                  entry.fd,
+                  operation_id
+                );
+
+                entry
+              }
+              None => {
+                // Entry was removed (likely by detach()). This is OK - the operation completed
+                // or was cancelled. Skip this event.
+                #[cfg(feature = "tracing")]
+                tracing::debug!(
+                  operation_id = operation_id,
+                  "background thread: entry not found (likely detached), skipping"
+                );
+                continue;
+              }
+            };
+
+            // Take the waker but keep the entry in the map.
+            // The entry will be updated by register_repoll() if the operation
+            // needs to continue, or removed by detach() if it completes.
+            match entry.waker() {
+              Some(waker) => {
+                #[cfg(feature = "tracing")]
+                tracing::debug!(
+                  operation_id = operation_id,
+                  "background thread: took waker from entry"
+                );
+                waker
+              }
+              None => {
+                // Entry exists but no waker set yet. This can happen if:
+                // 1. The event fired before register_repoll() was called (race condition)
+                // 2. The waker was already taken by a previous event processing
+                //
+                // In case 1: The fd is ready, so the next poll will succeed. We should
+                // re-register the fd in the poller so when register_repoll() is called,
+                // it will immediately get the ready state.
+                //
+                // Actually, with Oneshot mode, the fd is automatically removed after
+                // an event fires. So we need to re-add it so the next register_repoll()
+                // will see it's ready.
+                //
+                // But wait - if the event already fired, the fd is ready NOW. The next
+                // poll will succeed immediately. We don't need to do anything special.
+                // Just skip this event - the operation will succeed on its next poll.
+                #[cfg(feature = "tracing")]
+                tracing::debug!(
+                  operation_id = operation_id,
+                  "background thread: entry has no waker (event fired before register_repoll or waker already taken). FD is ready, next poll will succeed."
+                );
+                continue;
+              }
             }
           };
 
-          entry.wake();
+          #[cfg(feature = "tracing")]
+          tracing::trace!(
+            operation_id = operation_id,
+            "background thread: released wakers lock, waking waker"
+          );
 
-          let mut _lock = driver.wakers.lock();
-          unsafe {
-            use std::os::fd::BorrowedFd;
-            // // Delete the fd from the poller after waking, so it can be re-added on next poll
-            let _ =
-              driver.poller.delete(&BorrowedFd::borrow_raw(entry.fd)).unwrap();
-          }
-          _lock.insert(event.key as u64, entry);
+          // Wake the waker without holding the lock.
+          // Note: With PollMode::Oneshot, the poller automatically removes the fd
+          // after an event fires, so we don't need to manually delete it.
+          waker.wake();
+          #[cfg(feature = "tracing")]
+          tracing::debug!(
+            operation_id = operation_id,
+            "background thread: waker woken"
+          );
         }
       }
-    });
-
-    *self.0.background_handle.lock() = Some(handle);
+      #[cfg(feature = "tracing")]
+      tracing::info!("background thread: exiting");
+    })
   }
 }
 
 mod utils {
   use crate::loom::thread;
+
   pub fn create_worker<F, T>(handle: F) -> thread::JoinHandle<T>
   where
     F: FnOnce() -> T,
@@ -453,6 +816,7 @@ mod utils {
   {
     thread::Builder::new()
       .name("lio".into())
+      .stack_size(64 * 1024)
       .spawn(handle)
       .expect("failed to launch the worker thread")
   }

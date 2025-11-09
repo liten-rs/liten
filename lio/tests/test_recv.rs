@@ -1,4 +1,4 @@
-use lio::loom::test_utils::{block_on, model, sleep};
+use lio::loom::test_utils::{self, block_on, model, sleep};
 use lio::{accept, bind, connect, listen, recv, send, socket};
 use socket2::{Domain, Protocol, SockAddr, Type};
 use std::mem::MaybeUninit;
@@ -33,18 +33,7 @@ fn test_recv_basic() {
       listen(server_sock, 128).await.expect("Failed to listen");
 
       let server_fut = async move {
-        let mut client_addr_storage =
-          MaybeUninit::<socket2::SockAddrStorage>::uninit();
-        let mut client_addr_len =
-          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-
-        let client_fd = accept(
-          server_sock,
-          &mut client_addr_storage as *mut _,
-          &mut client_addr_len,
-        )
-        .await
-        .expect("Failed to accept");
+        let client_fd = accept(server_sock).await.expect("Failed to accept");
 
         let buf = vec![0u8; 1024];
         let (bytes_received, received_buf) = recv(client_fd, buf, None).await;
@@ -120,18 +109,7 @@ fn test_recv_large_data() {
         (0..1024 * 1024).map(|i| (i % 256) as u8).collect();
 
       let server_fut = async move {
-        let mut client_addr_storage =
-          MaybeUninit::<socket2::SockAddrStorage>::uninit();
-        let mut client_addr_len =
-          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-
-        let client_fd = accept(
-          server_sock,
-          &mut client_addr_storage as *mut _,
-          &mut client_addr_len,
-        )
-        .await
-        .expect("Failed to accept");
+        let client_fd = accept(server_sock).await.expect("Failed to accept");
 
         // Receive large data in chunks
         let mut total_received = Vec::new();
@@ -198,81 +176,73 @@ fn test_recv_large_data() {
 
 #[test]
 fn test_recv_partial() {
-  block_on(async {
-    let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-      .await
-      .expect("Failed to create server socket");
-
-    let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    bind(server_sock, SockAddr::from(addr)).await.expect("Failed to bind");
-
-    let bound_addr = unsafe {
-      let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
-      let mut addr_len =
-        std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-      libc::getsockname(
-        server_sock,
-        addr_storage.as_mut_ptr() as *mut libc::sockaddr,
-        &mut addr_len,
-      );
-      let sockaddr_in = addr_storage.assume_init();
-      let port = u16::from_be(sockaddr_in.sin_port);
-      format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap()
-    };
-
-    listen(server_sock, 128).await.expect("Failed to listen");
-
-    let server_fut = async move {
-      let mut client_addr_storage =
-        MaybeUninit::<socket2::SockAddrStorage>::uninit();
-      let mut client_addr_len =
-        std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-
-      let client_fd = accept(
-        server_sock,
-        &mut client_addr_storage as *mut _,
-        &mut client_addr_len,
-      )
-      .await
-      .expect("Failed to accept");
-
-      // Receive with small buffer
-      let buf = vec![0u8; 5];
-      let (bytes_received, received_buf) = recv(client_fd, buf, None).await;
-      let bytes_received = bytes_received.expect("Failed to receive");
-
-      (bytes_received, received_buf, client_fd, server_sock)
-    };
-
-    let client_fut = async {
-      sleep(Duration::from_millis(10));
-      let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+  test_utils::model(|| {
+    block_on(async {
+      let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
-        .expect("Failed to create client socket");
-      connect(client_sock, SockAddr::from(bound_addr))
-        .await
-        .expect("Failed to connect");
+        .expect("Failed to create server socket");
 
-      let send_data = b"Hello, World!".to_vec();
-      let (bytes_sent, _) = send(client_sock, send_data.clone(), None).await;
-      bytes_sent.expect("Failed to send");
-      client_sock
-    };
+      let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+      bind(server_sock, SockAddr::from(addr)).await.expect("Failed to bind");
 
-    let (
-      (bytes_received, received_buf, server_client_fd, server_sock),
-      client_sock,
-    ) = tokio::join!(server_fut, client_fut);
+      let bound_addr = unsafe {
+        let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
+        let mut addr_len =
+          std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+        libc::getsockname(
+          server_sock,
+          addr_storage.as_mut_ptr() as *mut libc::sockaddr,
+          &mut addr_len,
+        );
+        let sockaddr_in = addr_storage.assume_init();
+        let port = u16::from_be(sockaddr_in.sin_port);
+        format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap()
+      };
 
-    // Should only receive 5 bytes
-    assert_eq!(bytes_received, 5);
-    assert_eq!(&received_buf[..5], b"Hello");
+      listen(server_sock, 128).await.expect("Failed to listen");
 
-    unsafe {
-      libc::close(client_sock);
-      libc::close(server_client_fd);
-      libc::close(server_sock);
-    }
+      let server_fut = async move {
+        let client_fd = accept(server_sock).await.expect("Failed to accept");
+
+        // Receive with small buffer
+        let buf = vec![0u8; 5];
+        let (bytes_received, received_buf) = recv(client_fd, buf, None).await;
+        let bytes_received = bytes_received.expect("Failed to receive");
+
+        (bytes_received, received_buf, client_fd, server_sock)
+      };
+
+      let client_fut = async {
+        sleep(Duration::from_millis(10));
+        let client_sock =
+          socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+            .await
+            .expect("Failed to create client socket");
+        connect(client_sock, SockAddr::from(bound_addr))
+          .await
+          .expect("Failed to connect");
+
+        let send_data = b"Hello, World!".to_vec();
+        let (bytes_sent, _) = send(client_sock, send_data.clone(), None).await;
+        bytes_sent.expect("Failed to send");
+        client_sock
+      };
+
+      let (
+        (bytes_received, received_buf, server_client_fd, server_sock),
+        client_sock,
+      ) = tokio::join!(server_fut, client_fut);
+
+      // Should only receive 5 bytes
+      assert_eq!(bytes_received, 5);
+      assert_eq!(&received_buf[..5], b"Hello");
+
+      unsafe {
+        libc::close(client_sock);
+        libc::close(server_client_fd);
+        libc::close(server_sock);
+      }
+    })
   })
 }
 
@@ -304,18 +274,7 @@ fn test_recv_multiple() {
       listen(server_sock, 128).await.expect("Failed to listen");
 
       let server_fut = async move {
-        let mut client_addr_storage =
-          MaybeUninit::<socket2::SockAddrStorage>::uninit();
-        let mut client_addr_len =
-          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-
-        let client_fd = accept(
-          server_sock,
-          &mut client_addr_storage as *mut _,
-          &mut client_addr_len,
-        )
-        .await
-        .expect("Failed to accept");
+        let client_fd = accept(server_sock).await.expect("Failed to accept");
 
         // Receive until EOF
         let mut all_data = Vec::new();
@@ -407,18 +366,7 @@ fn test_recv_with_flags() {
       let send_data = b"Data with flags".to_vec();
 
       let server_fut = async move {
-        let mut client_addr_storage =
-          MaybeUninit::<socket2::SockAddrStorage>::uninit();
-        let mut client_addr_len =
-          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-
-        let client_fd = accept(
-          server_sock,
-          &mut client_addr_storage as *mut _,
-          &mut client_addr_len,
-        )
-        .await
-        .expect("Failed to accept");
+        let client_fd = accept(server_sock).await.expect("Failed to accept");
 
         let buf = vec![0u8; 1024];
         let (bytes_received, received_buf) =
@@ -492,18 +440,7 @@ fn test_recv_on_closed() {
       listen(server_sock, 128).await.expect("Failed to listen");
 
       let server_fut = async move {
-        let mut client_addr_storage =
-          MaybeUninit::<socket2::SockAddrStorage>::uninit();
-        let mut client_addr_len =
-          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-
-        let client_fd = accept(
-          server_sock,
-          &mut client_addr_storage as *mut _,
-          &mut client_addr_len,
-        )
-        .await
-        .expect("Failed to accept");
+        let client_fd = accept(server_sock).await.expect("Failed to accept");
 
         (client_fd, server_sock)
       };

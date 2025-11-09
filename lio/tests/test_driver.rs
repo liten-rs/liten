@@ -1,19 +1,9 @@
-use std::time::Duration;
+use lio::loom::test_utils::model;
 
-use lio::loom::test_utils::{block_on, model};
-use tracing_subscriber::EnvFilter;
-
-#[tokio::test]
-async fn test_driver() {
+#[test]
+fn test_driver() {
   model(|| {
-    block_on(async {
-      tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
-
-      lio::init();
-      std::thread::sleep(Duration::from_millis(100));
-      lio::shutdown().await;
-    })
+    lio::init();
+    lio::shutdown();
   });
 }

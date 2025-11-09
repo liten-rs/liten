@@ -114,8 +114,6 @@
 //! This project is licensed under the MIT License - see the LICENSE file for details.
 
 use std::{ffi::CString, mem::MaybeUninit, os::fd::RawFd};
-#[cfg(linux)]
-use std::{ffi::CString, mem::MaybeUninit, os::fd::RawFd};
 
 /// Result type for operations that return both a result and a buffer.
 ///
@@ -135,7 +133,7 @@ mod op_registration;
 
 pub use op_progress::OperationProgress;
 
-use socket2::{SockAddr, SockAddrStorage};
+use socket2::SockAddr;
 
 use crate::driver::Driver;
 
@@ -337,7 +335,7 @@ impl_op!(
   ///     Ok(())
   /// }
   /// ```
-  Accept, fn accept(fd: RawFd, addr: *mut MaybeUninit<SockAddrStorage>, len: *mut libc::socklen_t)
+  Accept, fn accept(fd: RawFd)
 );
 
 impl_op!(
@@ -566,7 +564,7 @@ impl_op!(
 ///
 /// After calling this, further I/O operations in this process are unsupported.
 /// Calling shutdown more than once will panic.
-pub fn shutdown() -> impl Future<Output = ()> {
+pub fn shutdown() {
   Driver::shutdown()
 }
 

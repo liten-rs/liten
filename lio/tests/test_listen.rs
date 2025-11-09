@@ -1,7 +1,6 @@
 use lio::loom::test_utils::{block_on, model};
 use lio::{bind, listen, socket};
 use socket2::{Domain, Protocol, SockAddr, Type};
-use std::io::Error;
 use std::net::SocketAddr;
 
 #[cfg(linux)]

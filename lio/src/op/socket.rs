@@ -1,5 +1,5 @@
 use std::io;
-#[cfg(not(linux))]
+
 use std::os::fd::RawFd;
 
 use crate::op::EventType;
@@ -118,6 +118,7 @@ impl Operation for Socket {
     .build()
   }
 
+  #[cfg(not(linux))]
   const EVENT_TYPE: Option<EventType> = None;
 
   #[cfg(not(linux))]
@@ -142,7 +143,7 @@ impl Operation for Socket {
     let fd = {
       let fd = syscall!(socket(
         self.domain.into(),
-        self.ty.into() | libc::SOCK_CLOEXEC,
+        libc::c_int::from(self.ty) | libc::SOCK_CLOEXEC,
         self.proto.unwrap_or(0.into()).into()
       ))?;
 

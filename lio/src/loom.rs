@@ -3,13 +3,17 @@ pub mod sync {
   #[cfg(loom)]
   pub use loom::sync::Arc;
 
-  #[cfg(loom)]
+  #[cfg(not(loom))]
+  pub use std::sync::Arc;
+
   pub use std::sync::OnceLock;
 
   #[cfg(not(loom))]
-  pub use std::sync::{Arc, OnceLock};
+  pub use std::sync::mpsc;
 
-  // Custom Mutex wrapper that removes poisoning
+  #[cfg(loom)]
+  pub use loom::sync::mpsc;
+
   pub struct Mutex<T> {
     #[cfg(not(loom))]
     inner: parking_lot::Mutex<T>,
@@ -81,12 +85,26 @@ pub mod sync {
   }
 }
 
-// Thread module
+// Cell module for loom-aware Cell
 #[cfg(loom)]
-pub use loom::thread;
+pub use loom::cell::Cell;
 
 #[cfg(not(loom))]
-pub use std::thread;
+pub use std::cell::Cell;
+
+pub mod thread {
+  pub fn yield_now() {
+    #[cfg(loom)]
+    loom::thread::yield_now();
+  }
+
+  #[cfg(loom)]
+  pub use loom::thread::{Builder, JoinHandle, spawn};
+
+  #[cfg(not(loom))]
+  pub use std::thread::{Builder, JoinHandle, spawn};
+}
+// pub use std::thread;
 
 // Test utilities that abstract over different test modes
 pub mod test_utils {
@@ -105,27 +123,22 @@ pub mod test_utils {
   where
     F: Future<Output = O>,
   {
-    #[cfg(not(loom))]
-    {
-      tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(fut)
-    }
-
-    #[cfg(loom)]
-    {
-      loom::future::block_on(fut)
-    }
+    // Always use tokio runtime for proper async execution
+    // Even under loom, we need a real executor for concurrent futures
+    tokio::runtime::Builder::new_current_thread()
+      .enable_all()
+      .thread_stack_size(32 * 1024)
+      .build()
+      .unwrap()
+      .block_on(fut)
   }
 
   // ============================================================================
   // Task spawning abstraction
   // ============================================================================
 
-  #[cfg(test)]
   pub use tokio::task::spawn;
+  use tracing_subscriber::EnvFilter;
 
   // ============================================================================
   // LocalPool abstraction for single-threaded executor
@@ -145,7 +158,8 @@ pub mod test_utils {
     #[cfg(loom)]
     {
       // Loom doesn't support sleep, yield instead
-      loom::thread::yield_now();
+
+      super::thread::yield_now();
     }
   }
 
@@ -165,9 +179,12 @@ pub mod test_utils {
   where
     F: Fn() + Sync + Send + 'static,
   {
+    tracing_subscriber::fmt()
+      .with_env_filter(EnvFilter::from_default_env())
+      .init();
     #[cfg(loom)]
     {
-      loom::model(f);
+      loom::model(f)
     }
 
     #[cfg(not(loom))]

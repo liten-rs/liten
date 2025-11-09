@@ -10,7 +10,6 @@ macro_rules! syscall {
   }};
 }
 use std::io;
-#[cfg(not(linux))]
 use std::os::fd::RawFd;
 
 mod accept;
@@ -65,7 +64,7 @@ pub trait Operation: Sealed {
   }
 
   #[cfg(linux)]
-  fn create_entry(&self) -> io_uring::squeue::entry;
+  fn create_entry(&self) -> io_uring::squeue::Entry;
 
   #[cfg(not(linux))]
   const EVENT_TYPE: Option<EventType>;

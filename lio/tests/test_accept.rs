@@ -9,6 +9,7 @@ use std::time::Duration;
 fn test_accept_basic() {
   model(|| {
     block_on(async {
+      println!("hello");
       // Create and setup server socket
       let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
@@ -37,25 +38,14 @@ fn test_accept_basic() {
 
       // Spawn accept task
       let accept_fut = async move {
-        let mut client_addr_storage =
-          MaybeUninit::<socket2::SockAddrStorage>::uninit();
-        let mut client_addr_len =
-          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-
-        let client_fd = accept(
-          server_sock,
-          &mut client_addr_storage as *mut _,
-          &mut client_addr_len,
-        )
-        .await
-        .expect("Failed to accept");
+        let client_fd = accept(server_sock).await.expect("Failed to accept");
 
         (client_fd, server_sock)
       };
 
       // Give accept time to start
       let client_fut = async {
-        lio::loom::test_utils::sleep(Duration::from_millis(10));
+        // lio::loom::test_utils::sleep(Duration::from_millis(10));
 
         // Connect client
         let client_sock =
@@ -82,6 +72,8 @@ fn test_accept_basic() {
         libc::close(accepted_fd);
         libc::close(server_sock);
       }
+
+      lio::shutdown();
     })
   });
 }
@@ -122,18 +114,7 @@ fn test_accept_multiple() {
       for _ in 0..num_clients {
         // Spawn accept task
         let accept_fut = async move {
-          let mut client_addr_storage =
-            MaybeUninit::<socket2::SockAddrStorage>::uninit();
-          let mut client_addr_len =
-            std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-
-          let client_fd = accept(
-            server_sock,
-            &mut client_addr_storage as *mut _,
-            &mut client_addr_len,
-          )
-          .await
-          .expect("Failed to accept");
+          let client_fd = accept(server_sock).await.expect("Failed to accept");
 
           (client_fd, server_sock)
         };
@@ -174,6 +155,7 @@ fn test_accept_multiple() {
         }
         libc::close(server_sock);
       }
+      lio::shutdown();
     })
   });
 }
@@ -207,25 +189,9 @@ fn test_accept_with_client_info() {
       listen(server_sock, 128).await.expect("Failed to listen");
 
       let accept_fut = async move {
-        let mut client_addr_storage =
-          MaybeUninit::<socket2::SockAddrStorage>::uninit();
-        let mut client_addr_len =
-          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
+        let client_fd = accept(server_sock).await.expect("Failed to accept");
 
-        let client_fd = accept(
-          server_sock,
-          &mut client_addr_storage as *mut _,
-          &mut client_addr_len,
-        )
-        .await
-        .expect("Failed to accept");
-
-        // Get client address info
-        let client_addr = unsafe {
-          SockAddr::new(client_addr_storage.assume_init_read(), client_addr_len)
-        };
-
-        (client_fd, client_addr, server_sock)
+        (client_fd, server_sock)
       };
 
       let client_fut = async {
@@ -243,11 +209,8 @@ fn test_accept_with_client_info() {
         client_sock
       };
 
-      let ((accepted_fd, client_addr, server_sock), client_sock) =
+      let ((accepted_fd, server_sock), client_sock) =
         tokio::join!(accept_fut, client_fut);
-
-      // Verify client address is valid
-      assert!(client_addr.as_socket_ipv4().is_some());
 
       // Cleanup
       unsafe {
@@ -255,6 +218,7 @@ fn test_accept_with_client_info() {
         libc::close(accepted_fd);
         libc::close(server_sock);
       }
+      lio::shutdown();
     })
   })
 }
@@ -288,18 +252,8 @@ fn test_accept_ipv6() {
       listen(server_sock, 128).await.expect("Failed to listen");
 
       let accept_fut = async move {
-        let mut client_addr_storage =
-          MaybeUninit::<socket2::SockAddrStorage>::uninit();
-        let mut client_addr_len =
-          std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-
-        let client_fd = accept(
-          server_sock,
-          &mut client_addr_storage as *mut _,
-          &mut client_addr_len,
-        )
-        .await
-        .expect("Failed to accept IPv6");
+        let client_fd =
+          accept(server_sock).await.expect("Failed to accept IPv6");
 
         (client_fd, server_sock)
       };
@@ -330,6 +284,7 @@ fn test_accept_ipv6() {
         libc::close(accepted_fd);
         libc::close(server_sock);
       }
+      lio::shutdown();
     })
   });
 }
@@ -366,18 +321,7 @@ fn test_accept_concurrent() {
       let accept_fut = async {
         let mut accepted_fds = Vec::new();
         for _ in 0..3 {
-          let mut client_addr_storage =
-            MaybeUninit::<socket2::SockAddrStorage>::uninit();
-          let mut client_addr_len =
-            std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
-
-          let client_fd = accept(
-            server_sock,
-            &mut client_addr_storage as *mut _,
-            &mut client_addr_len,
-          )
-          .await
-          .expect("Failed to accept");
+          let client_fd = accept(server_sock).await.expect("Failed to accept");
 
           accepted_fds.push(client_fd);
         }
@@ -418,6 +362,8 @@ fn test_accept_concurrent() {
         }
         libc::close(server_sock);
       }
+
+      lio::shutdown();
     })
   });
 }

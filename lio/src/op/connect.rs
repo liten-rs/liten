@@ -60,38 +60,31 @@ impl Operation for Connect {
       self.addr.len(),
     ));
 
-    // Handle platform-specific connect() behavior for non-blocking sockets
-    #[cfg(not(linux))]
-    {
-      // Track if this is the first connect() call for this operation
-      let is_first_call = !self.connect_called.swap(true, Ordering::SeqCst);
+    // Track if this is the first connect() call for this operation
+    let is_first_call = !self.connect_called.swap(true, Ordering::SeqCst);
 
-      if let Err(ref err) = result {
-        if let Some(errno) = err.raw_os_error() {
-          match errno {
-            // EISCONN: Socket is already connected
-            // - If this is the first connect() call: socket was already connected (error)
-            // - If this is a subsequent call: connection just completed (success)
-            56 => {
-              if is_first_call {
-                // First connect() returned EISCONN = socket was already connected
-                return Err(std::io::Error::from_raw_os_error(56));
-              } else {
-                // Subsequent connect() returned EISCONN = connection completed
-                return Ok(0);
-              }
-            }
-            // EALREADY: Previous connection attempt still in progress
-            // Return EINPROGRESS to keep polling
-            37 => {
-              return Err(std::io::Error::from_raw_os_error(libc::EINPROGRESS));
-            }
-            _ => {}
+    // Handle platform-specific connect() behavior for non-blocking sockets
+    // #[cfg(not(linux))]
+
+    if let Err(ref err) = result {
+      if let Some(errno) = err.raw_os_error() {
+        // - If this is the first connect() call: socket was already connected (error)
+        // - If this is a subsequent call: connection just completed (success)
+        if errno == libc::EISCONN {
+          if is_first_call {
+            // First connect() returned EISCONN = socket was already connected
+            return Err(std::io::Error::from_raw_os_error(56));
+          } else {
+            // Subsequent connect() returned EISCONN = connection completed
+            return Ok(0);
           }
         }
-      }
-    }
 
+        if errno == libc::EALREADY {
+          return Err(std::io::Error::from_raw_os_error(libc::EINPROGRESS));
+        }
+      }
+    };
     result
   }
 }

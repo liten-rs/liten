@@ -19,9 +19,10 @@ tracing = ["dep:tracing"]
 [dependencies]
 cfg-if = "1.0.1"
 libc.workspace = true
-parking_lot = "0.12"
+parking_lot = {version = "0.12"}
+
 socket2.workspace = true
-tokio = { version = "1.48.0", features = ["macros", "rt", "sync"] }
+tokio = { version = "1.48.0", features = ["macros", "rt", "sync", "time"] }
 tracing = { version = "0.1.41", optional = true }
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 

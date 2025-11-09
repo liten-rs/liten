@@ -1,8 +1,10 @@
-use std::{mem::MaybeUninit, os::fd::RawFd};
+use std::{
+  mem::{self},
+  os::fd::RawFd,
+};
 
 #[cfg(linux)]
 use io_uring::{opcode, squeue, types::Fd};
-use socket2::SockAddrStorage;
 
 use crate::op::EventType;
 
@@ -10,17 +12,17 @@ use super::Operation;
 
 pub struct Accept {
   fd: RawFd,
-  addr: *mut MaybeUninit<SockAddrStorage>,
-  len: *mut libc::socklen_t,
+  addr: libc::sockaddr_un,
+  len: libc::socklen_t,
 }
 
+unsafe impl Send for Accept {}
+
 impl Accept {
-  pub fn new(
-    fd: RawFd,
-    addr: *mut MaybeUninit<SockAddrStorage>,
-    len: *mut libc::socklen_t,
-  ) -> Self {
-    Self { fd, addr, len }
+  pub fn new(fd: RawFd) -> Self {
+    let sockaddr = unsafe { mem::zeroed::<libc::sockaddr_un>() };
+    let len = mem::size_of::<libc::sockaddr_un>() as libc::socklen_t;
+    Self { fd, addr: sockaddr, len }
   }
 }
 
@@ -37,8 +39,12 @@ impl Operation for Accept {
 
   #[cfg(linux)]
   fn create_entry(&self) -> squeue::Entry {
-    opcode::Accept::new(Fd(self.fd), self.addr as *mut libc::sockaddr, self.len)
-      .build()
+    opcode::Accept::new(
+      Fd(self.fd),
+      &self.addr as *const _ as *mut libc::sockaddr,
+      self.len,
+    )
+    .build()
   }
 
   #[cfg(not(linux))]
@@ -50,6 +56,7 @@ impl Operation for Accept {
   }
 
   fn run_blocking(&self) -> std::io::Result<i32> {
+    let mut socklen = mem::size_of_val(&self.addr) as libc::socklen_t;
     #[cfg(any(
       target_os = "android",
       target_os = "dragonfly",
@@ -64,9 +71,9 @@ impl Operation for Accept {
     let fd = {
       syscall!(accept4(
         self.fd,
-        self.addr as *mut libc::sockaddr,
-        self.len,
-        libc::SOCK_CLOEXEC
+        &self.addr as *const _ as *mut libc::sockaddr,
+        &mut socklen,
+        libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK
       ))?
     };
 
@@ -82,10 +89,26 @@ impl Operation for Accept {
       target_os = "cygwin",
     )))]
     let fd = {
-      let fd =
-        syscall!(accept(self.fd, self.addr as *mut libc::sockaddr, self.len))?;
+      let fd = syscall!(accept(
+        self.fd,
+        &self.addr as *const _ as *mut libc::sockaddr,
+        &mut socklen
+      ))
+      .and_then(|socket| {
+        // Ensure the socket is closed if either of the `fcntl` calls
+        // error below.
+        // let s = unsafe { net::UnixStream::from_raw_fd(socket) };
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
+        syscall!(fcntl(socket, libc::F_SETFD, libc::FD_CLOEXEC))?;
 
-      syscall!(ioctl(fd, libc::FIOCLEX))?;
+        // See https://github.com/tokio-rs/mio/issues/1450
+        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
+        syscall!(fcntl(socket, libc::F_SETFL, libc::O_NONBLOCK))?;
+
+        Ok(socket)
+      })?;
+
+      // syscall!(ioctl(fd, libc::FIOCLEX))?;
 
       fd
     };
