@@ -1,4 +1,5 @@
 use std::os::fd::RawFd;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(linux)]
 use io_uring::types::Fd;

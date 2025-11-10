@@ -166,7 +166,7 @@ where
     mut self: Pin<&mut Self>,
     cx: &mut Context<'_>,
   ) -> Poll<Self::Output> {
-    match *self {
+    let result = match *self {
       OperationProgress::IoUring { ref id, ref _m } => {
         let is_done = Driver::get()
           .check_registration::<T>(*id, cx.waker().clone())
@@ -181,7 +181,11 @@ where
         let result = operation.run_blocking();
         Poll::Ready(operation.result(result))
       }
-    }
+    };
+
+    thread::yield_now();
+
+    result
   }
 }
 
@@ -268,6 +272,7 @@ impl<T> Drop for OperationProgress<T> {
     if let OperationProgress::IoUring { id, .. } = *self {
       Driver::get().detach(id);
     }
+    thread::yield_now();
   }
 }
 

@@ -1,6 +1,6 @@
 #[cfg(not(linux))]
 use crate::op::EventType;
-use std::os::fd::RawFd;
+use std::{io, os::fd::RawFd};
 
 use io_uring::types::Fd;
 
@@ -19,10 +19,11 @@ impl Tee {
 }
 
 impl Operation for Tee {
-  impl_result!(());
-
   #[cfg(linux)]
   const OPCODE: u8 = 33;
+
+  type Result = io::Result<Self::Output>;
+  type Output = i32;
 
   #[cfg(linux)]
   fn create_entry(&self) -> io_uring::squeue::Entry {
@@ -41,5 +42,9 @@ impl Operation for Tee {
   fn run_blocking(&self) -> std::io::Result<i32> {
     syscall!(tee(self.fd_in, self.fd_out, self.size as usize, 0))
       .map(|s| s as i32)
+  }
+
+  fn result(&mut self, _ret: std::io::Result<i32>) -> Self::Result {
+    _ret
   }
 }

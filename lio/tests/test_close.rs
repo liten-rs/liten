@@ -125,8 +125,7 @@ fn test_close_socket() {
       // Verify it's closed by trying to use it (should fail)
       let result = unsafe {
         let addr = libc::sockaddr_in {
-          sin_len: std::mem::size_of::<libc::sockaddr_in>() as u8,
-          sin_family: libc::AF_INET as u8,
+          sin_family: libc::AF_INET as u16,
           sin_port: 0,
           sin_addr: libc::in_addr { s_addr: 0 },
           sin_zero: [0; 8],

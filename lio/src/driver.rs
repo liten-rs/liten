@@ -175,25 +175,86 @@ impl Driver {
     Some(())
   }
 
-  pub fn background(&'static self) {
+  pub fn background(
+    &'static self,
+    mut receiver: oneshot::Receiver<()>,
+  ) -> loom::thread::JoinHandle<()> {
+    let (sender, mut receiver2) = oneshot::channel();
+    #[cfg(loom)]
+    thread::spawn(move || {
+      loop {
+        match receiver2.try_recv() {
+          Ok(()) => {
+            #[cfg(feature = "tracing")]
+            tracing::info!("background thread: shutdown signal received");
+            break;
+          }
+          Err(err) => match err {
+            oneshot::error::TryRecvError::Empty => {
+              #[cfg(feature = "tracing")]
+              tracing::info!("background thread, haven't seen");
+            }
+            oneshot::error::TryRecvError::Closed => {
+              #[cfg(feature = "tracing")]
+              tracing::info!("background thread: sender closed");
+              break;
+            }
+          },
+        };
+        // Submit a NOP to wake submit_and_wait
+        unsafe {
+          let _g = self.submission_guard.lock();
+          let mut sub = self.inner.submission_shared();
+          let entry = io_uring::opcode::Nop::new().build().user_data(0);
+          let _ = sub.push(&entry);
+          sub.sync();
+          drop(sub);
+        }
+        let _ = self.inner.submit();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+      }
+
+      #[cfg(feature = "tracing")]
+      tracing::info!("back2: exiting");
+    });
+
     // SAFETY: completion_shared is only accessed here so it's a singlethreaded access, hence
     // guaranteed only to have one completion queue.
-    let handle = utils::create_worker(move || {
+    utils::create_worker(move || {
       loop {
         use io_uring::cqueue::Entry;
 
-        {
-          let _lock = self.shutting_down.lock();
-          if _lock.is_some() {
+        match receiver.try_recv() {
+          Ok(()) => {
+            #[cfg(feature = "tracing")]
+            tracing::info!("background thread: shutdown signal received");
+            let _ = sender.send(());
             break;
           }
-        }
+          Err(err) => match err {
+            oneshot::error::TryRecvError::Empty => {
+              #[cfg(feature = "tracing")]
+              tracing::info!("background thread, haven't seen");
+            }
+            oneshot::error::TryRecvError::Closed => {
+              #[cfg(feature = "tracing")]
+              tracing::info!("background thread: sender closed");
+              let _ = sender.send(());
+              break;
+            }
+          },
+        };
+
+        thread::yield_now();
 
         self.inner.submit_and_wait(1).unwrap();
 
         let entries: Vec<Entry> =
             // SAFETY: The only thread that is concerned with completion queue.
             unsafe { self.inner.completion_shared() }.collect();
+
+        thread::yield_now();
 
         for entry in entries {
           use std::mem;
@@ -231,9 +292,7 @@ impl Driver {
         }
         unsafe { self.inner.completion_shared() }.sync();
       }
-    });
-
-    *self.background_handle.lock() = Some(handle);
+    })
   }
   pub(crate) fn submit<T>(op: T) -> OperationProgress<T>
   where
@@ -630,7 +689,7 @@ impl Driver {
   pub fn background(
     &'static self,
     mut sender: oneshot::Receiver<()>,
-  ) -> crate::loom::thread::JoinHandle<()> {
+  ) -> loom::thread::JoinHandle<()> {
     utils::create_worker(move || {
       #[cfg(feature = "tracing")]
       tracing::info!("background thread: started");

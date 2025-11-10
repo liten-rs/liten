@@ -34,7 +34,7 @@ fn test_listen_basic() {
           accept_val,
           1,
           "Socket should be in listening state {:?}",
-          Error::last_os_error()
+          std::io::Error::last_os_error()
         );
         libc::close(sock);
       }

@@ -6,6 +6,7 @@ use std::{
 #[cfg(linux)]
 use io_uring::{opcode, squeue, types::Fd};
 
+#[cfg(not(linux))]
 use crate::op::EventType;
 
 use super::Operation;
@@ -42,7 +43,7 @@ impl Operation for Accept {
     opcode::Accept::new(
       Fd(self.fd),
       &self.addr as *const _ as *mut libc::sockaddr,
-      self.len,
+      &self.len as *const _ as *mut _,
     )
     .build()
   }
