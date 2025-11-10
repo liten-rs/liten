@@ -4,7 +4,6 @@ use std::os::fd::RawFd;
 use io_uring::types::Fd;
 use socket2::SockAddr;
 
-#[cfg(not(linux))]
 use crate::loom::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(linux))]
 use crate::op::EventType;
@@ -14,18 +13,12 @@ use super::Operation;
 pub struct Connect {
   fd: RawFd,
   addr: SockAddr,
-  #[cfg(not(linux))]
   connect_called: AtomicBool,
 }
 
 impl Connect {
   pub fn new(fd: RawFd, addr: SockAddr) -> Self {
-    Self {
-      fd,
-      addr,
-      #[cfg(not(linux))]
-      connect_called: AtomicBool::new(false),
-    }
+    Self { fd, addr, connect_called: AtomicBool::new(false) }
   }
 }
 
@@ -62,9 +55,6 @@ impl Operation for Connect {
 
     // Track if this is the first connect() call for this operation
     let is_first_call = !self.connect_called.swap(true, Ordering::SeqCst);
-
-    // Handle platform-specific connect() behavior for non-blocking sockets
-    // #[cfg(not(linux))]
 
     if let Err(ref err) = result {
       if let Some(errno) = err.raw_os_error() {
