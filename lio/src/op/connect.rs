@@ -5,7 +5,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use io_uring::types::Fd;
 use socket2::SockAddr;
 
-use crate::loom::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(linux))]
 use crate::op::EventType;
 
