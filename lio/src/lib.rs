@@ -113,7 +113,7 @@
 //!
 //! This project is licensed under the MIT License - see the LICENSE file for details.
 
-use std::{ffi::CString, mem::MaybeUninit, os::fd::RawFd};
+use std::{ffi::CString, os::fd::RawFd};
 
 /// Result type for operations that return both a result and a buffer.
 ///

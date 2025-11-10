@@ -1,6 +1,5 @@
-#[cfg(not(linux))]
-use crate::loom::sync::mpsc;
-use crate::{OperationProgress, loom};
+use crate::OperationProgress;
+
 use std::collections::HashMap;
 
 use crate::loom::{
@@ -11,6 +10,8 @@ use crate::loom::{
   thread,
 };
 
+#[cfg(linux)]
+use crate::loom;
 #[cfg(not(linux))]
 use std::{io, os::fd::RawFd, task::Waker};
 #[cfg(linux)]
@@ -419,12 +420,12 @@ impl Driver {
       // 2. The context/waker has changed between polls
       // The background thread will take the waker when it processes the event, so we need to ensure
       // the most recent waker is always set.
-      let had_waker = registration.has_waker();
+      let _had_waker = registration.has_waker();
 
       #[cfg(feature = "tracing")]
       tracing::trace!(
         operation_id = key,
-        had_waker = had_waker,
+        had_waker = _had_waker,
         "register_repoll: setting waker (replacing if already set)"
       );
 
@@ -533,7 +534,7 @@ impl Driver {
       tracing::trace!(operation_id = key, "detach: acquired wakers lock");
 
       // Check if entry exists before removing
-      let entry_existed = _lock.contains_key(&key);
+      let _entry_existed = _lock.contains_key(&key);
       let reg = _lock.remove(&key);
 
       // If we expected an entry but it's gone, this might indicate a double detach
@@ -545,7 +546,7 @@ impl Driver {
           operation_id = key,
           "detach: removed entry from wakers"
         );
-      } else if entry_existed {
+      } else if _entry_existed {
         tracing::warn!(
           operation_id = key,
           "detach: entry existed but was already removed (possible race condition)"
@@ -584,12 +585,12 @@ impl Driver {
 
         // If delete fails, it might mean the fd was already removed (e.g., by Oneshot mode)
         // This is OK, but we should log it
-        if let Err(e) = delete_result {
+        if let Err(_e) = delete_result {
           #[cfg(feature = "tracing")]
           tracing::warn!(
             operation_id = key,
             fd = reg.fd,
-            error = ?e,
+            error = ?_e,
             "detach: failed to delete from poller (may already be removed by Oneshot mode)"
           );
           // Don't panic - this can happen legitimately with Oneshot mode
@@ -678,14 +679,10 @@ impl Driver {
           );
         }
 
-        // Validate events - check for invalid operation IDs
-        for event in events.iter() {
-          let operation_id = event.key as u64;
-        }
+        let _event_count = events.len();
 
-        let event_count = events.len();
         #[cfg(feature = "tracing")]
-        if event_count > 0 {
+        if _event_count > 0 {
           tracing::debug!(
             event_count = event_count,
             "background thread: received events"
@@ -696,7 +693,7 @@ impl Driver {
           let operation_id = event.key as u64;
           #[cfg(feature = "tracing")]
           tracing::debug!(
-            operation_id = operation_id,
+            operation_id = _operation_id,
             "background thread: processing event"
           );
 

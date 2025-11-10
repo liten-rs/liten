@@ -34,10 +34,13 @@ impl OpRegistration {
 
   /// Sets the waker, replacing any existing waker
   pub fn set_waker(&mut self, waker: Waker) {
-    let had_previous_waker = self.registered_waker.replace(waker).is_some();
+    let _had_previous_waker = self.registered_waker.replace(waker).is_some();
     #[cfg(feature = "tracing")]
-    if had_previous_waker {
-      tracing::debug!(fd = self.fd, "waker replaced (spurious poll or context change)");
+    if _had_previous_waker {
+      tracing::debug!(
+        fd = self.fd,
+        "waker replaced (spurious poll or context change)"
+      );
     }
   }
 

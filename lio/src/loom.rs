@@ -107,6 +107,7 @@ pub mod thread {
 // pub use std::thread;
 
 // Test utilities that abstract over different test modes
+#[cfg(any(loom, test))]
 pub mod test_utils {
   use std::future::Future;
 
@@ -138,7 +139,6 @@ pub mod test_utils {
   // ============================================================================
 
   pub use tokio::task::spawn;
-  use tracing_subscriber::EnvFilter;
 
   // ============================================================================
   // LocalPool abstraction for single-threaded executor
@@ -179,6 +179,7 @@ pub mod test_utils {
   where
     F: Fn() + Sync + Send + 'static,
   {
+    use tracing_subscriber::EnvFilter;
     tracing_subscriber::fmt()
       .with_env_filter(EnvFilter::from_default_env())
       .init();
