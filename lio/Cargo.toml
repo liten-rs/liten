@@ -1,6 +1,6 @@
 [package]
 name = "lio"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "A platform-independent async I/O library with native support for io_uring (Linux), IOCP (Windows), and kqueue (macOS)"
 license = "MIT"
@@ -17,27 +17,24 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 tracing = ["dep:tracing"]
 
 [dependencies]
-cfg-if = "1.0.1"
 libc.workspace = true
 parking_lot = {version = "0.12"}
 
 socket2.workspace = true
 tokio = { version = "1.48.0", features = ["macros", "rt", "sync", "time"] }
 tracing = { version = "0.1.41", optional = true }
-tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+io-uring = "0.7.9"
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+polling = "3.10.0"
 
 [build-dependencies]
 cfg_aliases = "0.2.1"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-io-uring = "0.7.9"
-[target.'cfg(not(target_os = "linux"))'.dependencies]
-polling = "3.10.0"
-
 [dev-dependencies]
-futures = "0.3.31"
-tracing-subscriber = "0.3.20"
-proptest = "1.5"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 
 [target.'cfg(loom)'.dependencies]
-loom = { version = "0.7", features = ["checkpoint", "futures"] }
+loom = { version = "0.7", features = ["checkpoint"] }

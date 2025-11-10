@@ -5,25 +5,28 @@ use std::ffi::CString;
 #[test]
 fn test_openat_create_file() {
   model(|| {
-    let path = CString::new("/tmp/lio_test_openat_create.txt").unwrap();
+    block_on(async {
+      let path = CString::new("/tmp/lio_test_openat_create.txt").unwrap();
 
-    // Open/create file for writing
-    let fd = futures::executor::block_on(openat(
-      libc::AT_FDCWD,
-      path.clone(),
-      libc::O_CREAT | libc::O_WRONLY | libc::O_TRUNC | libc::O_RDONLY,
-    ))
-    .expect("Failed to create file");
+      // Open/create file for writing
+      let fd = openat(
+        libc::AT_FDCWD,
+        path.clone(),
+        libc::O_CREAT | libc::O_WRONLY | libc::O_TRUNC | libc::O_RDONLY,
+      )
+      .await
+      .expect("Failed to create file");
 
-    assert!(fd >= 0, "File descriptor should be valid");
+      assert!(fd >= 0, "File descriptor should be valid");
 
-    // Close and cleanup
-    unsafe {
-      libc::close(fd);
-      libc::unlink(path.as_ptr());
-    }
+      // Close and cleanup
+      unsafe {
+        libc::close(fd);
+        libc::unlink(path.as_ptr());
+      }
 
-    lio::shutdown();
+      lio::shutdown();
+    })
   });
 }
 
