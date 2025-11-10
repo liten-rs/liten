@@ -125,9 +125,13 @@ pub type BufResult<T, B> = (std::io::Result<T>, B);
 pub(crate) mod macros;
 
 mod driver;
+#[doc(hidden)]
 pub mod loom;
-pub mod op;
-use op::*;
+
+mod op;
+#[doc(inline)]
+pub use op::*;
+
 mod op_progress;
 mod op_registration;
 
@@ -139,31 +143,33 @@ use crate::driver::Driver;
 
 macro_rules! impl_op {
   (
+    $desc:tt,
     $(#[$($doc:tt)*])*
-    $operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* )
+    $operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty
   ) => {
+    #[doc = $desc]
+    #[doc = "# Returns"]
+    #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
+    #[doc = "This function signature is equivalent to:\n```ignore"]
+    #[doc = concat!("async fn ",stringify!($name), "(", stringify!($($arg_ty),*), ") -> ", stringify!($ret))]
+    #[doc = "```"]
+    #[doc = "See more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
     $(#[$($doc)*])*
     pub fn $name($($arg: $arg_ty),*) -> OperationProgress<$operation> {
-      let operation_progress = Driver::submit(<$operation>::new($($arg),*));
-      operation_progress
+      Driver::submit(<$operation>::new($($arg),*))
     }
+  };
+
+  (
+    $(#[$($doc:tt)*])*
+    $operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty
+  ) => {
+      impl_op!("", $(#[$($doc)*])* $operation, fn $name($($arg: $arg_ty),*) -> $ret);
   };
 }
 
 impl_op!(
-    /// Performs an async write operation on a file descriptor. Equivalent to the `pwrite` syscall.
-    ///
-    /// # Arguments
-    ///
-    /// * `fd` - The file descriptor to write to
-    /// * `buf` - The data buffer to write
-    /// * `offset` - The file offset to write at (for regular files), cannot be < 0
-    ///
-    /// # Returns
-    ///
-    /// Return value implements `Future<BufResult<i32, Vec<u8>>>`.
-    /// The result contains the number of bytes written and the original buffer.
-    ///
+    "Performs a write operation on a file descriptor. Equivalent to the `pwrite` syscall.",
     /// # Examples
     ///
     /// ```rust
@@ -178,23 +184,11 @@ impl_op!(
     ///     Ok(())
     /// }
     /// ```
-    Write, fn write(fd: RawFd, buf: Vec<u8>, offset: i64)
+    Write, fn write(fd: RawFd, buf: Vec<u8>, offset: i64) -> BufResult<i32, Vec<u8>>
 );
 
 impl_op!(
-    /// Performs an async read operation on a file descriptor. Equivalent of the `pread` syscall.
-    ///
-    /// # Arguments
-    ///
-    /// * `fd` - The file descriptor to read from
-    /// * `mem` - The buffer to read data into
-    /// * `offset` - The file offset to read from (for regular files), cannot be < -1
-    ///
-    /// # Returns
-    ///
-    /// Returns `OperationProgress<Read>` which implements `Future<BufResult<i32, Vec<u8>>>`.
-    /// The result contains the number of bytes read and the buffer with the data.
-    ///
+    "Performs a read operation on a file descriptor. Equivalent of the `pread` syscall.",
     /// # Examples
     ///
     /// ```rust
@@ -209,21 +203,11 @@ impl_op!(
     ///     Ok(())
     /// }
     /// ```
-    Read, fn read(fd: RawFd, mem: Vec<u8>, offset: i64)
+    Read, fn read(fd: RawFd, mem: Vec<u8>, offset: i64) -> BufResult<i32, Vec<u8>>
 );
 
 impl_op!(
-    /// Truncates a file to a specified length.
-    ///
-    /// # Arguments
-    ///
-    /// * `fd` - The file descriptor to truncate
-    /// * `len` - The new length of the file
-    ///
-    /// # Returns
-    ///
-    /// Returns `OperationProgress<Truncate>` which implements `Future<io::Result<()>>`.
-    ///
+    "Truncates a file to a specified length.",
     /// # Examples
     ///
     /// ```rust
@@ -236,23 +220,11 @@ impl_op!(
     ///     Ok(())
     /// }
     /// ```
-    Truncate, fn truncate(fd: RawFd, len: u64)
+    Truncate, fn truncate(fd: RawFd, len: u64) -> std::io::Result<()>
 );
 
 impl_op!(
-    /// Creates a new socket with the specified domain, type, and protocol.
-    ///
-    /// # Arguments
-    ///
-    /// * `domain` - The socket domain (e.g., `Domain::INET` for IPv4)
-    /// * `ty` - The socket type (e.g., `Type::STREAM` for TCP)
-    /// * `proto` - The protocol (e.g., `Protocol::TCP`)
-    ///
-    /// # Returns
-    ///
-    /// Returns `OperationProgress<Socket>` which implements `Future<io::Result<RawFd>>`.
-    /// The result is the file descriptor of the created socket.
-    ///
+    "Creates a new socket with the specified domain, type, and protocol.",
     /// # Examples
     ///
     /// ```rust
@@ -265,22 +237,11 @@ impl_op!(
     ///     Ok(())
     /// }
     /// ```
-    Socket, fn socket(domain: socket2::Domain, ty: socket2::Type, proto: Option<socket2::Protocol>)
+    Socket, fn socket(domain: socket2::Domain, ty: socket2::Type, proto: Option<socket2::Protocol>) -> std::io::Result<i32>
 );
 
 impl_op!(
-  /// Binds a socket to a specific address.
-  ///
-  ///
-  /// # Arguments
-  ///
-  /// * `fd` - The socket file descriptor
-  /// * `addr` - The address to bind to
-  ///
-  /// # Returns
-  ///
-  /// Returns `OperationProgress<Bind>` which implements `Future<io::Result<()>>`.
-  ///
+  "Binds a socket to a specific address.",
   /// # Examples
   ///
   /// ```rust
@@ -295,30 +256,11 @@ impl_op!(
   /// }
   ///
   /// ```
-  Bind, fn bind(fd: RawFd, addr: socket2::SockAddr)
+  Bind, fn bind(fd: RawFd, addr: socket2::SockAddr) -> std::io::Result<()>
 );
 
 impl_op!(
-  /// Accepts a connection on a listening socket.
-  ///
-  /// **NOTE**: This operation doesn't seem to work on wsl2 linux. This is because they have a old
-  /// kernel pinned.
-  ///
-  /// # Arguments
-  ///
-  /// * `fd` - The listening socket file descriptor
-  /// * `addr` - Pointer to store the client's address
-  /// * `len` - Pointer to store the address length
-  ///
-  /// # Returns
-  ///
-  /// Returns `OperationProgress<Accept>` which implements `Future<io::Result<RawFd>>`.
-  /// The result is the file descriptor of the accepted connection.
-  ///
-  /// # Safety
-  ///
-  /// The `addr` and `len` pointers must be valid and point to properly initialized memory.
-  ///
+  "Accepts a connection on a listening socket.",
   /// # Examples
   ///
   /// ```rust
@@ -335,20 +277,11 @@ impl_op!(
   ///     Ok(())
   /// }
   /// ```
-  Accept, fn accept(fd: RawFd)
+  Accept, fn accept(fd: RawFd) -> std::io::Result<i32>
 );
 
 impl_op!(
-  /// Marks a socket as listening for incoming connections.
-  ///
-  /// # Arguments
-  ///
-  /// * `fd` - The socket file descriptor to mark as listening
-  ///
-  /// # Returns
-  ///
-  /// Returns `OperationProgress<Listen>` which implements `Future<io::Result<()>>`.
-  ///
+  "Marks a socket as listening for incoming connections.",
   /// # Examples
   ///
   /// ```rust
@@ -362,21 +295,11 @@ impl_op!(
   ///     Ok(())
   /// }
   /// ```
-  Listen, fn listen(fd: RawFd, backlog: i32)
+  Listen, fn listen(fd: RawFd, backlog: i32) -> std::io::Result<()>
 );
 
 impl_op!(
-  /// Connects a socket to a remote address.
-  ///
-  /// # Arguments
-  ///
-  /// * `fd` - The socket file descriptor
-  /// * `addr` - The remote address to connect to
-  ///
-  /// # Returns
-  ///
-  /// Returns `OperationProgress<Connect>` which implements `Future<io::Result<()>>`.
-  ///
+  "Connects a socket to a remote address.",
   /// # Examples
   ///
   /// ```rust
@@ -391,23 +314,11 @@ impl_op!(
   ///     Ok(())
   /// }
   /// ```
-  Connect, fn connect(fd: RawFd, addr: SockAddr)
+  Connect, fn connect(fd: RawFd, addr: SockAddr) -> std::io::Result<()>
 );
 
 impl_op!(
-  /// Sends data on a connected socket.
-  ///
-  /// # Arguments
-  ///
-  /// * `fd` - The socket file descriptor
-  /// * `buf` - The data buffer to send
-  /// * `flags` - Optional socket send flags
-  ///
-  /// # Returns
-  ///
-  /// Returns `OperationProgress<Send>` which implements `Future<BufResult<i32, Vec<u8>>>`.
-  /// The result contains the number of bytes sent and the original buffer.
-  ///
+  "Sends data on a connected socket.",
   /// # Examples
   ///
   /// ```rust
@@ -422,23 +333,11 @@ impl_op!(
   ///     Ok(())
   /// }
   /// ```
-  Send, fn send(fd: RawFd, buf: Vec<u8>, flags: Option<i32>)
+  Send, fn send(fd: RawFd, buf: Vec<u8>, flags: Option<i32>) -> BufResult<i32, Vec<u8>>
 );
 
 impl_op!(
-  /// Receives data from a connected socket.
-  ///
-  /// # Arguments
-  ///
-  /// * `fd` - The socket file descriptor
-  /// * `buf` - The buffer to receive data into
-  /// * `flags` - Optional socket receive flags
-  ///
-  /// # Returns
-  ///
-  /// Returns `OperationProgress<Recv>` which implements `Future<BufResult<i32, Vec<u8>>>`.
-  /// The result contains the number of bytes received and the buffer with the data.
-  ///
+  "Receives data from a connected socket.",
   /// # Examples
   ///
   /// ```rust
@@ -453,20 +352,11 @@ impl_op!(
   ///     Ok(())
   /// }
   /// ```
-  Recv, fn recv(fd: RawFd, buf: Vec<u8>, flags: Option<i32>)
+  Recv, fn recv(fd: RawFd, buf: Vec<u8>, flags: Option<i32>) -> BufResult<i32, Vec<u8>>
 );
 
 impl_op!(
-  /// Closes a file descriptor.
-  ///
-  /// # Arguments
-  ///
-  /// * `fd` - The file descriptor to close
-  ///
-  /// # Returns
-  ///
-  /// Returns `OperationProgress<Close>` which implements `Future<io::Result<()>>`.
-  ///
+  "Closes a file descriptor.",
   /// # Examples
   ///
   /// ```rust
@@ -480,23 +370,11 @@ impl_op!(
   ///     Ok(())
   /// }
   /// ```
-  Close, fn close(fd: RawFd)
+  Close, fn close(fd: RawFd) -> io::Result<()>
 );
 
 impl_op!(
-  /// Opens a file relative to a directory file descriptor.
-  ///
-  /// # Arguments
-  ///
-  /// * `fd` - The directory file descriptor (use `libc::AT_FDCWD` for current directory)
-  /// * `path` - The path to the file to open
-  /// * `flags` - The open flags (e.g., `O_RDONLY`, `O_WRONLY`, `O_CREAT`)
-  ///
-  /// # Returns
-  ///
-  /// Returns `OperationProgress<OpenAt>` which implements `Future<io::Result<RawFd>>`.
-  /// The result is the file descriptor of the opened file.
-  ///
+  "Opens a file relative to a directory file descriptor.",
   /// # Examples
   ///
   /// ```rust
@@ -510,26 +388,14 @@ impl_op!(
   ///     Ok(())
   /// }
   /// ```
-  OpenAt, fn openat(fd: RawFd, path: CString, flags: i32)
+  OpenAt, fn openat(fd: RawFd, path: CString, flags: i32) -> std::io::Result<i32>
 );
 
 #[cfg(linux)]
 impl_op!(
-  /// Copies data between file descriptors without copying to userspace (Linux only).
-  ///
+  "Copies data between file descriptors without copying to userspace (Linux only).",
   /// This operation is only available on Linux systems with io_uring support.
   /// It's equivalent to the `tee(2)` system call.
-  ///
-  /// # Arguments
-  ///
-  /// * `fd_in` - The input file descriptor
-  /// * `fd_out` - The output file descriptor
-  /// * `size` - The number of bytes to copy
-  ///
-  /// # Returns
-  ///
-  /// Returns `OperationProgress<Tee>` which implements `Future<io::Result<u32>>`.
-  /// The result is the number of bytes actually copied.
   ///
   /// # Examples
   ///
@@ -544,21 +410,8 @@ impl_op!(
   ///     Ok(())
   /// }
   /// ```
-  Tee, fn tee(fd_in: RawFd, fd_out: RawFd, size: u32)
+  Tee, fn tee(fd_in: RawFd, fd_out: RawFd, size: u32) -> std::io::Result<()>
 );
-
-// #[cfg(linux)]
-// pub fn tick() {
-//   let driver = Driver::get();
-//   if driver
-//     .0
-//     .has_done_work
-//     .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
-//     .is_ok()
-//   {
-//     let _ = driver.0.inner.submit();
-//   }
-// }
 
 /// Shut down the lio I/O driver background thread(s) and release OS resources.
 ///
@@ -568,6 +421,8 @@ pub fn shutdown() {
   Driver::shutdown()
 }
 
+// #[cfg(any(loom, test))]
+#[doc(hidden)]
 pub fn init() {
   let _ = Driver::get();
 }

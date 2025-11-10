@@ -99,27 +99,15 @@ pub mod thread {
   }
 
   #[cfg(loom)]
-  pub use loom::thread::{Builder, JoinHandle, spawn};
+  pub use loom::thread::{Builder, JoinHandle};
 
   #[cfg(not(loom))]
-  pub use std::thread::{Builder, JoinHandle, spawn};
+  pub use std::thread::{Builder, JoinHandle};
 }
-// pub use std::thread;
 
-// Test utilities that abstract over different test modes
-#[cfg(any(loom, test))]
+#[doc(hidden)]
 pub mod test_utils {
   use std::future::Future;
-
-  // ============================================================================
-  // Async runtime abstraction
-  // ============================================================================
-
-  /// Run an async function to completion with a timeout
-  ///
-  /// This abstracts over different test modes:
-  /// - Normal mode: Uses tokio with 30 second timeout
-  /// - Loom mode: Uses loom's futures executor (no timeout)
   pub fn block_on<F, O>(fut: F) -> O
   where
     F: Future<Output = O>,
@@ -128,27 +116,13 @@ pub mod test_utils {
     // Even under loom, we need a real executor for concurrent futures
     tokio::runtime::Builder::new_current_thread()
       .enable_all()
-      .thread_stack_size(32 * 1024)
       .build()
       .unwrap()
       .block_on(fut)
   }
 
-  // ============================================================================
-  // Task spawning abstraction
-  // ============================================================================
-
   pub use tokio::task::spawn;
 
-  // ============================================================================
-  // LocalPool abstraction for single-threaded executor
-  // ============================================================================
-
-  // ============================================================================
-  // Sleep abstraction
-  // ============================================================================
-
-  /// Sleep for a duration - useful for tests
   pub fn sleep(duration: std::time::Duration) {
     #[cfg(not(loom))]
     {
@@ -158,31 +132,21 @@ pub mod test_utils {
     #[cfg(loom)]
     {
       // Loom doesn't support sleep, yield instead
-
       super::thread::yield_now();
     }
   }
 
-  // ============================================================================
-  // Model checking wrapper for loom
-  // ============================================================================
-
-  /// Run a test under loom model checking or normally
-  ///
-  /// Usage:
-  /// ```
-  /// model(|| {
-  ///     // test code here
-  /// });
-  /// ```
   pub fn model<F>(f: F)
   where
     F: Fn() + Sync + Send + 'static,
   {
-    use tracing_subscriber::EnvFilter;
-    tracing_subscriber::fmt()
-      .with_env_filter(EnvFilter::from_default_env())
-      .init();
+    #[cfg(feature = "tracing")]
+    {
+      use tracing_subscriber::EnvFilter;
+      tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+    }
     #[cfg(loom)]
     {
       loom::model(f)

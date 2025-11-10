@@ -183,6 +183,8 @@ impl Driver {
     #[cfg(loom)]
     thread::spawn(move || {
       loop {
+        use crate::loom;
+
         match receiver2.try_recv() {
           Ok(()) => {
             #[cfg(feature = "tracing")]
@@ -212,7 +214,10 @@ impl Driver {
         }
         let _ = self.inner.submit();
 
+        loom::thread::yield_now();
+
         std::thread::sleep(std::time::Duration::from_millis(100));
+        loom::thread::yield_now();
       }
 
       #[cfg(feature = "tracing")]
@@ -689,7 +694,7 @@ impl Driver {
   pub fn background(
     &'static self,
     mut sender: oneshot::Receiver<()>,
-  ) -> loom::thread::JoinHandle<()> {
+  ) -> thread::JoinHandle<()> {
     utils::create_worker(move || {
       #[cfg(feature = "tracing")]
       tracing::info!("background thread: started");

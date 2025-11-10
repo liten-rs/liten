@@ -116,18 +116,18 @@ impl<T> OperationProgress<T> {
 
 #[cfg(linux)]
 impl<T> OperationProgress<T> {
-  pub fn new_uring(id: u64) -> Self {
+  pub(crate) fn new_uring(id: u64) -> Self {
     Self::IoUring { id, _m: PhantomData }
   }
 
-  pub fn new_blocking(op: T) -> Self {
+  pub(crate) fn new_blocking(op: T) -> Self {
     Self::Blocking { operation: op }
   }
 }
 
 #[cfg(not(linux))]
 impl<T> OperationProgress<T> {
-  pub fn new(id: u64, operation: T) -> Self
+  pub(crate) fn new(id: u64, operation: T) -> Self
   where
     T: Operation,
   {
@@ -145,7 +145,7 @@ impl<T> OperationProgress<T> {
     }
   }
 
-  pub fn new_blocking(operation: T) -> Self {
+  pub(crate) fn new_blocking(operation: T) -> Self {
     Self::Blocking { operation }
   }
 }
