@@ -3,9 +3,7 @@ use crate::runtime::scheduler::Scheduler;
 pub struct SingleThreaded;
 
 impl Scheduler for SingleThreaded {
-  fn tick(&self, runnables: impl Iterator<Item = async_task::Runnable>) {
-    for runnable in runnables {
-      runnable.run();
-    }
+  fn schedule(&self, runnable: async_task::Runnable) {
+    let _ = runnable.run();
   }
 }

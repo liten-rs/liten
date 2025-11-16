@@ -1,45 +1,38 @@
 use std::mem::ManuallyDrop;
 use std::task::{RawWaker, RawWakerVTable, Waker};
 
-use crate::loom::{sync::Arc, thread::Thread};
+use crate::loom::{sync::Arc, thread};
 
-pub struct TaskWakerData {
-  unparker: Thread,
-  task_id: TaskId,
+static RUNTIME_WAKER_VTABLE: RawWakerVTable =
+  RawWakerVTable::new(waker_clone, waker_wake, waker_wake_by_ref, waker_drop);
+
+pub fn park_waker(unparker: thread::Thread) -> Waker {
+  let state = Arc::into_raw(Arc::new(RuntimeWakerData(unparker)));
+  unsafe { Waker::new(state as *const (), &RUNTIME_WAKER_VTABLE) }
 }
 
-static TASK_WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
-  task_waker_clone,
-  task_waker_wake,
-  task_waker_wake_by_ref,
-  task_waker_drop,
-);
-
-pub fn create_task_waker(unparker: Thread, task_id: TaskId) -> Waker {
-  let state = Arc::into_raw(Arc::new(TaskWakerData { unparker, task_id }));
-  unsafe { Waker::new(state as *const (), &TASK_WAKER_VTABLE) }
-}
-
-unsafe fn task_waker_clone(data: *const ()) -> RawWaker {
+unsafe fn waker_clone(data: *const ()) -> RawWaker {
   unsafe {
-    Arc::increment_strong_count(data as *const TaskWakerData);
+    Arc::increment_strong_count(data as *const RuntimeWakerData);
   };
 
-  RawWaker::new(data, &TASK_WAKER_VTABLE)
+  RawWaker::new(data, &RUNTIME_WAKER_VTABLE)
 }
-unsafe fn task_waker_wake(data: *const ()) {
-  let data = unsafe { Arc::from_raw(data as *const TaskWakerData) };
+unsafe fn waker_wake(data: *const ()) {
+  let data = unsafe { Arc::from_raw(data as *const RuntimeWakerData) };
 
-  TaskStore::get().wake_task(data.task_id);
-  data.unparker.unpark();
+  data.0.unpark();
 }
-unsafe fn task_waker_wake_by_ref(data: *const ()) {
-  let data =
-    unsafe { ManuallyDrop::new(Arc::from_raw(data as *const TaskWakerData)) };
+unsafe fn waker_wake_by_ref(data: *const ()) {
+  let data = unsafe {
+    ManuallyDrop::new(Arc::from_raw(data as *const RuntimeWakerData))
+  };
 
-  TaskStore::get().wake_task(data.task_id);
-  data.unparker.unpark();
+  data.0.unpark();
 }
-unsafe fn task_waker_drop(data: *const ()) {
-  unsafe { Arc::decrement_strong_count(data as *const TaskWakerData) };
+unsafe fn waker_drop(data: *const ()) {
+  unsafe { Arc::decrement_strong_count(data as *const RuntimeWakerData) };
 }
+
+// Waker implementation to notify the runtime
+struct RuntimeWakerData(thread::Thread);

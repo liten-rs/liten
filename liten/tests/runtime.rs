@@ -1,3 +1,5 @@
+#![cfg(feature = "runtime")]
+
 use liten::runtime::Runtime;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;

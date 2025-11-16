@@ -1,3 +1,3 @@
 #[macro_use]
 mod _priv;
-mod _pub;
+pub mod _pub;

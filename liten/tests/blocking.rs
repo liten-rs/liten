@@ -1,3 +1,5 @@
+#![cfg(feature = "blocking")]
+
 use liten::blocking::unblock;
 
 #[liten::test]

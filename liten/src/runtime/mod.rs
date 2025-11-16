@@ -1,70 +1,133 @@
 use std::{
+  cell::{Cell, RefCell},
   future::Future,
-  sync::OnceLock,
+  marker::PhantomData,
   task::{Context, Poll},
-  thread::{self, Thread},
 };
 
-#[cfg(feature = "blocking")]
-use crate::blocking::pool::BlockingPool;
-#[cfg(all(feature = "time", not(loom)))]
-use crate::time::TimeDriver;
 use crate::{
-  future::block_on::park_waker,
-  parking,
+  loom::{sync::Arc, thread},
   runtime::scheduler::{single_threaded::SingleThreaded, Scheduler},
-  task::store::TaskStore,
+  task::{self, store::TaskStore},
 };
 
 pub mod scheduler;
 
-#[derive(Default)]
-pub struct Runtime<S> {
-  scheduler: S,
+mod parking;
+pub(crate) mod waker;
+
+std::thread_local! {
+  static THREAD_RUNTIME: RefCell<Option<RuntimeHandle>> = RefCell::new(None);
 }
 
-impl Runtime<SingleThreaded> {
-  pub const fn single_threaded() -> Self {
+pub struct RuntimeHandle {
+  tasks: Arc<TaskStore>,
+
+  // Make non-Send
+  _p: PhantomData<Cell<()>>,
+}
+
+impl RuntimeHandle {
+  pub(crate) fn with<F, R>(f: F) -> R
+  where
+    F: FnOnce(&RuntimeHandle) -> R,
+  {
+    THREAD_RUNTIME.with_borrow(|handle| f(handle.as_ref().unwrap()))
+  }
+
+  pub(crate) fn spawn<F>(&self, fut: F) -> task::TaskHandle<F::Output>
+  where
+    F: Future + 'static,
+    F::Output: 'static,
+  {
+    let task_store = self.tasks.clone();
+    let scheduler = move |runnable| {
+      task_store.task_enqueue(runnable);
+    };
+
+    let (runnable, task) =
+      unsafe { async_task::spawn_unchecked(fut, scheduler) };
+    runnable.schedule();
+
+    task::TaskHandle::new(task)
+  }
+}
+
+pub struct Runtime {
+  scheduler: Box<dyn Scheduler>,
+  tasks: Arc<TaskStore>,
+
+  // Make non-Send
+  _p: PhantomData<Cell<()>>,
+}
+
+impl Default for Runtime {
+  fn default() -> Self {
+    Self::with_scheduler(SingleThreaded)
+  }
+}
+
+impl Drop for Runtime {
+  fn drop(&mut self) {
+    let _ = THREAD_RUNTIME.replace(None);
+  }
+}
+
+impl Runtime {
+  pub fn single_threaded() -> Self {
     Runtime::with_scheduler(SingleThreaded)
   }
 }
 
-impl<S> Runtime<S>
-where
-  S: Scheduler,
-{
-  pub const fn with_scheduler(scheduler: S) -> Self {
-    Runtime { scheduler }
+impl Runtime {
+  pub fn with_scheduler<S>(scheduler: S) -> Self
+  where
+    S: Scheduler + 'static,
+  {
+    let task_store = Arc::new(TaskStore::new());
+    THREAD_RUNTIME
+      .set(Some(RuntimeHandle { tasks: task_store.clone(), _p: PhantomData }));
+
+    Runtime {
+      scheduler: Box::new(scheduler),
+      tasks: task_store,
+      _p: PhantomData,
+    }
+  }
+  pub fn spawn<F>(&self, fut: F) -> task::TaskHandle<F::Output>
+  where
+    F: Future + 'static,
+    F::Output: 'static,
+  {
+    RuntimeHandle::with(|handle| handle.spawn(fut))
   }
 
   pub fn block_on<F>(self, fut: F) -> F::Output
   where
     F: Future,
   {
-    let _thread = parking::set_main_thread();
+    parking::set_thread();
+
     let mut fut = std::pin::pin!(fut);
 
-    let to_return: F::Output = loop {
-      self.scheduler.tick(TaskStore::get().tasks());
+    let res = loop {
+      while let Some(runnable) = self.tasks.pop() {
+        self.scheduler.schedule(runnable);
+      }
 
-      let waker = park_waker(_thread.clone());
+      let waker = waker::park_waker(thread::current());
       if let Poll::Ready(value) =
         fut.as_mut().poll(&mut Context::from_waker(&waker))
       {
         break value;
       }
 
-      // #[cfg(feature = "io")]
-      // lio::tick();
-
       parking::park();
     };
 
-    #[cfg(all(feature = "time", not(loom)))]
-    TimeDriver::shutdown();
-    #[cfg(feature = "blocking")]
-    BlockingPool::shutdown();
+    // Call drop on it.
+    let _ = THREAD_RUNTIME.replace(None);
 
-    to_return
+    res
   }
 }

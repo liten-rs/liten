@@ -3,207 +3,359 @@ mod sleep;
 mod utils;
 mod wheel;
 
-use std::{
-  collections::HashMap,
-  sync::{atomic::AtomicUsize, OnceLock},
-  task::{Context, Poll, Waker},
-  thread::{self, JoinHandle, Thread},
-  time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+use dashmap::{DashMap, Entry};
+use oneshot::Receiver;
+pub use sleep::Sleep;
+
+use crate::{
+  loom::sync::{
+    atomic::AtomicUsize,
+    mpsc::{self, TryRecvError},
+    Arc,
+  },
+  time::clock::TimerEntry,
 };
 
-use crate::loom::sync::{Arc, Mutex};
+use std::{
+  collections::HashMap,
+  future::Future,
+  sync::{atomic::Ordering, OnceLock},
+  task::Waker,
+  thread::{self, JoinHandle},
+  time::{Duration, Instant},
+};
 
 use clock::{Clock, TimerId};
-pub use sleep::*;
+use parking_lot::Mutex;
 
-#[derive(Clone)]
-pub struct TimeDriver {
-  field1: Arc<Mutex<TimeDriverInner>>,
-  // thread: OnceLock<Thread>,
-}
+const SPIN_THRESHOLD_MS: u64 = 10;
 
-pub struct TimeDriverInner {
-  clock: Clock,
-  last_advance: Instant,
-
-  shutdown_signal: bool,
-  waker_store: HashMap<TimerId, Waker>,
+pub struct TimeHandle {
+  sender: mpsc::Sender<DriverMessage>,
   background_handle: Option<JoinHandle<()>>,
+  state: Arc<TimeState>,
 }
 
-static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
-impl TimeDriver {
-  fn get() -> &'static TimeDriver {
-    static TIME_DRIVER: OnceLock<TimeDriver> = OnceLock::new();
-    let driver = TIME_DRIVER.get_or_init(|| TimeDriver::new());
-    driver
-  }
-  fn new() -> TimeDriver {
-    let (days, hours, minutes, seconds, milliseconds) =
-      utils::breakdown_milliseconds(
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()
-          as usize,
-      );
-    let clock =
-      Clock::new_with_positions(days, hours, minutes, seconds, milliseconds);
+#[derive(Default)]
+struct TimeState {
+  state: DashMap<TimerId, TimerVariant>,
+  next_id: AtomicUsize,
+}
 
-    // let parker = Parker::new();
+pub enum TimerVariant {
+  Waker(Waker),
+  Fn(Box<dyn FnOnce() + Send + Sync>),
+}
 
-    let time_driver_inner = TimeDriverInner {
-      clock,
-      last_advance: Instant::now(),
-      shutdown_signal: false,
-      background_handle: None,
-      waker_store: HashMap::new(),
-    };
-
-    let driver = TimeDriver {
-      field1: Arc::new(Mutex::new(time_driver_inner)),
-      // thread: OnceLock::new(),
-    };
-
-    let driver_clone = driver.clone();
-    let mut driver_lock = driver_clone.field1.lock().unwrap();
-
-    driver_lock.background_handle = Some(thread::spawn({
-      let driver = driver.clone();
-      move || driver.background_thread()
-    }));
-    drop(driver_lock);
-
-    driver
-  }
-
-  pub(in crate::time) fn start_elapsed(&self) -> usize {
-    let _lock = self.field1.lock().unwrap();
-    let value = _lock.clock.start_elapsed();
-    drop(_lock);
-    value
-  }
-
-  pub fn shutdown() {
-    static DONE_BEFORE: OnceLock<()> = OnceLock::new();
-
-    if DONE_BEFORE.get().is_some() {
-      panic!("shutdown after shutdown");
+impl std::fmt::Debug for TimerVariant {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Waker(_) => f.debug_tuple("Waker").finish(),
+      Self::Fn(_) => f.debug_tuple("Fn").finish(),
     }
-    let this = Self::get();
-
-    let mut _lock = this.field1.lock().unwrap();
-
-    _lock.shutdown_signal = true;
-
-    let handle = _lock.background_handle.take().unwrap();
-    handle.thread().unpark();
-    drop(_lock);
-    let _ = handle.join();
-    let _ = DONE_BEFORE.set(());
   }
+}
 
-  pub fn get_timer_ticket() -> usize {
-    NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+impl TimerVariant {
+  fn is_variant_eq(&self, other: &Self) -> bool {
+    match (self, other) {
+      (Self::Waker(_), Self::Waker(_)) => true,
+      (Self::Fn(_), Self::Fn(_)) => true,
+      _ => false,
+    }
   }
+}
 
-  #[cfg(not(loom))]
-  fn background_thread(&self) {
-    const FUDGE_MS: usize = 10;
-    let driver = TimeDriver::get();
+impl TimerVariant {
+  fn call(self) {
+    match self {
+      Self::Waker(waker) => waker.wake(),
+      Self::Fn(_fn) => _fn(),
+    };
+  }
+}
 
-    loop {
-      self.jump();
+#[derive(Debug)]
+pub struct DriverMessage {
+  confirmer: oneshot::Sender<usize>,
+  payload: MessagePayload,
+}
 
-      let lock = self.field1.lock().unwrap();
-      let nearest = lock.clock.peek_nearest_timer();
-      let shutdown = lock.shutdown_signal;
-      drop(lock);
+#[derive(Debug)]
+pub enum MessagePayload {
+  Shutdown,
+  AddTimer { variant: TimerVariant, duration: usize },
+  UpdateTimer { variant: TimerVariant, timer_id: TimerId },
+}
 
-      if shutdown {
-        break;
+#[derive(Debug)]
+pub struct MessageNotReceived;
+
+impl TimeHandle {
+  fn get<F, R>(f: F) -> R
+  where
+    F: FnOnce(&mut TimeHandle) -> R,
+  {
+    static TIME_DRIVER: Mutex<Option<TimeHandle>> = Mutex::new(None);
+    let mut _lock = TIME_DRIVER.lock();
+
+    let res = match _lock.as_mut() {
+      Some(handle) => f(handle),
+      None => {
+        *_lock = Some(TimeHandle::new());
+        f(_lock.as_mut().unwrap())
       }
+    };
 
-      match nearest {
-        Some(delta_time_to_next_thing) => {
-          let sleep_ms = if delta_time_to_next_thing > FUDGE_MS {
-            delta_time_to_next_thing - FUDGE_MS
-          } else {
-            delta_time_to_next_thing
-          };
-          let instant = Instant::now() + Duration::from_millis(sleep_ms as u64);
+    drop(_lock);
 
-          std::thread::park_timeout(
-            instant.saturating_duration_since(Instant::now()),
-          );
+    res
+  }
 
-          // Busy-wait for the last few ms
-          let target = Instant::now() + Duration::from_millis(FUDGE_MS as u64);
-          while Instant::now() < target {
-            std::hint::spin_loop();
+  fn take_handle(&mut self) -> JoinHandle<()> {
+    self.background_handle.take().expect("lio error: Driver background worker handle doesn't exist in handle or has already been taken")
+  }
+
+  fn new() -> TimeHandle {
+    let (sender, receiver) = mpsc::channel();
+    let state = Arc::new(TimeState::default());
+
+    let _state = state.clone();
+    let handle = thread::spawn(move || Self::background(receiver, _state));
+
+    let time_driver =
+      TimeHandle { background_handle: Some(handle), sender, state };
+
+    time_driver
+  }
+
+  fn send_message(&self, payload: MessagePayload) -> Receiver<usize> {
+    let (sender, receiver) = oneshot::channel();
+    if let Err(err) =
+      self.sender.send(DriverMessage { payload, confirmer: sender })
+    {
+      panic!("lio error: Driver background worker cannot receiver messagees even when initiated: {err:#?}");
+    };
+
+    let handle = self
+      .background_handle
+      .as_ref()
+      .expect("driver not launched before sending message");
+
+    handle.thread().unpark();
+
+    receiver
+
+    // match receiver.recv_timeout(Duration::from_millis(1_000)) {
+    //     Ok(value) => value,
+    //     Err(_) =>  panic!("lio error: Driver background worker cannot receiver messagees even when initiated."),
+    // }
+  }
+
+  fn background(
+    receiver: mpsc::Receiver<DriverMessage>,
+    state: Arc<TimeState>,
+  ) {
+    let mut clock = Clock::new();
+    let mut last_advance = Instant::now();
+
+    'outer: loop {
+      println!("start iter");
+      loop {
+        println!("message iter");
+        let message = match dbg!(receiver.try_recv()) {
+          Ok(value) => value,
+          Err(err) => match err {
+            TryRecvError::Empty => break,
+            TryRecvError::Disconnected => break 'outer,
+          },
+        };
+        println!("received message {:#?}", message.payload);
+
+        match message.payload {
+          MessagePayload::Shutdown => {
+            println!("shutting down");
+            let _ = message.confirmer.send(0);
+            break 'outer;
+          }
+          MessagePayload::AddTimer { variant, duration } => {
+            let next_id = state.next_id.fetch_add(1, Ordering::AcqRel);
+            let timer_id = TimerId::new(next_id);
+            clock.insert(timer_id, duration);
+            if let Some(old_insert) = state.state.insert(timer_id, variant) {
+              old_insert;
+            };
+            let _ = message.confirmer.send(next_id);
+          }
+          MessagePayload::UpdateTimer { timer_id, variant } => {
+            println!("updating timer");
+            match state.state.entry(timer_id) {
+              Entry::Vacant(_) => {
+                let _ = message.confirmer.send(1);
+              }
+              Entry::Occupied(entry) => {
+                if variant.is_variant_eq(entry.get()) {
+                  let _ = entry.replace_entry(variant);
+                  let _ = message.confirmer.send(0);
+                } else {
+                  let _ = message.confirmer.send(1);
+                };
+              }
+            }
           }
         }
-        None => {
-          // No timers currently waiting...
-          std::thread::park();
+      }
+
+      let to_advance = last_advance.elapsed();
+      let timers = clock.advance(to_advance.as_millis() as usize);
+      last_advance += to_advance;
+
+      println!("calling");
+      for timer_id in timers {
+        // If doesn't exist, means it's cancelled.
+        if let Some((_, entry)) = state.state.remove(&timer_id) {
+          entry.call();
         }
       }
+      println!("calling end");
+
+      loop {
+        println!("message iter");
+        let message = match dbg!(receiver.try_recv()) {
+          Ok(value) => value,
+          Err(err) => match err {
+            TryRecvError::Empty => break,
+            TryRecvError::Disconnected => break 'outer,
+          },
+        };
+        println!("received message {:#?}", message.payload);
+
+        match message.payload {
+          MessagePayload::Shutdown => {
+            println!("shutting down");
+            let _ = message.confirmer.send(0);
+            break 'outer;
+          }
+          MessagePayload::AddTimer { variant, duration } => {
+            let next_id = state.next_id.fetch_add(1, Ordering::AcqRel);
+            let timer_id = TimerId::new(next_id);
+            clock.insert(timer_id, duration);
+            if let Some(old_insert) = state.state.insert(timer_id, variant) {
+              old_insert;
+            };
+            let _ = message.confirmer.send(next_id);
+          }
+          MessagePayload::UpdateTimer { timer_id, variant } => {
+            println!("updating timer");
+            match state.state.entry(timer_id) {
+              Entry::Vacant(_) => {
+                let _ = message.confirmer.send(1);
+              }
+              Entry::Occupied(entry) => {
+                if variant.is_variant_eq(entry.get()) {
+                  let _ = entry.replace_entry(variant);
+                  let _ = message.confirmer.send(0);
+                } else {
+                  let _ = message.confirmer.send(1);
+                };
+              }
+            }
+          }
+        }
+      }
+
+      match dbg!(clock.peek()) {
+        Some(timeout_ms) => {
+          if timeout_ms <= SPIN_THRESHOLD_MS as usize {
+            // For very short timeouts, just spin
+            let deadline =
+              Instant::now() + Duration::from_millis(timeout_ms as u64);
+            while Instant::now() < deadline {
+              std::hint::spin_loop();
+            }
+          } else {
+            // For longer timeouts: park early, then spin the final portion
+            let park_duration =
+              timeout_ms.saturating_sub(SPIN_THRESHOLD_MS as usize);
+            thread::park_timeout(Duration::from_millis(park_duration as u64));
+
+            // Spin-wait for the remaining time to hit the deadline accurately
+            let deadline =
+              Instant::now() + Duration::from_millis(SPIN_THRESHOLD_MS);
+            while Instant::now() < deadline {
+              std::hint::spin_loop();
+            }
+          }
+        }
+        None => thread::park(),
+      }
+      println!("end iter");
     }
   }
 }
 
-impl TimeDriver {
-  pub fn insert(&self, duration: usize) -> TimerId {
-    let timestamp = self.start_elapsed() + duration;
-    let timer = TimerId::new(timestamp);
-
-    let mut _lock = self.field1.lock().unwrap();
-    _lock.clock.insert(timer);
-    if let Some(handle) = _lock.background_handle.as_ref() {
-      handle.thread().unpark();
-    } else {
-      unreachable!()
-    };
-
-    timer
+impl TimeHandle {
+  pub fn shutdown() {
+    let receiver = Self::get(move |h| {
+      h.send_message(MessagePayload::Shutdown)
+      // let
+    });
+    let code = receiver.recv().expect("liten time error;");
+    assert!(code == 0, "Shutdown response code not valid.");
+    Self::get(|h| {
+      h.take_handle().join();
+    })
   }
 
-  pub fn poll(&self, cx: &mut Context, timer_id: TimerId) -> Poll<()> {
-    // Drive time forward on poll to ensure progress even if background thread isn't running
-    self.jump();
+  /// Can be called without awaiting. when awaiting, what you really do is confirm the message has
+  /// gone through to the driver.
+  pub fn add(variant: TimerVariant, duration: usize) -> TimerId {
+    let receiver = Self::get(move |h| {
+      h.send_message(MessagePayload::AddTimer { variant, duration })
+    });
 
-    if timer_id.has_happened(self.start_elapsed()) {
-      self.field1.lock().unwrap().waker_store.remove(&timer_id);
-      return Poll::Ready(());
-    }
-
-    self
-      .field1
-      .lock()
-      .unwrap()
-      .waker_store
-      .insert(timer_id, cx.waker().clone());
-
-    Poll::Pending
+    TimerId::new(receiver.recv().expect("liten time error"))
   }
 
-  fn jump(&self) {
-    let mut _lock = self.field1.lock().unwrap();
+  pub fn add_waker(waker: Waker, duration: usize) -> TimerId {
+    Self::add(TimerVariant::Waker(waker), duration)
+  }
 
-    let millis = _lock.last_advance.elapsed().as_millis() as usize;
+  pub fn add_fn<F>(_fn: F, duration: usize) -> TimerId
+  where
+    F: FnOnce() + Send + Sync + 'static,
+  {
+    Self::add(TimerVariant::Fn(Box::new(_fn)), duration)
+  }
 
-    let timers: Vec<TimerId> = _lock.clock.advance(millis).collect();
-    _lock.last_advance = Instant::now();
+  /// Panics if variant is not waker and if entry doesn't exist.
+  pub fn update_timer_waker(timer_id: TimerId, waker: Waker) {
+    let receiver = Self::get(move |h| {
+      h.send_message(MessagePayload::UpdateTimer {
+        variant: TimerVariant::Waker(waker),
+        timer_id,
+      })
+    });
+    let code = receiver.recv().expect("liten time error");
 
-    for timer in timers {
-      if let Some(testing) = _lock.waker_store.remove(&timer) {
-        testing.wake();
-      }
-    }
+    assert!(code == 0);
+  }
+
+  pub fn entry_exists(timer_id: &TimerId) -> bool {
+    Self::get(move |h| h.state.state.contains_key(timer_id))
   }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+  use std::{
+    sync::{
+      atomic::{AtomicBool, Ordering},
+      Arc,
+    },
+    task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
+  };
 
   fn dummy_waker() -> Waker {
     fn no_op(_: *const ()) {}
@@ -220,19 +372,25 @@ mod tests {
 
   #[crate::internal_test]
   fn timer_insert_and_poll_integration() {
-    let driver = TimeDriver::get();
-    let timer_id = driver.insert(10000);
-    let waker = dummy_waker();
-    let mut cx = Context::from_waker(&waker);
-    let poll = driver.poll(&mut cx, timer_id);
-    assert!(matches!(poll, Poll::Pending));
-    TimeDriver::shutdown();
+    let thing = Arc::new(AtomicBool::new(false));
+    let _thing = thing.clone();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let driver = TimeHandle::add_fn(
+      move || {
+        sender.send(0);
+      },
+      200,
+    );
+
+    receiver.recv_timeout(Duration::from_millis(205)).unwrap();
+
+    TimeHandle::shutdown();
   }
 
   #[crate::internal_test]
   #[should_panic]
   fn shutdown_twice_panics_integration() {
-    TimeDriver::shutdown();
-    TimeDriver::shutdown();
+    TimeHandle::shutdown();
+    TimeHandle::shutdown();
   }
 }
