@@ -1,3 +1,5 @@
+#![cfg(feature = "sync")]
+
 use liten::sync::{Mutex, TryLockError};
 
 #[liten::internal_test]

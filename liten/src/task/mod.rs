@@ -12,29 +12,20 @@
 #![allow(clippy::module_inception)]
 mod handle;
 pub(crate) mod store;
-pub use handle::*;
+cfg_rt! {
+  pub use handle::*;
+  use crate::runtime::RuntimeHandle;
+}
+mod yield_now;
 
-use crate::parking;
-#[cfg(feature = "runtime")]
-use crate::task::store::TaskStore;
-#[cfg(feature = "runtime")]
-use std::future::Future;
+cfg_rt! {
+  use std::future::Future;
+}
 
 cfg_rt! {
   /// Spawns a new asynchronous task.
   ///
   /// *See [task module docs](crate::task) for documentation about tasks*
-  ///
-  /// When you spawn a task, it behaves a bit differently depending on which scheduler you are using.
-  ///
-  /// ## Multithreaded executor
-  /// When a multithreaded executor is running, tasks get polled by worker threads in the background.
-  /// This means that even if your main thread blocks, tasks can get executed.
-  ///
-  /// ## Singlethreaded executor
-  /// When a singlethreaded executor is running, tasks are polled when the main function
-  /// doesn't block, in other words, waiting for an await call to finish.
-  ///
   ///
   /// Tasks can return values and be retreived if needed by the caller by awaiting the
   /// [`TaskHandle`](`crate::task::TaskHandle`). TaskHandle returns the value wrapped by a [`Result`]
@@ -97,32 +88,25 @@ cfg_rt! {
   /// other async combinators.
   pub fn spawn<F>(fut: F) -> handle::TaskHandle<F::Output>
   where
-    F: Future + Send + 'static,
-    F::Output: Send,
+    F: Future + 'static,
+    F::Output: 'static,
   {
-
-    let (runnable, task) = async_task::spawn(fut, |runnable| {
-      TaskStore::get().task_enqueue(runnable);
-      parking::unpark();
-    });
-    runnable.schedule();
-
-    TaskHandle::new(task)
+    RuntimeHandle::with(|handle| handle.spawn(fut))
   }
 }
 
-// /// Give up some time to the task scheduler.
-// ///
-// /// *See [task module docs](crate::task) for documentation about tasks*
-// ///
-// /// When a task/main future currently on has little to do, or for some reason is waiting for another task
-// /// but doesn't have access to the handle, it can signal to the schedule that the caller is willing
-// /// to give up compute to prioritize other tasks.
-// ///
-// /// A drawback is that if no other tasks are running, this will just busy-wait for a while, which
-// /// wastes CPU and energy.
-// ///
-// /// Other primitives should be used instead of (checkout [`sync`](`crate::sync`) for async primitives) this and this should be seen as a last resort.
-// pub async fn yield_now() {
-//   yield_now::YieldNow::default().await
-// }
+/// Give up some time to the task scheduler.
+///
+/// *See [task module docs](crate::task) for documentation about tasks*
+///
+/// When a task/main future currently on has little to do, or for some reason is waiting for another task
+/// but doesn't have access to the handle, it can signal to the schedule that the caller is willing
+/// to give up compute to prioritize other tasks.
+///
+/// A drawback is that if no other tasks are running, this will just busy-wait for a while, which
+/// wastes CPU and energy.
+///
+/// Other primitives should be used instead of (checkout [`sync`](`crate::sync`) for async primitives) this and this should be seen as a last resort.
+pub async fn yield_now() {
+  yield_now::YieldNow::default().await
+}

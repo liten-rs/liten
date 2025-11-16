@@ -1,0 +1,276 @@
+mod clock;
+// mod sleep;
+mod utils;
+mod wheel;
+
+use crate::{loom::sync::atomic::AtomicUsize, time::clock::TimerEntry};
+
+use std::{
+  collections::HashMap,
+  future::Future,
+  sync::{
+    mpsc::{self, TryRecvError},
+    OnceLock,
+  },
+  task::Waker,
+  thread::{self, JoinHandle},
+  time::{Duration, Instant},
+};
+
+use clock::{Clock, TimerId};
+use parking_lot::Mutex;
+// pub use sleep::*;
+
+const TIME_SPINLOOP_MASSAGING: u64 = 10;
+
+pub struct TimeHandle {
+  // field1: Arc<Mutex<TimeDriverInner>>,
+  sender: mpsc::Sender<DriverMessage>,
+  background_handle: Option<JoinHandle<()>>,
+}
+
+pub enum TimerVariant {
+  Waker(Waker),
+  Fn(Box<dyn FnOnce() + Send>),
+}
+
+impl TimerVariant {
+  fn call(self) {
+    match self {
+      Self::Waker(waker) => waker.wake(),
+      Self::Fn(_fn) => _fn(),
+    }
+  }
+}
+
+pub enum MessagePayload {
+  Shutdown,
+  AddTimer { variant: TimerVariant, duration: usize },
+}
+
+impl MessagePayload {
+  fn new_waker(waker: Waker, duration: usize) -> Self {
+    Self::AddTimer { variant: TimerVariant::Waker(waker), duration }
+  }
+
+  fn new_fn(_fn: Box<dyn FnOnce() + Send>, duration: usize) -> Self {
+    Self::AddTimer { variant: TimerVariant::Fn(_fn), duration }
+  }
+}
+
+pub struct DriverMessage {
+  payload: MessagePayload,
+  sender: oneshot::Sender<()>,
+}
+
+pub struct MessageNotReceived;
+
+impl TimeHandle {
+  fn get<F, R>(f: F) -> R
+  where
+    F: FnOnce(&mut TimeHandle) -> R,
+  {
+    static TIME_DRIVER: Mutex<Option<TimeHandle>> = Mutex::new(None);
+
+    let mut _lock = TIME_DRIVER.lock();
+
+    let res = match _lock.as_mut() {
+      Some(handle) => f(handle),
+      None => {
+        *_lock = Some(TimeHandle::new());
+        f(_lock.as_mut().unwrap())
+      }
+    };
+
+    drop(_lock);
+
+    res
+  }
+
+  fn new() -> TimeHandle {
+    let (sender, receiver) = mpsc::channel();
+    let handle = thread::spawn(move || Self::background(receiver));
+
+    let time_driver = TimeHandle { background_handle: Some(handle), sender };
+
+    time_driver
+  }
+
+  fn send_message(
+    &self,
+    payload: MessagePayload,
+  ) -> impl Future<Output = Result<(), MessageNotReceived>> {
+    let (sender, receiver) = oneshot::channel::<()>();
+
+    let res = self.sender.send(DriverMessage { payload, sender });
+
+    if res.is_ok() {
+      let handle = self
+        .background_handle
+        .as_ref()
+        .expect("driver not launched before sending message");
+
+      handle.thread().unpark();
+    }
+
+    async move {
+      match res {
+        Ok(_) => receiver.await.map_err(|_| MessageNotReceived),
+        Err(_) => Err(MessageNotReceived),
+      }
+    }
+  }
+
+  pub async fn shutdown() {
+    let result = Self::get(|h| h.send_message(MessagePayload::Shutdown));
+
+    let _ = result.await;
+
+    Self::get(|h| {
+      if let Some(handle) = h.background_handle.take() {
+        let _ = handle.join();
+      }
+    });
+  }
+
+  /// Can be called without awaiting. when awaiting, what you really do is confirm the message has
+  /// gone through to the driver.
+  pub fn add(
+    variant: TimerVariant,
+    duration: usize,
+  ) -> impl Future<Output = Result<(), MessageNotReceived>> {
+    let has_received_message = Self::get(|h| {
+      h.send_message(MessagePayload::AddTimer { variant, duration })
+    });
+
+    has_received_message
+  }
+
+  pub fn add_waker(
+    waker: Waker,
+    duration: usize,
+  ) -> impl Future<Output = Result<(), MessageNotReceived>> {
+    Self::add(TimerVariant::Waker(waker), duration)
+  }
+
+  pub fn add_fn<F>(
+    _fn: F,
+    duration: usize,
+  ) -> impl Future<Output = Result<(), MessageNotReceived>>
+  where
+    F: FnOnce() + Send + 'static,
+  {
+    Self::add(TimerVariant::Fn(Box::new(_fn)), duration)
+  }
+
+  fn background(receiver: mpsc::Receiver<DriverMessage>) {
+    let mut clock = Clock::new();
+    let mut last_advance = Instant::now();
+
+    let mut hashes = HashMap::new();
+
+    let mut next_id = 0;
+
+    loop {
+      let value = match receiver.try_recv() {
+        Ok(value) => Some(value),
+        Err(err) => match err {
+          TryRecvError::Empty => None,
+          TryRecvError::Disconnected => break,
+        },
+      };
+
+      if let Some(message) = value {
+        let _ = message.sender.send(());
+        match message.payload {
+          MessagePayload::Shutdown => break,
+          MessagePayload::AddTimer { variant, duration } => {
+            let _next_id = next_id + 1;
+            clock.insert(TimerId::new(_next_id), duration);
+            hashes.insert(TimerId::new(_next_id), variant);
+            next_id = _next_id;
+          }
+        }
+      }
+
+      let to_advance = last_advance.elapsed();
+      let timers = clock.advance(to_advance.as_millis() as usize + 10);
+      if !timers.is_empty() {
+        let instant = Instant::now();
+
+        while instant.elapsed() > Duration::from_millis(9) {
+          std::hint::spin_loop();
+        }
+      }
+      last_advance += to_advance;
+
+      for timer_id in timers {
+        // If doesn't exist, means it's cancelled.
+        if let Some(entry) = hashes.remove(&timer_id) {
+          entry.call();
+        }
+      }
+
+      match clock.peek() {
+        Some(timeout) => thread::park_timeout(Duration::from_millis(
+          timeout as u64 - TIME_SPINLOOP_MASSAGING,
+        )),
+        None => thread::park(),
+      }
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::{
+    sync::{
+      atomic::{AtomicBool, Ordering},
+      Arc,
+    },
+    task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
+  };
+
+  fn dummy_waker() -> Waker {
+    fn no_op(_: *const ()) {}
+    fn clone(_: *const ()) -> RawWaker {
+      dummy_raw_waker()
+    }
+    static VTABLE: RawWakerVTable =
+      RawWakerVTable::new(clone, no_op, no_op, no_op);
+    fn dummy_raw_waker() -> RawWaker {
+      RawWaker::new(std::ptr::null(), &VTABLE)
+    }
+    unsafe { Waker::from_raw(dummy_raw_waker()) }
+  }
+
+  #[cfg(feature = "runtime")]
+  #[crate::internal_test]
+  fn timer_insert_and_poll_integration() {
+    crate::runtime::Runtime::single_threaded().block_on(async {
+      let thing = Arc::new(AtomicBool::new(false));
+      let _thing = thing.clone();
+      let now = Instant::now();
+      let driver = TimeHandle::add_fn(
+        move || {
+          panic!("{:?}", now.elapsed());
+        },
+        200,
+      )
+      .await;
+
+      std::thread::sleep(Duration::from_millis(400));
+
+      assert!(thing.load(Ordering::Acquire) == true);
+      TimeHandle::shutdown().await;
+    })
+  }
+
+  // #[crate::internal_test]
+  // #[should_panic]
+  // fn shutdown_twice_panics_integration() {
+  //   TimeDriver::shutdown();
+  //   TimeDriver::shutdown();
+  // }
+}

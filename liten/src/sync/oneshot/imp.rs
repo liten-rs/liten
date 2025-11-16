@@ -1,4 +1,5 @@
 use std::{
+  cell::{RefCell, RefMut},
   fmt::Debug,
   future::Future,
   mem,
@@ -6,8 +7,6 @@ use std::{
   ptr::NonNull,
   task::{Context, Poll, Waker},
 };
-
-use crate::loom::sync::{Mutex, MutexGuard};
 
 use thiserror::Error;
 
@@ -46,10 +45,7 @@ pub enum OneshotError {
 ///   assert_eq!(value, Ok(42));
 /// }
 /// ```
-// TODO: Get rid of Arc
 pub struct Sender<V>(NonNull<Inner<V>>);
-
-unsafe impl<V: Send> Send for Sender<V> {}
 
 impl<V> Sender<V> {
   pub(crate) fn new(arc_inner: NonNull<Inner<V>>) -> Self {
@@ -100,8 +96,6 @@ impl<V> Drop for Sender<V> {
 /// ```
 pub struct Receiver<V>(NonNull<Inner<V>>);
 
-unsafe impl<V: Send> Send for Receiver<V> {}
-
 impl<V> Receiver<V> {
   pub(crate) fn new(arc_inner: NonNull<Inner<V>>) -> Self {
     Receiver::<V>(arc_inner)
@@ -110,11 +104,6 @@ impl<V> Receiver<V> {
   pub fn try_recv(&self) -> Result<Option<V>, OneshotError> {
     unsafe { self.0.as_ref() }.try_recv()
   }
-
-  // pub fn try_get_sender(&self) -> Result<Sender<V>, OneshotError> {
-  //   unsafe { self.0.as_ref() }.try_get_sender()?;
-  //   Ok(Sender(self.0))
-  // }
 }
 
 impl<V> Drop for Receiver<V> {
@@ -175,24 +164,24 @@ impl<V> std::fmt::Debug for State<V> {
   }
 }
 
-pub struct Inner<V>(Mutex<State<V>>);
+pub struct Inner<V>(RefCell<State<V>>);
 
 impl<V> Inner<V> {
   pub(super) fn new() -> Self {
-    Inner(Mutex::new(State::Init))
+    Inner(RefCell::new(State::Init))
   }
 }
 
 impl<V> Inner<V> {
   fn try_recv(&self) -> Result<Option<V>, OneshotError> {
-    self.inner_try_recv(&mut self.0.lock().unwrap())
+    self.inner_try_recv(&mut self.0.borrow_mut())
   }
 
   fn recv_poll(
     &self,
     recv_ctx: &mut Context<'_>,
   ) -> Poll<Result<V, OneshotError>> {
-    let mut state = self.0.lock().unwrap();
+    let mut state = self.0.borrow_mut();
 
     match *state {
       State::Init => {
@@ -220,7 +209,7 @@ impl<V> Inner<V> {
   }
 
   fn send(&self, value: V) -> Result<(), OneshotError> {
-    let state = &mut *self.0.lock().unwrap();
+    let state = &mut *self.0.borrow_mut();
     match state {
       State::Init => {
         *state = State::Sent(Some(value), None);
@@ -236,22 +225,9 @@ impl<V> Inner<V> {
       State::SenderDropped | State::Sent(_, _) => unreachable!(),
     }
   }
-  // pub fn try_get_sender(&self) -> Result<(), OneshotError> {
-  //   let mut state = self.0.lock().unwrap();
-  //   match *state {
-  //     State::Init => Err(OneshotError::SenderNotDropped),
-  //     State::SenderDropped => {
-  //       *state = State::Init;
-  //       Ok(())
-  //     }
-  //     State::Sent(_, _) => Err(OneshotError::SenderNotDropped),
-  //     State::Listening(_) => Err(OneshotError::SenderNotDropped),
-  //     State::ReceiverDropped => Err(OneshotError::SenderNotDropped),
-  //   }
-  // }
   // Returns if should drop
   fn drop_channel_sender(&self) -> bool {
-    let mut state = self.0.lock().unwrap();
+    let mut state = self.0.borrow_mut();
 
     match *state {
       State::ReceiverDropped => true,
@@ -263,7 +239,7 @@ impl<V> Inner<V> {
   }
 
   fn drop_channel_receiver(&self) -> bool {
-    let mut state = self.0.lock().unwrap();
+    let mut state = self.0.borrow_mut();
 
     match *state {
       State::SenderDropped | State::Sent(_, _) => true,
@@ -278,7 +254,7 @@ impl<V> Inner<V> {
 impl<V> Inner<V> {
   fn inner_try_recv(
     &self,
-    state: &mut MutexGuard<'_, State<V>>,
+    state: &mut RefMut<'_, State<V>>,
   ) -> Result<Option<V>, OneshotError> {
     match &mut **state {
       State::Init => Ok(None),

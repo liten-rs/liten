@@ -4,5 +4,5 @@ use async_task::Runnable;
 pub use single_threaded::*;
 
 pub trait Scheduler {
-  fn tick(&self, runnables: impl Iterator<Item = Runnable>);
+  fn schedule(&self, runnables: Runnable);
 }

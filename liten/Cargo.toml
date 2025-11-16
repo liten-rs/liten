@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 build = "build.rs"
 
-
 [features]
 default = []
 sync = []
@@ -12,12 +11,12 @@ time = []
 blocking = ["sync"]
 fs = ["blocking"]
 runtime = []
-io = ["dep:lio", "dep:libc", "dep:socket2"]
+# io = ["dep:lio", "dep:libc", "dep:socket2"]
 coro = []
 compat = ["dep:tokio"]
-full = ["sync", "time", "blocking", "fs", "runtime", "io", "compat"]
+full = ["sync", "time", "blocking", "fs", "runtime", "compat"]
 
-_loom_testing = ["sync", "blocking", "fs", "runtime", "io", "compat"]
+_loom_testing = ["sync", "blocking", "fs", "runtime", "compat"]
 
 [target.'cfg(loom)'.dependencies]
 loom = { version = "0.7", features = ["futures"] }
@@ -30,7 +29,8 @@ thiserror = "2.0.11"
 
 pin-project-lite = "0.2.16"
 crossbeam-queue = "0.3.12"
-socket2 = { workspace = true, optional = true }
-libc = { workspace = true, optional = true }
 tokio = { version = "1.47.1", optional = true }
 async-task = "4.7.1"
+parking_lot = "0.12.5"
+oneshot = { version = "0.1.11", features = ["async"] }
+dashmap = "6.1.0"

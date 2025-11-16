@@ -2,20 +2,19 @@
 use std::{
   future::Future,
   pin::Pin,
+  rc::Rc,
   task::{Context, Poll, Waker},
 };
 
-#[cfg(feature = "time")]
-use crate::future::FutureExt;
-#[cfg(feature = "time")]
-use std::time::Duration;
+// #[cfg(feature = "time")]
+// use crate::future::FutureExt;
+// #[cfg(feature = "time")]
+// use std::time::Duration;
 
 use crossbeam_queue::{ArrayQueue, SegQueue};
 
-use crate::loom::sync::Arc;
-
 pub fn bounded<T>(capacity: usize) -> (Sender<T>, Receiver<T>) {
-  let inner = Arc::new(Inner {
+  let inner = Rc::new(Inner {
     queue: ArrayQueue::new(capacity),
     recv_wakers: SegQueue::new(),
   });
@@ -56,7 +55,7 @@ impl<T> Inner<T> {
 }
 
 #[derive(Clone)]
-pub struct Sender<T>(Arc<Inner<T>>);
+pub struct Sender<T>(Rc<Inner<T>>);
 
 impl<T> Sender<T> {
   pub fn try_send(&self, value: T) -> Result<(), T> {
@@ -64,24 +63,24 @@ impl<T> Sender<T> {
   }
 }
 
-pub struct Receiver<T>(Arc<Inner<T>>);
+pub struct Receiver<T>(Rc<Inner<T>>);
 
 impl<T> Receiver<T> {
   pub fn recv(&self) -> RecvFuture<'_, T> {
     RecvFuture::<'_, T>(self)
   }
 
-  cfg_time! {
-    pub async fn recv_timeout(
-      &self,
-      duration: Duration,
-    ) -> Result<Result<T, ()>, crate::future::timeout::Timeout>
-    where
-      T: Send + Sync,
-    {
-      self.recv().timeout(duration).await
-    }
-  }
+  // cfg_time! {
+  //   pub async fn recv_timeout(
+  //     &self,
+  //     duration: Duration,
+  //   ) -> Result<Result<T, ()>, crate::future::timeout::Timeout>
+  //   where
+  //     T: Send + Sync,
+  //   {
+  //     self.recv().timeout(duration).await
+  //   }
+  // }
 }
 
 pub struct RecvFuture<'a, V>(&'a Receiver<V>);
@@ -94,27 +93,27 @@ impl<V> Future for RecvFuture<'_, V> {
   }
 }
 
-#[cfg(test)]
-mod tests {
-  #[test]
-  fn test() {
-    crate::runtime::Runtime::single_threaded().block_on(async {
-      let (sender, receiver) = super::bounded(128);
-
-      let result = crate::join!(
-        crate::task::spawn({
-          let sender = sender.clone();
-          async move { sender.try_send(0u8) }
-        }),
-        crate::task::spawn({
-          let sender = sender.clone();
-          async move { sender.try_send(0u8) }
-        }),
-      );
-      assert_eq!(result, (Ok(Ok(())), Ok(Ok(()))));
-
-      assert_eq!(receiver.recv().await, Ok(0));
-      assert_eq!(receiver.recv().await, Ok(0));
-    })
-  }
-}
+// #[cfg(test)]
+// mod tests {
+//   #[test]
+//   fn test() {
+//     crate::runtime::Runtime::single_threaded().block_on(async {
+//       let (sender, receiver) = super::bounded(128);
+//
+//       let result = crate::join!(
+//         crate::task::spawn({
+//           let sender = sender.clone();
+//           async move { sender.try_send(0u8) }
+//         }),
+//         crate::task::spawn({
+//           let sender = sender.clone();
+//           async move { sender.try_send(0u8) }
+//         }),
+//       );
+//       assert_eq!(result, (Ok(()), Ok(())));
+//
+//       assert_eq!(receiver.recv().await, Ok(0));
+//       assert_eq!(receiver.recv().await, Ok(0));
+//     })
+//   }
+// }

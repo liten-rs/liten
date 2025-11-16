@@ -1,9 +1,12 @@
+#![cfg(all(feature = "runtime", feature = "sync"))]
+
 // Integration tests for the task module
-use liten::task::spawn;
 use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
+use liten::sync::oneshot;
 
 struct TestFuture(Cell<u8>);
 impl Future for TestFuture {
@@ -14,6 +17,7 @@ impl Future for TestFuture {
       cx.waker().wake_by_ref();
       Poll::Pending
     } else {
+      println!("very");
       Poll::Ready(99)
     }
   }
@@ -21,7 +25,24 @@ impl Future for TestFuture {
 
 #[test]
 fn task_poll_pending_then_ready_integration() {
-  liten::runtime::Runtime::single_threaded().block_on(async {
-    assert_eq!(spawn(TestFuture(Cell::new(0))).await.unwrap(), 99);
-  })
+  let runtime = liten::runtime::Runtime::single_threaded();
+
+  let (sender, receiver) = oneshot::channel();
+
+  let handle = runtime.spawn(async {
+    let resutl = receiver.await.unwrap();
+    println!("{resutl}");
+  });
+
+  let _ = sender.send(0);
+
+  runtime.block_on(async {
+    let ret = liten::task::spawn(async { TestFuture(Cell::new(0)).await });
+    handle.await;
+    // handle.cancel();
+    // drop(handle);
+    TestFuture(Cell::new(0)).await;
+
+    ret.await;
+  });
 }

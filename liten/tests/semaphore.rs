@@ -1,3 +1,5 @@
+#![cfg(feature = "sync")]
+
 use liten::testing_util::noop_waker;
 use std::future::Future;
 use std::task::Context;

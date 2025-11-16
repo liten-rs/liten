@@ -93,10 +93,12 @@ mod tests {
   use super::*;
   use std::sync::Arc;
 
+  #[cfg(feature = "runtime")]
   #[crate::internal_test]
   async fn basic_lock_unlock() {
     let m = Mutex::new(5);
-    let guard = crate::future::block_on(m.lock()).unwrap();
+    let guard =
+      crate::runtime::Runtime::single_threaded().block_on(m.lock()).unwrap();
     assert_eq!(*guard, 5);
   }
 
@@ -117,12 +119,14 @@ mod tests {
     ));
   }
 
+  #[cfg(feature = "runtime")]
   #[crate::internal_test]
   fn poisoning_on_panic() {
     let m = Arc::new(Mutex::new(42));
     let m2 = m.clone();
     let _ = std::panic::catch_unwind(move || {
-      let _guard = crate::future::block_on(m2.lock()).unwrap();
+      let _guard =
+        crate::runtime::Runtime::single_threaded().block_on(m2.lock()).unwrap();
       panic!("poison");
     });
     assert!(m.poisoned.load(std::sync::atomic::Ordering::Relaxed));

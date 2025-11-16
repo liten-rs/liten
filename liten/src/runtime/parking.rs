@@ -5,16 +5,8 @@ use std::{
 
 static WAITER: OnceLock<Thread> = OnceLock::new();
 
-pub fn set_thread(thread: Thread) {
-  if let Err(_) = WAITER.set(thread) {
-    panic!("oh no!");
-  }
-}
-
-pub fn set_main_thread() -> Thread {
-  let thread = thread::current();
-  set_thread(thread.clone());
-  thread
+pub fn set_thread() {
+  WAITER.set(thread::current()).expect("Failed to set thread");
 }
 
 pub fn unpark() {
