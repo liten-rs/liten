@@ -12,10 +12,14 @@ macro_rules! syscall {
 
 use std::io;
 
+#[cfg(not(linux))]
+use std::os::fd::RawFd;
+
 mod accept;
 mod bind;
 mod close;
 mod connect;
+mod linkat;
 mod listen;
 mod openat;
 mod read;
@@ -26,6 +30,7 @@ mod socket;
 mod fsync;
 #[cfg(linux)]
 mod linkat;
+mod symlink;
 #[cfg(linux)]
 mod tee;
 #[cfg(linux)]
@@ -46,6 +51,7 @@ pub use read::*;
 pub use recv::*;
 pub use send::*;
 pub use socket::*;
+pub use symlink::*;
 #[cfg(linux)]
 pub use timeout::*;
 

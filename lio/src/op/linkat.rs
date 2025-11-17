@@ -42,7 +42,7 @@ impl Operation for LinkAt {
   impl_result!(());
 
   #[cfg(linux)]
-  const OPCODE: u8 = 57;
+  const OPCODE: u8 = 39;
 
   #[cfg(not(linux))]
   const EVENT_TYPE: Option<EventType> = None;

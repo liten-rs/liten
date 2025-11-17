@@ -113,7 +113,10 @@
 //!
 //! This project is licensed under the MIT License - see the LICENSE file for details.
 
-use std::{ffi::CString, os::fd::RawFd, time::Duration};
+use std::{
+  ffi::{CString, NulError},
+  os::fd::RawFd,
+};
 
 /// Result type for operations that return both a result and a buffer.
 ///
@@ -140,8 +143,27 @@ pub use op_progress::OperationProgress;
 use socket2::SockAddr;
 
 use crate::driver::Driver;
+use std::path::Path;
 
 macro_rules! impl_op {
+
+  (
+    $desc:tt,
+    $(#[$($doc:tt)*])*
+    $operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty ; $err:ty
+  ) => {
+    #[doc = $desc]
+    #[doc = "# Returns"]
+    #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
+    #[doc = "This function signature is equivalent to:\n```ignore"]
+    #[doc = concat!("async fn ",stringify!($name), "(", stringify!($($arg_ty),*), ") -> ", stringify!($ret))]
+    #[doc = "```"]
+    #[doc = "See more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
+    $(#[$($doc)*])*
+    pub fn $name($($arg: $arg_ty),*) -> Result<OperationProgress<$operation>, $err> {
+      Ok(Driver::submit(<$operation>::new($($arg),*)?))
+    }
+  };
   (
     $desc:tt,
     $(#[$($doc:tt)*])*
@@ -168,6 +190,7 @@ macro_rules! impl_op {
   };
 }
 
+#[cfg(linux)]
 impl_op!(
     "Times out something",
     /// # Examples
@@ -182,6 +205,56 @@ impl_op!(
     /// }
     /// ```
     Timeout, fn timeout(duration: Duration) -> BufResult<i32, Vec<u8>>
+);
+
+impl_op!(
+    "Create a soft-link",
+    /// # Examples
+    ///
+    /// ```rust
+    /// use lio::symlink;
+    /// use std::os::fd::RawFd;
+    ///
+    /// async fn write_example() -> std::io::Result<()> {
+    ///     let (bytes_written, _buf) = linkat(fd).await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    SymlinkAt, fn symlinkat(new_dir_fd: RawFd, target: impl AsRef<Path>, linkpath: impl AsRef<Path>) -> io::Result<()> ; NulError
+);
+
+// TODO: not linux.
+#[cfg(linux)]
+impl_op!(
+    "Create a hard-link",
+    /// # Examples
+    ///
+    /// ```rust
+    /// use lio::linkat;
+    /// use std::os::fd::RawFd;
+    ///
+    /// async fn write_example() -> std::io::Result<()> {
+    ///     let (bytes_written, _buf) = linkat(fd).await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    LinkAt, fn linkat(old_dir_fd: RawFd, old_path: impl AsRef<Path>, new_dir_fd: RawFd, new_path: impl AsRef<Path>) -> io::Result<()> ; NulError
+);
+
+impl_op!(
+    "Sync to fd.",
+    /// # Examples
+    ///
+    /// ```rust
+    /// use lio::fsync;
+    /// use std::os::fd::RawFd;
+    ///
+    /// async fn write_example() -> std::io::Result<()> {
+    ///     let (bytes_written, _buf) = fsync(fd).await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    Fsync, fn fsync(fd: RawFd) -> io::Result<()>
 );
 
 impl_op!(
