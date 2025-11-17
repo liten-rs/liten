@@ -3,23 +3,27 @@ use std::io;
 use std::net::SocketAddr;
 use std::os::fd::AsRawFd;
 
-fn main() -> io::Result<()> {
-  let addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
-  let sock_addr = SockAddr::from(addr);
-
-  let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
-  unsafe {
-    libc::bind(
-      socket.as_raw_fd(),
-      sock_addr.as_ptr().cast::<libc::sockaddr>(),
-      sock_addr.len(),
-    );
-  };
-  // socket.bind(&sock_addr)?;
-  socket.listen(128)?;
-
-  println!("Socket bound successfully");
-  Ok(())
+fn main() {
+  liten::runtime::Runtime::single_threaded().block_on(async {
+    let (res, _) = lio::write(1, vec![100, 102], -1).await;
+    res.unwrap();
+  })
+  // let addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
+  // let sock_addr = SockAddr::from(addr);
+  //
+  // let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
+  // unsafe {
+  //   libc::bind(
+  //     socket.as_raw_fd(),
+  //     sock_addr.as_ptr().cast::<libc::sockaddr>(),
+  //     sock_addr.len(),
+  //   );
+  // };
+  // // socket.bind(&sock_addr)?;
+  // socket.listen(128)?;
+  //
+  // println!("Socket bound successfully");
+  // Ok(())
 }
 // use std::{
 //   io::{Read, Write},

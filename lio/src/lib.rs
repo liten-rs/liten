@@ -113,7 +113,7 @@
 //!
 //! This project is licensed under the MIT License - see the LICENSE file for details.
 
-use std::{ffi::CString, os::fd::RawFd};
+use std::{ffi::CString, os::fd::RawFd, time::Duration};
 
 /// Result type for operations that return both a result and a buffer.
 ///
@@ -167,6 +167,22 @@ macro_rules! impl_op {
       impl_op!("", $(#[$($doc)*])* $operation, fn $name($($arg: $arg_ty),*) -> $ret);
   };
 }
+
+impl_op!(
+    "Times out something",
+    /// # Examples
+    ///
+    /// ```rust
+    /// use lio::timeout;
+    /// use std::os::fd::RawFd;
+    ///
+    /// async fn write_example() -> std::io::Result<()> {
+    ///     timeout(Duration::from_millis(10)).await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    Timeout, fn timeout(duration: Duration) -> BufResult<i32, Vec<u8>>
+);
 
 impl_op!(
     "Performs a write operation on a file descriptor. Equivalent to the `pwrite` syscall.",

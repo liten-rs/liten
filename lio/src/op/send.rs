@@ -31,13 +31,10 @@ impl Operation for Send {
 
   #[cfg(linux)]
   fn create_entry(&self) -> io_uring::squeue::Entry {
-    io_uring::opcode::Send::new(
-      Fd(self.fd),
-      self.buf.as_ref().unwrap().as_ptr(),
-      self.buf.as_ref().unwrap().len() as u32,
-    )
-    .flags(self.flags)
-    .build()
+    let buf = self.buf.as_ref().unwrap();
+    io_uring::opcode::Send::new(Fd(self.fd), buf.as_ptr(), buf.len() as u32)
+      .flags(self.flags)
+      .build()
   }
 
   #[cfg(not(linux))]
