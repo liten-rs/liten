@@ -19,7 +19,6 @@ mod accept;
 mod bind;
 mod close;
 mod connect;
-mod linkat;
 mod listen;
 mod openat;
 mod read;

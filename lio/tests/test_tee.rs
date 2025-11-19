@@ -1,12 +1,10 @@
 #![cfg(target_os = "linux")]
 
-use lio::loom::test_utils;
 use lio::tee;
 
 #[test]
 fn test_tee_basic() {
-  test_utils::model(|| {
-    test_utils::block_on(async {
+  liten::block_on(async {
       // Create two pipes
       let mut pipe1_fds = [0i32; 2];
       let mut pipe2_fds = [0i32; 2];
@@ -70,15 +68,13 @@ fn test_tee_basic() {
         libc::close(pipe2_fds[0]);
         libc::close(pipe2_fds[1]);
       }
-    })
-  })
+  });
 }
 
 #[cfg(target_os = "linux")]
 #[test]
 fn test_tee_large_data() {
-  test_utils::model(|| {
-    test_utils::block_on(async {
+  liten::block_on(async {
       let mut pipe1_fds = [0i32; 2];
       let mut pipe2_fds = [0i32; 2];
 
@@ -130,15 +126,13 @@ fn test_tee_large_data() {
         libc::close(pipe2_fds[0]);
         libc::close(pipe2_fds[1]);
       }
-    })
-  })
+  });
 }
 
 #[cfg(target_os = "linux")]
 #[test]
 fn test_tee_partial() {
-  test_utils::model(|| {
-    test_utils::block_on(async {
+  liten::block_on(async {
       let mut pipe1_fds = [0i32; 2];
       let mut pipe2_fds = [0i32; 2];
 
@@ -200,14 +194,12 @@ fn test_tee_partial() {
         libc::close(pipe2_fds[0]);
         libc::close(pipe2_fds[1]);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_tee_empty_pipe() {
-  test_utils::model(|| {
-    test_utils::block_on(async {
+  liten::block_on(async {
       let mut pipe1_fds = [0i32; 2];
       let mut pipe2_fds = [0i32; 2];
 
@@ -238,14 +230,12 @@ fn test_tee_empty_pipe() {
         libc::close(pipe2_fds[0]);
         libc::close(pipe2_fds[1]);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_tee_zero_size() {
-  test_utils::model(|| {
-    test_utils::block_on(async {
+  liten::block_on(async {
       let mut pipe1_fds = [0i32; 2];
       let mut pipe2_fds = [0i32; 2];
 
@@ -281,15 +271,13 @@ fn test_tee_zero_size() {
         libc::close(pipe2_fds[0]);
         libc::close(pipe2_fds[1]);
       }
-    })
-  })
+  });
 }
 
 #[cfg(target_os = "linux")]
 #[test]
 fn test_tee_multiple() {
-  test_utils::model(|| {
-    test_utils::block_on(async {
+  liten::block_on(async {
       let mut pipe1_fds = [0i32; 2];
       let mut pipe2_fds = [0i32; 2];
       let mut pipe3_fds = [0i32; 2];
@@ -359,14 +347,12 @@ fn test_tee_multiple() {
         libc::close(pipe3_fds[0]);
         libc::close(pipe3_fds[1]);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_tee_concurrent() {
-  test_utils::model(|| {
-    test_utils::block_on(async {
+  liten::block_on(async {
       // Test multiple concurrent tee operations
       let tasks: Vec<_> = (0..5)
         .map(|i| async move {
@@ -405,6 +391,5 @@ fn test_tee_concurrent() {
       for task in tasks {
         task.await;
       }
-    })
-  })
+  });
 }

@@ -1,11 +1,9 @@
 use lio::close;
-use lio::loom::test_utils::{block_on, model};
 use std::ffi::CString;
 
 #[test]
 fn test_close_basic() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let path = CString::new("/tmp/lio_test_close_basic.txt").unwrap();
 
       // Open a file
@@ -30,14 +28,12 @@ fn test_close_basic() {
       unsafe {
         libc::unlink(path.as_ptr());
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_close_after_read() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let path = CString::new("/tmp/lio_test_close_after_read.txt").unwrap();
 
       // Create file with data
@@ -68,14 +64,12 @@ fn test_close_after_read() {
       unsafe {
         libc::unlink(path.as_ptr());
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_close_after_write() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let path = CString::new("/tmp/lio_test_close_after_write.txt").unwrap();
 
       // Open file
@@ -106,8 +100,7 @@ fn test_close_after_write() {
         libc::close(read_fd);
         libc::unlink(path.as_ptr());
       }
-    })
-  })
+  });
 }
 
 // #[test]
@@ -143,19 +136,16 @@ fn test_close_after_write() {
 
 #[test]
 fn test_close_invalid_fd() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       // Try to close an invalid file descriptor
       let result = close(-1).await;
       assert!(result.is_err(), "Closing invalid fd should return error");
-    })
-  })
+  });
 }
 
 #[test]
 fn test_close_already_closed() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let path = CString::new("/tmp/lio_test_close_double.txt").unwrap();
 
       // Open a file
@@ -178,14 +168,12 @@ fn test_close_already_closed() {
       unsafe {
         libc::unlink(path.as_ptr());
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_close_concurrent() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       // Test closing multiple file descriptors sequentially
       let fds: Vec<_> = (0..10)
         .map(|i| {
@@ -209,14 +197,12 @@ fn test_close_concurrent() {
           libc::unlink(path.as_ptr());
         }
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_close_pipe() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       // Create a pipe
       let mut pipe_fds = [0i32; 2];
       unsafe {
@@ -235,6 +221,5 @@ fn test_close_pipe() {
         libc::write(write_fd, b"test".as_ptr() as *const libc::c_void, 4)
       };
       assert!(result < 0, "Writing to closed pipe should fail");
-    })
-  })
+  });
 }

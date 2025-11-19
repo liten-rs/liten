@@ -1,4 +1,3 @@
-use lio::loom::test_utils::{block_on, model};
 use lio::{bind, listen, socket};
 use socket2::{Domain, Protocol, SockAddr, Type};
 use std::net::SocketAddr;
@@ -6,8 +5,7 @@ use std::net::SocketAddr;
 #[cfg(linux)]
 #[test]
 fn test_listen_basic() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create socket");
@@ -38,15 +36,13 @@ fn test_listen_basic() {
         );
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[cfg(linux)]
 #[test]
 fn test_listen_with_backlog() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create socket");
@@ -72,15 +68,13 @@ fn test_listen_with_backlog() {
         assert_eq!(accept_val, 1);
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[cfg(linux)]
 #[test]
 fn test_listen_large_backlog() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create socket");
@@ -106,14 +100,12 @@ fn test_listen_large_backlog() {
         assert_eq!(accept_val, 1);
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_listen_without_bind() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create socket");
@@ -129,15 +121,13 @@ fn test_listen_without_bind() {
 
       // Just verify it doesn't crash
       assert!(result.is_ok() || result.is_err());
-    })
-  })
+  });
 }
 
 #[cfg(linux)]
 #[test]
 fn test_listen_ipv6() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create IPv6 socket");
@@ -162,14 +152,12 @@ fn test_listen_ipv6() {
         assert_eq!(accept_val, 1);
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_listen_on_udp() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
         .await
         .expect("Failed to create UDP socket");
@@ -187,14 +175,12 @@ fn test_listen_on_udp() {
       unsafe {
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_listen_twice() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create socket");
@@ -215,15 +201,13 @@ fn test_listen_twice() {
 
       // Just verify it doesn't crash
       assert!(result.is_ok() || result.is_err());
-    })
-  })
+  });
 }
 
 #[cfg(linux)]
 #[test]
 fn test_listen_zero_backlog() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create socket");
@@ -249,14 +233,12 @@ fn test_listen_zero_backlog() {
         assert_eq!(accept_val, 1);
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_listen_after_close() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create socket");
@@ -273,15 +255,13 @@ fn test_listen_after_close() {
       let result = listen(sock, 128).await;
 
       assert!(result.is_err(), "Listen should fail on closed socket");
-    })
-  })
+  });
 }
 
 #[cfg(linux)]
 #[test]
 fn test_listen_concurrent() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       // Test listening on multiple sockets concurrently
       let tasks: Vec<_> = (0..10)
         .map(|_| async move {
@@ -314,15 +294,13 @@ fn test_listen_concurrent() {
       for task in tasks {
         task.await;
       }
-    });
   });
 }
 
 #[cfg(linux)]
 #[test]
 fn test_listen_on_all_interfaces() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create socket");
@@ -348,6 +326,5 @@ fn test_listen_on_all_interfaces() {
         assert_eq!(accept_val, 1);
         libc::close(sock);
       }
-    });
   });
 }

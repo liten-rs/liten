@@ -34,6 +34,13 @@ pub use liten_macros::internal_test;
 cfg_rt! {
   pub mod runtime;
   pub use liten_macros::{main, test};
+
+  pub fn block_on<F>(f: F) -> F::Output
+  where
+    F: std::future::Future,
+  {
+    runtime::Runtime::single_threaded().block_on(f)
+  }
 }
 
 cfg_sync! {

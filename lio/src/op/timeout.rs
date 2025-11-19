@@ -1,4 +1,6 @@
-use std::{io::ErrorKind, time::Duration};
+#[cfg(not(linux))]
+use std::io::ErrorKind;
+use std::time::Duration;
 
 #[cfg(linux)]
 use io_uring::{opcode, squeue, types::Timespec};
