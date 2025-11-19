@@ -4,10 +4,8 @@ use std::mem::MaybeUninit;
 use std::net::SocketAddr;
 
 #[test]
-#[ignore = "Problematic"]
 fn test_accept_basic() {
   liten::block_on(async {
-    println!("hello");
     // Create and setup server socket
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
       .await
@@ -44,10 +42,9 @@ fn test_accept_basic() {
     // Give accept time to start
     let client_fut = async {
       // Connect client
-      let client_sock =
-        socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-          .await
-          .expect("Failed to create client socket");
+      let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+        .await
+        .expect("Failed to create client socket");
 
       connect(client_sock, SockAddr::from(bound_addr))
         .await
@@ -57,8 +54,8 @@ fn test_accept_basic() {
     };
 
     // Wait for accept
-    let ((accepted_fd, server_sock), client_sock) =
-      liten::join!(accept_fut, client_fut);
+    let (client_sock, (accepted_fd, server_sock)) =
+      liten::join!(client_fut, accept_fut);
 
     assert!(accepted_fd >= 0, "Accepted fd should be valid");
 
@@ -152,7 +149,6 @@ fn test_accept_multiple() {
 }
 
 #[test]
-#[ignore = "Problematic"]
 fn test_accept_with_client_info() {
   liten::block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
@@ -186,10 +182,9 @@ fn test_accept_with_client_info() {
     };
 
     let client_fut = async {
-      let client_sock =
-        socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
-          .await
-          .expect("Failed to create client socket");
+      let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+        .await
+        .expect("Failed to create client socket");
 
       connect(client_sock, SockAddr::from(bound_addr))
         .await
@@ -239,17 +234,15 @@ fn test_accept_ipv6() {
     listen(server_sock, 128).await.expect("Failed to listen");
 
     let accept_fut = async move {
-      let client_fd =
-        accept(server_sock).await.expect("Failed to accept IPv6");
+      let client_fd = accept(server_sock).await.expect("Failed to accept IPv6");
 
       (client_fd, server_sock)
     };
 
     let client_fut = async {
-      let client_sock =
-        socket(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))
-          .await
-          .expect("Failed to create IPv6 client socket");
+      let client_sock = socket(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))
+        .await
+        .expect("Failed to create IPv6 client socket");
 
       connect(client_sock, SockAddr::from(bound_addr))
         .await
@@ -274,7 +267,6 @@ fn test_accept_ipv6() {
 }
 
 #[test]
-#[ignore = "Problematic"]
 fn test_accept_concurrent() {
   liten::block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
