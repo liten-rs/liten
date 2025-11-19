@@ -13,7 +13,7 @@ use super::Operation;
 
 pub struct Accept {
   fd: RawFd,
-  addr: libc::sockaddr_un,
+  addr: libc::sockaddr,
   len: libc::socklen_t,
 }
 
@@ -21,8 +21,8 @@ unsafe impl Send for Accept {}
 
 impl Accept {
   pub fn new(fd: RawFd) -> Self {
-    let sockaddr = unsafe { mem::zeroed::<libc::sockaddr_un>() };
-    let len = mem::size_of::<libc::sockaddr_un>() as libc::socklen_t;
+    let sockaddr = unsafe { mem::zeroed::<libc::sockaddr>() };
+    let len = mem::size_of::<libc::sockaddr>() as libc::socklen_t;
     Self { fd, addr: sockaddr, len }
   }
 }
@@ -42,9 +42,10 @@ impl Operation for Accept {
   fn create_entry(&self) -> squeue::Entry {
     opcode::Accept::new(
       Fd(self.fd),
-      &self.addr as *const _ as *mut libc::sockaddr,
+      &self.addr as *const _ as *mut _,
       &self.len as *const _ as *mut _,
     )
+    .flags(0)
     .build()
   }
 
