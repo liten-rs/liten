@@ -1,7 +1,3 @@
 [workspace]
-members = [ "liten", "liten-macros", "examples/testing", "liten", "lio", "lblock", "unblocking"]
+members = [ "liten", "liten-macros", "liten", "lio", "unblocking"]
 resolver = "3"
-
-[workspace.dependencies]
-socket2 = { version = "0.6.0" }
-libc = { version = "0.2.174" }

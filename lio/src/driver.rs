@@ -1,17 +1,15 @@
 use crate::OperationProgress;
 
-use std::collections::HashMap;
-
-use crate::loom::{
+use parking_lot::Mutex;
+use std::{
+  collections::HashMap,
   sync::{
-    Mutex, OnceLock,
+    OnceLock,
     atomic::{AtomicU64, Ordering},
+    mpsc,
   },
   thread,
 };
-
-#[cfg(linux)]
-use crate::loom;
 #[cfg(not(linux))]
 use std::{io, os::fd::RawFd, task::Waker};
 #[cfg(linux)]
@@ -22,7 +20,6 @@ use polling::PollMode;
 
 #[cfg(linux)]
 use io_uring::{IoUring, Probe};
-use tokio::sync::oneshot;
 
 use crate::op;
 use crate::op_registration::OpRegistration;
@@ -47,7 +44,7 @@ pub(crate) struct Driver {
 
   wakers: Mutex<HashMap<u64, OpRegistration>>,
   // Shared shutdown state and background thread handle
-  shutting_down: Mutex<Option<oneshot::Sender<()>>>,
+  shutting_down: Mutex<Option<mpsc::Sender<()>>>,
   background_handle: Mutex<Option<thread::JoinHandle<()>>>,
 }
 
@@ -96,9 +93,11 @@ impl Driver {
       DRIVER.get().unwrap()
     } else {
       let driver = DRIVER.get().unwrap();
-      let (sender, receiver) = oneshot::channel();
+      let (sender, receiver) = mpsc::channel();
+
       #[cfg(feature = "tracing")]
       tracing::debug!("Driver::get: starting background thread");
+
       let handle = driver.background(receiver);
       *driver.background_handle.lock() = Some(handle);
 
@@ -151,7 +150,6 @@ impl Driver {
     let mut _lock = driver.background_handle.lock();
     let handle = _lock.take().unwrap();
     drop(_lock);
-    thread::yield_now();
     let _ = handle.join();
   }
 }
@@ -177,53 +175,8 @@ impl Driver {
 
   pub fn background(
     &'static self,
-    mut receiver: oneshot::Receiver<()>,
-  ) -> loom::thread::JoinHandle<()> {
-    let (sender, mut receiver2) = oneshot::channel();
-    #[cfg(loom)]
-    thread::spawn(move || {
-      loop {
-        use crate::loom;
-
-        match receiver2.try_recv() {
-          Ok(()) => {
-            #[cfg(feature = "tracing")]
-            tracing::info!("background thread: shutdown signal received");
-            break;
-          }
-          Err(err) => match err {
-            oneshot::error::TryRecvError::Empty => {
-              #[cfg(feature = "tracing")]
-              tracing::info!("background thread, haven't seen");
-            }
-            oneshot::error::TryRecvError::Closed => {
-              #[cfg(feature = "tracing")]
-              tracing::info!("background thread: sender closed");
-              break;
-            }
-          },
-        };
-        // Submit a NOP to wake submit_and_wait
-        unsafe {
-          let _g = self.submission_guard.lock();
-          let mut sub = self.inner.submission_shared();
-          let entry = io_uring::opcode::Nop::new().build().user_data(0);
-          let _ = sub.push(&entry);
-          sub.sync();
-          drop(sub);
-        }
-        let _ = self.inner.submit();
-
-        loom::thread::yield_now();
-
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        loom::thread::yield_now();
-      }
-
-      #[cfg(feature = "tracing")]
-      tracing::info!("back2: exiting");
-    });
-
+    mut receiver: mpsc::Receiver<()>,
+  ) -> thread::JoinHandle<()> {
     // SAFETY: completion_shared is only accessed here so it's a singlethreaded access, hence
     // guaranteed only to have one completion queue.
     utils::create_worker(move || {
@@ -234,32 +187,26 @@ impl Driver {
           Ok(()) => {
             #[cfg(feature = "tracing")]
             tracing::info!("background thread: shutdown signal received");
-            let _ = sender.send(());
             break;
           }
           Err(err) => match err {
-            oneshot::error::TryRecvError::Empty => {
+            mpsc::TryRecvError::Empty => {
               #[cfg(feature = "tracing")]
               tracing::info!("background thread, haven't seen");
             }
-            oneshot::error::TryRecvError::Closed => {
+            mpsc::TryRecvError::Disconnected => {
               #[cfg(feature = "tracing")]
               tracing::info!("background thread: sender closed");
-              let _ = sender.send(());
               break;
             }
           },
         };
-
-        thread::yield_now();
 
         self.inner.submit_and_wait(1).unwrap();
 
         let entries: Vec<Entry> =
             // SAFETY: The only thread that is concerned with completion queue.
             unsafe { self.inner.completion_shared() }.collect();
-
-        thread::yield_now();
 
         for entry in entries {
           use std::mem;
@@ -583,8 +530,6 @@ impl Driver {
     #[cfg(feature = "tracing")]
     tracing::debug!(operation_id = key, fd = fd, "register_repoll: completed");
 
-    thread::yield_now();
-
     Some(Ok(()))
   }
 
@@ -693,7 +638,7 @@ impl Driver {
 
   pub fn background(
     &'static self,
-    mut sender: oneshot::Receiver<()>,
+    mut sender: mpsc::Receiver<()>,
   ) -> thread::JoinHandle<()> {
     utils::create_worker(move || {
       #[cfg(feature = "tracing")]
@@ -707,11 +652,11 @@ impl Driver {
             break;
           }
           Err(err) => match err {
-            oneshot::error::TryRecvError::Empty => {
+            mpsc::TryRecvError::Empty => {
               #[cfg(feature = "tracing")]
               tracing::info!("background thread, haven't seen");
             }
-            oneshot::error::TryRecvError::Closed => {
+            mpsc::TryRecvError::Disconnected => {
               #[cfg(feature = "tracing")]
               tracing::info!("background thread: sender closed");
               break;
@@ -724,15 +669,9 @@ impl Driver {
         #[cfg(feature = "tracing")]
         tracing::trace!("background thread: waiting on poller");
 
-        #[cfg(loom)]
-        let timeout = Some(std::time::Duration::from_millis(100));
-
-        #[cfg(not(loom))]
         let timeout = None;
 
         let wait_result = self.poller.wait(&mut events, timeout);
-
-        thread::yield_now();
 
         if let Err(e) = wait_result {
           #[cfg(feature = "tracing")]
@@ -743,12 +682,10 @@ impl Driver {
           );
         }
 
-        let _event_count = events.len();
-
         #[cfg(feature = "tracing")]
-        if _event_count > 0 {
+        if events.len() > 0 {
           tracing::debug!(
-            event_count = event_count,
+            event_count = events.len(),
             "background thread: received events"
           );
         }
@@ -867,7 +804,7 @@ impl Driver {
 }
 
 mod utils {
-  use crate::loom::thread;
+  use std::thread;
 
   pub fn create_worker<F, T>(handle: F) -> thread::JoinHandle<T>
   where

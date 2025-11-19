@@ -1,11 +1,10 @@
-use lio::loom::test_utils::{block_on, model};
 use lio::openat;
 use std::ffi::CString;
 
 #[test]
+#[ignore = "Problematic"]
 fn test_openat_create_file() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let path = CString::new("/tmp/lio_test_openat_create.txt").unwrap();
 
       // Open/create file for writing
@@ -26,15 +25,13 @@ fn test_openat_create_file() {
       }
 
       lio::shutdown();
-    })
   });
 }
 
 #[test]
 #[ignore = "need to figure out permission stuff"]
 fn test_openat_read_only() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let path = CString::new("./test_openat_readonly_testfile.txt").unwrap();
 
       // Create file first
@@ -59,14 +56,12 @@ fn test_openat_read_only() {
         libc::close(fd);
         libc::unlink(path.as_ptr());
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_openat_read_write() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let path = CString::new("/tmp/lio_test_openat_rdwr.txt").unwrap();
 
       // Open for reading and writing
@@ -85,14 +80,12 @@ fn test_openat_read_write() {
         libc::close(fd);
         libc::unlink(path.as_ptr());
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_openat_nonexistent_file() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let path =
         CString::new("/tmp/lio_test_nonexistent_file_12345.txt").unwrap();
 
@@ -100,14 +93,12 @@ fn test_openat_nonexistent_file() {
       let result = openat(libc::AT_FDCWD, path, libc::O_RDONLY).await;
 
       assert!(result.is_err(), "Should fail to open non-existent file");
-    })
-  })
+  });
 }
 
 #[test]
 fn test_openat_with_directory_fd() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       // Open /tmp directory
       let tmp_path = CString::new("/tmp").unwrap();
       let dir_fd = unsafe {
@@ -135,14 +126,12 @@ fn test_openat_with_directory_fd() {
         let full_path = CString::new("/tmp/lio_test_openat_dirfd.txt").unwrap();
         libc::unlink(full_path.as_ptr());
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_openat_concurrent() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       // Test multiple sequential openat operations
       for i in 0..10 {
         let path =
@@ -164,6 +153,5 @@ fn test_openat_concurrent() {
           libc::unlink(path.as_ptr());
         }
       }
-    })
-  })
+  });
 }

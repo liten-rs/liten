@@ -51,7 +51,7 @@ impl Operation for SymlinkAt {
 
   #[cfg(linux)]
   fn create_entry(&self) -> io_uring::squeue::Entry {
-    io_uring::opcode::LinkAt::new(
+    io_uring::opcode::SymlinkAt::new(
       Fd(self.fd),
       self.target.as_ptr(),
       self.linkpath.as_ptr(),

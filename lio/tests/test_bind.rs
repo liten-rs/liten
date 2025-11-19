@@ -1,12 +1,10 @@
-use lio::loom::test_utils::{block_on, model};
 use lio::{bind, socket};
 use socket2::{Domain, Protocol, SockAddr, Type};
 use std::net::SocketAddr;
 
 #[test]
 fn test_bind_ipv4_any_port() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create socket");
@@ -31,14 +29,12 @@ fn test_bind_ipv4_any_port() {
         assert_eq!(result, 0, "getsockname should succeed");
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_bind_ipv4_specific_port() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create socket");
@@ -76,14 +72,12 @@ fn test_bind_ipv4_specific_port() {
         assert_eq!(u16::from_be(sockaddr_in.sin_port), 19999);
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_bind_ipv6() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create IPv6 socket");
@@ -108,14 +102,12 @@ fn test_bind_ipv6() {
         assert_eq!(result, 0);
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_bind_udp() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
         .await
         .expect("Failed to create UDP socket");
@@ -139,14 +131,12 @@ fn test_bind_udp() {
         assert_eq!(result, 0);
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_bind_already_bound() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock1 = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create first socket");
@@ -189,14 +179,12 @@ fn test_bind_already_bound() {
         libc::close(sock1);
         libc::close(sock2);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_bind_double_bind() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create socket");
@@ -216,14 +204,12 @@ fn test_bind_double_bind() {
       unsafe {
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_bind_with_reuseaddr() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock1 = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create first socket");
@@ -276,14 +262,12 @@ fn test_bind_with_reuseaddr() {
       unsafe {
         libc::close(sock2);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_bind_localhost() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create socket");
@@ -309,14 +293,12 @@ fn test_bind_localhost() {
         assert_eq!(u32::from_be(sockaddr_in.sin_addr.s_addr), 0x7f000001);
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_bind_concurrent() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       // Test binding multiple sockets concurrently to different ports
       let tasks: Vec<_> = (20000..20010)
         .map(|port| async move {
@@ -349,6 +331,5 @@ fn test_bind_concurrent() {
       for task in tasks {
         task.await;
       }
-    })
-  })
+  });
 }

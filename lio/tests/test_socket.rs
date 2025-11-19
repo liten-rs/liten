@@ -1,11 +1,9 @@
-use lio::loom::test_utils::{self, block_on};
 use lio::socket;
 use socket2::{Domain, Protocol, Type};
 
 #[test]
 fn test_socket_simple() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create TCP IPv4 socket");
@@ -26,14 +24,12 @@ fn test_socket_simple() {
         assert_eq!(sock_type, libc::SOCK_STREAM);
         lio::close(sock).await.unwrap();
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_socket_tcp_ipv4() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create TCP IPv4 socket");
@@ -54,14 +50,12 @@ fn test_socket_tcp_ipv4() {
         assert_eq!(sock_type, libc::SOCK_STREAM);
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_socket_tcp_ipv6() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create TCP IPv6 socket");
@@ -82,14 +76,12 @@ fn test_socket_tcp_ipv6() {
         assert_eq!(sock_type, libc::SOCK_STREAM);
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_socket_udp_ipv4() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
         .await
         .expect("Failed to create UDP IPv4 socket");
@@ -110,14 +102,12 @@ fn test_socket_udp_ipv4() {
         assert_eq!(sock_type, libc::SOCK_DGRAM);
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_socket_udp_ipv6() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP))
         .await
         .expect("Failed to create UDP IPv6 socket");
@@ -137,14 +127,12 @@ fn test_socket_udp_ipv6() {
         assert_eq!(sock_type, libc::SOCK_DGRAM);
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_socket_without_protocol() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, None)
         .await
         .expect("Failed to create socket without explicit protocol");
@@ -154,14 +142,12 @@ fn test_socket_without_protocol() {
       unsafe {
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_socket_unix_stream() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::UNIX, Type::STREAM, None)
         .await
         .expect("Failed to create Unix stream socket");
@@ -181,14 +167,12 @@ fn test_socket_unix_stream() {
         assert_eq!(sock_type, libc::SOCK_STREAM);
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_socket_unix_dgram() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::UNIX, Type::DGRAM, None)
         .await
         .expect("Failed to create Unix datagram socket");
@@ -208,14 +192,12 @@ fn test_socket_unix_dgram() {
         assert_eq!(sock_type, libc::SOCK_DGRAM);
         libc::close(sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_socket_multiple() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       // Create multiple sockets
       let sock1 = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
@@ -240,14 +222,12 @@ fn test_socket_multiple() {
         libc::close(sock2);
         libc::close(sock3);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_socket_concurrent() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       // Test creating multiple sockets sequentially
       for i in 0..20 {
         let domain = if i % 2 == 0 { Domain::IPV4 } else { Domain::IPV6 };
@@ -267,14 +247,12 @@ fn test_socket_concurrent() {
           libc::close(sock);
         }
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_socket_options_after_creation() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create socket");
@@ -305,14 +283,12 @@ fn test_socket_options_after_creation() {
 
         libc::close(sock);
       }
-    })
   });
 }
 
 #[test]
 fn test_socket_nonblocking() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create socket");
@@ -328,6 +304,5 @@ fn test_socket_nonblocking() {
 
         libc::close(sock);
       }
-    })
-  })
+  });
 }

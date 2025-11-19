@@ -1,11 +1,9 @@
-use lio::loom::test_utils::{self, block_on};
 use lio::truncate;
 use std::ffi::CString;
 
 #[test]
 fn test_truncate_shrink_file() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let path = CString::new("/tmp/lio_test_truncate_shrink.txt").unwrap();
 
       // Create file with data
@@ -43,14 +41,12 @@ fn test_truncate_shrink_file() {
         libc::close(fd);
         libc::unlink(path.as_ptr());
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_truncate_extend_file() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let path = CString::new("/tmp/lio_test_truncate_extend.txt").unwrap();
 
       // Create file with data
@@ -85,14 +81,12 @@ fn test_truncate_extend_file() {
         libc::close(fd);
         libc::unlink(path.as_ptr());
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_truncate_to_zero() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let path = CString::new("/tmp/lio_test_truncate_zero.txt").unwrap();
 
       // Create file with data
@@ -125,14 +119,12 @@ fn test_truncate_to_zero() {
         libc::close(fd);
         libc::unlink(path.as_ptr());
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_truncate_same_size() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let path = CString::new("/tmp/lio_test_truncate_same.txt").unwrap();
 
       let test_data = b"ExactSize";
@@ -176,14 +168,12 @@ fn test_truncate_same_size() {
         libc::close(fd);
         libc::unlink(path.as_ptr());
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_truncate_then_write() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let path = CString::new("/tmp/lio_test_truncate_write.txt").unwrap();
 
       // Create file with data
@@ -218,14 +208,12 @@ fn test_truncate_then_write() {
         libc::close(fd);
         libc::unlink(path.as_ptr());
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_truncate_large_file() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let path = CString::new("/tmp/lio_test_truncate_large.txt").unwrap();
 
       // Create file with large data (1MB)
@@ -265,14 +253,12 @@ fn test_truncate_large_file() {
         libc::close(fd);
         libc::unlink(path.as_ptr());
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_truncate_multiple_times() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       let path = CString::new("/tmp/lio_test_truncate_multiple.txt").unwrap();
 
       // Create file
@@ -308,14 +294,12 @@ fn test_truncate_multiple_times() {
         libc::close(fd);
         libc::unlink(path.as_ptr());
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_truncate_concurrent() {
-  test_utils::model(|| {
-    block_on(async {
+  liten::block_on(async {
       // Test truncating multiple files concurrently
       let tasks: Vec<_> = (0..10)
         .map(|i| async move {
@@ -355,6 +339,5 @@ fn test_truncate_concurrent() {
       for task in tasks {
         task.await;
       }
-    })
-  })
+  });
 }

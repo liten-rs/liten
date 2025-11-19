@@ -2,6 +2,7 @@ use std::io;
 
 use std::os::fd::RawFd;
 
+#[cfg(not(linux))]
 use crate::op::EventType;
 
 use super::Operation;
@@ -27,34 +28,42 @@ impl Socket {
   }
 
   fn disable_sigpipe(fd: RawFd) -> io::Result<()> {
-    type T = i32;
-    let opt: T = 1;
-
-    // DragonFlyBSD, FreeBSD and NetBSD use `SO_NOSIGPIPE` as a `setsockopt`
-    // flag to disable `SIGPIPE` emission on socket.
     #[cfg(any(
       target_os = "freebsd",
       target_os = "netbsd",
-      target_os = "dragonfly"
+      target_os = "dragonfly",
+      target_vendor = "apple"
     ))]
-    syscall!(setsockopt(
-      fd,
-      libc::SOL_SOCKET,
-      libc::SO_NOSIGPIPE,
-      &opt as *const T as *const libc::c_void,
-      std::mem::size_of::<T>() as u32
-    ))?;
+    {
+      type T = i32;
+      let opt: T = 1;
 
-    // macOS and iOS use `SO_NOSIGPIPE` as a `setsockopt`
-    // flag to disable `SIGPIPE` emission on socket.
-    #[cfg(target_vendor = "apple")]
-    syscall!(setsockopt(
-      fd,
-      libc::SOL_SOCKET,
-      libc::SO_NOSIGPIPE,
-      &opt as *const T as *const libc::c_void,
-      std::mem::size_of::<T>() as u32
-    ))?;
+      // DragonFlyBSD, FreeBSD and NetBSD use `SO_NOSIGPIPE` as a `setsockopt`
+      // flag to disable `SIGPIPE` emission on socket.
+      #[cfg(any(
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+      ))]
+      syscall!(setsockopt(
+        fd,
+        libc::SOL_SOCKET,
+        libc::SO_NOSIGPIPE,
+        &opt as *const T as *const libc::c_void,
+        std::mem::size_of::<T>() as u32
+      ))?;
+
+      // macOS and iOS use `SO_NOSIGPIPE` as a `setsockopt`
+      // flag to disable `SIGPIPE` emission on socket.
+      #[cfg(target_vendor = "apple")]
+      syscall!(setsockopt(
+        fd,
+        libc::SOL_SOCKET,
+        libc::SO_NOSIGPIPE,
+        &opt as *const T as *const libc::c_void,
+        std::mem::size_of::<T>() as u32
+      ))?;
+    }
 
     Ok(())
   }

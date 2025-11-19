@@ -1,4 +1,3 @@
-use lio::loom::test_utils::{block_on, model};
 use lio::{bind, connect, listen, socket};
 use socket2::{Domain, Protocol, SockAddr, Type};
 use std::mem::MaybeUninit;
@@ -6,8 +5,7 @@ use std::net::SocketAddr;
 
 #[test]
 fn test_connect_basic() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       // Create server socket
       let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
@@ -62,14 +60,12 @@ fn test_connect_basic() {
         libc::close(client_sock);
         libc::close(server_sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_connect_ipv6() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let server_sock = socket(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create IPv6 server socket");
@@ -116,14 +112,12 @@ fn test_connect_ipv6() {
         libc::close(client_sock);
         libc::close(server_sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_connect_to_nonexistent() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
@@ -140,14 +134,12 @@ fn test_connect_to_nonexistent() {
       unsafe {
         libc::close(client_sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_connect_multiple_clients() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create server socket");
@@ -196,14 +188,12 @@ fn test_connect_multiple_clients() {
         }
         libc::close(server_sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_connect_already_connected() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create server socket");
@@ -246,14 +236,12 @@ fn test_connect_already_connected() {
         libc::close(client_sock);
         libc::close(server_sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_connect_to_localhost() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create server socket");
@@ -302,14 +290,12 @@ fn test_connect_to_localhost() {
         libc::close(client_sock);
         libc::close(server_sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_connect_concurrent() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create server socket");
@@ -358,14 +344,12 @@ fn test_connect_concurrent() {
         }
         libc::close(server_sock);
       }
-    })
-  })
+  });
 }
 
 #[test]
 fn test_connect_with_bind() {
-  model(|| {
-    block_on(async {
+  liten::block_on(async {
       let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create server socket");
@@ -409,6 +393,5 @@ fn test_connect_with_bind() {
         libc::close(client_sock);
         libc::close(server_sock);
       }
-    })
-  })
+  });
 }

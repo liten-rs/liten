@@ -5,8 +5,6 @@ use crate::op::Operation;
 #[cfg(linux)]
 use std::marker::PhantomData;
 
-use crate::loom::thread;
-
 use std::{
   future::Future,
   pin::Pin,
@@ -183,8 +181,6 @@ where
       }
     };
 
-    thread::yield_now();
-
     result
   }
 }
@@ -256,8 +252,6 @@ where
       }
     };
 
-    thread::yield_now();
-
     result
   }
 }
@@ -272,7 +266,6 @@ impl<T> Drop for OperationProgress<T> {
     if let OperationProgress::IoUring { id, .. } = *self {
       Driver::get().detach(id);
     }
-    thread::yield_now();
   }
 }
 
@@ -290,9 +283,6 @@ impl<T> Drop for OperationProgress<T> {
         "OperationProgress: dropping, calling detach"
       );
       Driver::get().detach(id);
-
-      #[cfg(loom)]
-      loom::thread::yield_now();
     }
   }
 }

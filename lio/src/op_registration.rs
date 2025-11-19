@@ -4,7 +4,7 @@ use std::task::Waker;
 use std::os::fd::RawFd;
 
 #[cfg(linux)]
-use crate::loom::Cell;
+use std::cell::Cell;
 
 #[cfg(linux)]
 pub struct OpRegistration {

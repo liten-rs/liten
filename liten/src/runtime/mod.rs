@@ -13,7 +13,7 @@ use crate::{
 
 pub mod scheduler;
 
-mod parking;
+// mod parking;
 pub(crate) mod waker;
 
 std::thread_local! {
@@ -106,7 +106,7 @@ impl Runtime {
   where
     F: Future,
   {
-    parking::set_thread();
+    // parking::set_thread();
 
     let mut fut = std::pin::pin!(fut);
 
@@ -122,7 +122,7 @@ impl Runtime {
         break value;
       }
 
-      parking::park();
+      thread::park();
     };
 
     // Call drop on it.

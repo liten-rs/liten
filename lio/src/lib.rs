@@ -128,8 +128,6 @@ pub type BufResult<T, B> = (std::io::Result<T>, B);
 pub(crate) mod macros;
 
 mod driver;
-#[doc(hidden)]
-pub mod loom;
 
 mod op;
 #[doc(inline)]
@@ -189,6 +187,9 @@ macro_rules! impl_op {
       impl_op!("", $(#[$($doc)*])* $operation, fn $name($($arg: $arg_ty),*) -> $ret);
   };
 }
+
+#[cfg(linux)]
+use std::time::Duration;
 
 #[cfg(linux)]
 impl_op!(
