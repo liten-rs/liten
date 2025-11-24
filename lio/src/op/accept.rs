@@ -1,4 +1,5 @@
 use std::{
+  cell::UnsafeCell,
   mem::{self},
   os::fd::RawFd,
 };
@@ -13,17 +14,21 @@ use super::Operation;
 
 pub struct Accept {
   fd: RawFd,
-  addr: libc::sockaddr,
-  len: libc::socklen_t,
+  addr: UnsafeCell<libc::sockaddr_storage>,
+  len: UnsafeCell<libc::socklen_t>,
 }
 
 unsafe impl Send for Accept {}
 
 impl Accept {
   pub fn new(fd: RawFd) -> Self {
-    let sockaddr = unsafe { mem::zeroed::<libc::sockaddr>() };
-    let len = mem::size_of::<libc::sockaddr>() as libc::socklen_t;
-    Self { fd, addr: sockaddr, len }
+    let sockaddr = unsafe { mem::zeroed::<libc::sockaddr_storage>() };
+    let len = mem::size_of::<libc::sockaddr_storage>() as libc::socklen_t;
+    Self {
+      fd,
+      addr: UnsafeCell::new(sockaddr),
+      len: UnsafeCell::new(len),
+    }
   }
 }
 
@@ -42,10 +47,10 @@ impl Operation for Accept {
   fn create_entry(&self) -> squeue::Entry {
     opcode::Accept::new(
       Fd(self.fd),
-      &self.addr as *const _ as *mut _,
-      &self.len as *const _ as *mut _,
+      self.addr.get() as *mut libc::sockaddr,
+      self.len.get(),
     )
-    .flags(0)
+    .flags(libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK)
     .build()
   }
 
@@ -58,7 +63,7 @@ impl Operation for Accept {
   }
 
   fn run_blocking(&self) -> std::io::Result<i32> {
-    let mut socklen = mem::size_of_val(&self.addr) as libc::socklen_t;
+    let mut socklen = mem::size_of::<libc::sockaddr_storage>() as libc::socklen_t;
     #[cfg(any(
       target_os = "android",
       target_os = "dragonfly",
@@ -73,7 +78,7 @@ impl Operation for Accept {
     let fd = {
       syscall!(accept4(
         self.fd,
-        &self.addr as *const _ as *mut libc::sockaddr,
+        self.addr.get() as *mut libc::sockaddr,
         &mut socklen,
         libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK
       ))?
@@ -93,7 +98,7 @@ impl Operation for Accept {
     let fd = {
       let fd = syscall!(accept(
         self.fd,
-        &self.addr as *const _ as *mut libc::sockaddr,
+        self.addr.get() as *mut libc::sockaddr,
         &mut socklen
       ))
       .and_then(|socket| {

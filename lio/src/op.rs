@@ -29,6 +29,7 @@ mod socket;
 mod fsync;
 #[cfg(linux)]
 mod linkat;
+mod shutdown;
 mod symlink;
 #[cfg(linux)]
 mod tee;
@@ -49,6 +50,7 @@ pub use openat::*;
 pub use read::*;
 pub use recv::*;
 pub use send::*;
+pub use shutdown::*;
 pub use socket::*;
 pub use symlink::*;
 #[cfg(linux)]

@@ -165,10 +165,30 @@ pub(crate) enum CheckRegistrationResult<V> {
 #[cfg(linux)]
 impl Driver {
   pub(crate) fn detach(&self, id: u64) -> Option<()> {
+    use std::mem;
+
     let mut _lock = Driver::get().wakers.lock();
 
     let thing = _lock.get_mut(&id)?;
-    thing.status = OpRegistrationStatus::Cancelling;
+
+    let old = mem::replace(&mut thing.status, OpRegistrationStatus::Cancelling);
+
+    match old {
+      OpRegistrationStatus::Waiting { ref registered_waker } => {
+        println!("det is waiting");
+        if let Some(waker) = registered_waker.take() {
+          waker.wake();
+        };
+      }
+      OpRegistrationStatus::Cancelling => {
+        unreachable!("already was cancelling.");
+      }
+      OpRegistrationStatus::Done { .. } => {
+        println!("det is done");
+        // We don't care here because we shouldn't cancel anything, we just don't care about the
+        // result anymore.
+      }
+    };
 
     Some(())
   }
@@ -227,17 +247,20 @@ impl Driver {
 
           match old_value {
             OpRegistrationStatus::Waiting { ref registered_waker } => {
+              println!("is waiting");
               if let Some(waker) = registered_waker.take() {
                 waker.wake();
               };
             }
             OpRegistrationStatus::Cancelling => {
+              println!("cancelling");
               let reg = wakers.remove(&operation_id).unwrap();
 
               // Dropping the operation.
               (reg.drop_fn)(reg.op);
             }
             OpRegistrationStatus::Done { .. } => {
+              println!("done");
               unreachable!("already processed entry");
             }
           };
@@ -298,7 +321,7 @@ impl Driver {
     let mut _lock = self.wakers.lock();
     let op_registration = _lock.get_mut(&id)?;
 
-    Some(match op_registration.status {
+    let res = match op_registration.status {
       OpRegistrationStatus::Done { ret } => {
         let op_registration = _lock.remove(&id).expect("what");
 
@@ -323,7 +346,9 @@ impl Driver {
       OpRegistrationStatus::Cancelling => {
         unreachable!("wtf to do here?");
       }
-    })
+    };
+
+    Some(res)
   }
 }
 

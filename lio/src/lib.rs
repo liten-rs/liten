@@ -191,6 +191,23 @@ macro_rules! impl_op {
 #[cfg(linux)]
 use std::time::Duration;
 
+impl_op!(
+    "Shuts socket down.",
+    /// # Examples
+    ///
+    /// ```rust
+    /// use lio::shutdown;
+    /// use std::os::fd::RawFd;
+    ///
+    /// async fn write_example() -> std::io::Result<()> {
+    ///     let socket = lio::socket(/*....*/).await?;
+    ///     shutdown(socket, Duration::from_millis(10)).await?;
+    ///     Ok(())
+    /// }
+    /// ```
+    Shutdown, fn shutdown(fd: RawFd, how: i32) -> io::Result<()>
+);
+
 #[cfg(linux)]
 impl_op!(
     "Times out something",
@@ -507,7 +524,7 @@ impl_op!(
 ///
 /// After calling this, further I/O operations in this process are unsupported.
 /// Calling shutdown more than once will panic.
-pub fn shutdown() {
+pub fn exit() {
   Driver::shutdown()
 }
 

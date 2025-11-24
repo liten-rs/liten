@@ -65,8 +65,6 @@ fn test_accept_basic() {
       libc::close(accepted_fd);
       libc::close(server_sock);
     }
-
-    lio::shutdown();
   });
 }
 
@@ -144,7 +142,6 @@ fn test_accept_multiple() {
       }
       libc::close(server_sock);
     }
-    lio::shutdown();
   });
 }
 
@@ -202,7 +199,6 @@ fn test_accept_with_client_info() {
       libc::close(accepted_fd);
       libc::close(server_sock);
     }
-    lio::shutdown();
   });
 }
 
@@ -262,7 +258,6 @@ fn test_accept_ipv6() {
       libc::close(accepted_fd);
       libc::close(server_sock);
     }
-    lio::shutdown();
   });
 }
 
@@ -336,7 +331,5 @@ fn test_accept_concurrent() {
       }
       libc::close(server_sock);
     }
-
-    lio::shutdown();
   });
 }

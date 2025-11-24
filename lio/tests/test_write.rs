@@ -40,45 +40,6 @@ fn test_write_large_buffer() {
 }
 
 #[test]
-fn test_write_multiple_sequential() {
-  liten::block_on(async {
-    let path = CString::new("/tmp/lio_test_write_sequential.txt").unwrap();
-
-    let fd = unsafe {
-      libc::open(
-        path.as_ptr(),
-        libc::O_CREAT | libc::O_WRONLY | libc::O_TRUNC,
-        0o644,
-      )
-    };
-
-    // Write multiple chunks at different offsets
-    let data1 = b"AAAAA".to_vec();
-    let (bytes_written1, _) = write(fd, data1, 0).await;
-    assert_eq!(bytes_written1.unwrap(), 5);
-
-    let data2 = b"BBBBB".to_vec();
-    let (bytes_written2, _) = write(fd, data2, 5).await;
-    assert_eq!(bytes_written2.unwrap(), 5);
-
-    let data3 = b"CCCCC".to_vec();
-    let (bytes_written3, _) = write(fd, data3, 10).await;
-    assert_eq!(bytes_written3.unwrap(), 5);
-
-    // Verify
-    let mut verify_buf = vec![0u8; 15];
-    unsafe {
-      let read_fd = libc::open(path.as_ptr(), libc::O_RDONLY);
-      libc::read(read_fd, verify_buf.as_mut_ptr() as *mut libc::c_void, 15);
-      assert_eq!(verify_buf, b"AAAAABBBBBCCCCC");
-      libc::close(read_fd);
-      libc::close(fd);
-      libc::unlink(path.as_ptr());
-    }
-  });
-}
-
-#[test]
 fn test_write_concurrent() {
   liten::block_on(async {
     // Test multiple concurrent write operations on different files

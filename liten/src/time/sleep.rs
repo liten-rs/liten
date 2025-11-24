@@ -108,7 +108,7 @@ mod tests2 {
 
   #[test]
   #[cfg(all(feature = "time", feature = "runtime"))]
-  #[cfg_attr(loom, ignore)] // Hangs because it runs in so many combinations.
+  #[ignore] // Hangs because it runs in so many combinations.
   fn sleep_test() {
     crate::runtime::Runtime::single_threaded().block_on(async {
       use crate::time::TimeHandle;

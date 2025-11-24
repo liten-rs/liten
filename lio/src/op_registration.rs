@@ -13,6 +13,36 @@ pub struct OpRegistration {
   pub drop_fn: fn(*const ()), // Function to properly drop the operation
 }
 
+#[cfg(linux)]
+pub enum OpRegistrationStatus {
+  Waiting {
+    registered_waker: Cell<Option<Waker>>,
+  },
+  /// This operation is not tied to any entity waiting for it, either because they got dropped or
+  /// because they weren't interested in the result.
+  Cancelling,
+  Done {
+    ret: i32,
+  },
+}
+
+#[cfg(linux)]
+impl OpRegistration {
+  pub fn new<T>(op: T) -> Self {
+    fn drop_op<T>(ptr: *const ()) {
+      drop(unsafe { Box::from_raw(ptr as *mut T) })
+    }
+
+    OpRegistration {
+      op: Box::into_raw(Box::new(op)) as *const (),
+      status: OpRegistrationStatus::Waiting {
+        registered_waker: Cell::new(None),
+      },
+      drop_fn: drop_op::<T>,
+    }
+  }
+}
+
 unsafe impl Send for OpRegistration {}
 
 #[cfg(not(linux))]
@@ -47,34 +77,4 @@ impl OpRegistration {
   pub fn has_waker(&self) -> bool {
     self.registered_waker.is_some()
   }
-}
-
-#[cfg(linux)]
-impl OpRegistration {
-  pub fn new<T>(op: T) -> Self {
-    fn drop_op<T>(ptr: *const ()) {
-      drop(unsafe { Box::from_raw(ptr as *mut T) })
-    }
-
-    OpRegistration {
-      op: Box::into_raw(Box::new(op)) as *const (),
-      status: OpRegistrationStatus::Waiting {
-        registered_waker: Cell::new(None),
-      },
-      drop_fn: drop_op::<T>,
-    }
-  }
-}
-
-#[cfg(linux)]
-pub enum OpRegistrationStatus {
-  Waiting {
-    registered_waker: Cell<Option<Waker>>,
-  },
-  /// This operation is not tied to any entity waiting for it, either because they got dropped or
-  /// because they weren't interested in the result.
-  Cancelling,
-  Done {
-    ret: i32,
-  },
 }

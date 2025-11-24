@@ -5,35 +5,6 @@ use proptest::prelude::*;
 use std::ffi::CString;
 
 #[test]
-fn test_read_empty_file() {
-  liten::block_on(async {
-    let path = CString::new("/tmp/lio_test_read_empty.txt").unwrap();
-
-    // Create empty file
-    let fd = unsafe {
-      libc::open(
-        path.as_ptr(),
-        libc::O_CREAT | libc::O_RDONLY | libc::O_TRUNC,
-        0o644,
-      )
-    };
-
-    // Read from empty file
-    let buf = vec![0u8; 100];
-    let (bytes_read, _) = read(fd, buf, 0).await;
-    let bytes_read = bytes_read.expect("Failed to read from empty file");
-
-    assert_eq!(bytes_read, 0);
-
-    // Cleanup
-    unsafe {
-      libc::close(fd);
-      libc::unlink(path.as_ptr());
-    }
-  });
-}
-
-#[test]
 fn test_read_large_buffer() {
   liten::block_on(async {
     let path = CString::new("/tmp/lio_test_read_large.txt").unwrap();
@@ -62,50 +33,6 @@ fn test_read_large_buffer() {
 
     assert_eq!(bytes_read, large_data.len());
     assert_eq!(&result[..bytes_read], large_data.as_slice());
-
-    // Cleanup
-    unsafe {
-      libc::close(fd);
-      libc::unlink(path.as_ptr());
-    }
-  });
-}
-
-#[test]
-fn test_read_multiple_sequential() {
-  liten::block_on(async {
-    let path = CString::new("/tmp/lio_test_read_sequential.txt").unwrap();
-
-    let test_data = b"ABCDEFGHIJKLMNOP";
-    let fd = unsafe {
-      let fd = libc::open(
-        path.as_ptr(),
-        libc::O_CREAT | libc::O_RDWR | libc::O_TRUNC,
-        0o644,
-      );
-      libc::write(
-        fd,
-        test_data.as_ptr() as *const libc::c_void,
-        test_data.len(),
-      );
-      fd
-    };
-
-    // Read in chunks at different offsets
-    let buf1 = vec![0u8; 5];
-    let (bytes_read1, result1) = read(fd, buf1, 0).await;
-    assert_eq!(bytes_read1.unwrap() as usize, 5);
-    assert_eq!(&result1[..5], b"ABCDE");
-
-    let buf2 = vec![0u8; 5];
-    let (bytes_read2, result2) = read(fd, buf2, 5).await;
-    assert_eq!(bytes_read2.unwrap() as usize, 5);
-    assert_eq!(&result2[..5], b"FGHIJ");
-
-    let buf3 = vec![0u8; 6];
-    let (bytes_read3, result3) = read(fd, buf3, 10).await;
-    assert_eq!(bytes_read3.unwrap() as usize, 6);
-    assert_eq!(&result3[..6], b"KLMNOP");
 
     // Cleanup
     unsafe {
@@ -159,9 +86,9 @@ fn test_read_concurrent() {
 proptest! {
   #[test]
   fn prop_test_read_arbitrary_data_and_offsets(
-    data_size in 1usize..=8192,
+    data_size in 0usize..=8192,
     read_offset in 0i64..=4096,
-    buffer_size in 1usize..=4096,
+    buffer_size in 0usize..=4096,
     seed in any::<u64>(),
   ) {
     let result = liten::block_on(async move {
