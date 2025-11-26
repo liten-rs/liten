@@ -55,9 +55,7 @@ fn test_recv_multiple() {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, bound_addr)
-        .await
-        .expect("Failed to connect");
+      connect(client_sock, bound_addr).await.expect("Failed to connect");
 
       // Send multiple messages
       for i in 0..3 {
@@ -130,9 +128,7 @@ fn test_recv_with_flags() {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, bound_addr)
-        .await
-        .expect("Failed to connect");
+      connect(client_sock, bound_addr).await.expect("Failed to connect");
 
       let (bytes_sent, _) = send(client_sock, send_data.clone(), None).await;
       bytes_sent.expect("Failed to send");
@@ -189,9 +185,7 @@ fn test_recv_on_closed() {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, bound_addr)
-        .await
-        .expect("Failed to connect");
+      connect(client_sock, bound_addr).await.expect("Failed to connect");
       client_sock
     };
 

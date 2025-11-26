@@ -88,7 +88,7 @@ fn channel_try_recv_sender_dropped() {
 
   drop(sender);
 
-  let result = liten::future::block_on(receiver);
+  let result = liten::block_on(receiver);
   assert_eq!(result, Err(oneshot::OneshotError::SenderDropped));
 }
 
