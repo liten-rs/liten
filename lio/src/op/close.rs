@@ -13,7 +13,7 @@ pub struct Close {
 }
 
 impl Close {
-  pub fn new(fd: RawFd) -> Self {
+  pub(crate) fn new(fd: RawFd) -> Self {
     Self { fd }
   }
 }

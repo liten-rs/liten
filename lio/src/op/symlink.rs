@@ -20,7 +20,7 @@ pub struct SymlinkAt {
 
 // TODO: test
 impl SymlinkAt {
-  pub fn new(
+  pub(crate) fn new(
     new_dir_fd: RawFd,
     target: impl AsRef<Path>,
     linkpath: impl AsRef<Path>,

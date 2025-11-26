@@ -23,8 +23,6 @@ fn test_openat_create_file() {
       libc::close(fd);
       libc::unlink(path.as_ptr());
     }
-
-    lio::exit();
   });
 }
 

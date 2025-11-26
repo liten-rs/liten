@@ -14,20 +14,19 @@ use super::Operation;
 
 pub struct Accept {
   fd: RawFd,
-  addr: UnsafeCell<libc::sockaddr_storage>,
+  addr: UnsafeCell<libc::sockaddr_in>,
   len: UnsafeCell<libc::socklen_t>,
 }
 
-unsafe impl Send for Accept {}
-
 impl Accept {
-  pub fn new(fd: RawFd) -> Self {
-    let sockaddr = unsafe { mem::zeroed::<libc::sockaddr_storage>() };
-    let len = mem::size_of::<libc::sockaddr_storage>() as libc::socklen_t;
+  pub(crate) fn new(fd: RawFd) -> Self {
+    let client_addr: libc::sockaddr_in = unsafe { mem::zeroed() };
+    let client_addr_len: libc::socklen_t =
+      mem::size_of_val(&client_addr) as libc::socklen_t;
     Self {
       fd,
-      addr: UnsafeCell::new(sockaddr),
-      len: UnsafeCell::new(len),
+      addr: UnsafeCell::new(client_addr),
+      len: UnsafeCell::new(client_addr_len),
     }
   }
 }
@@ -50,7 +49,6 @@ impl Operation for Accept {
       self.addr.get() as *mut libc::sockaddr,
       self.len.get(),
     )
-    .flags(libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK)
     .build()
   }
 
@@ -63,7 +61,6 @@ impl Operation for Accept {
   }
 
   fn run_blocking(&self) -> std::io::Result<i32> {
-    let mut socklen = mem::size_of::<libc::sockaddr_storage>() as libc::socklen_t;
     #[cfg(any(
       target_os = "android",
       target_os = "dragonfly",
@@ -79,7 +76,7 @@ impl Operation for Accept {
       syscall!(accept4(
         self.fd,
         self.addr.get() as *mut libc::sockaddr,
-        &mut socklen,
+        self.len.get() as *mut libc::socklen_t,
         libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK
       ))?
     };
@@ -99,7 +96,7 @@ impl Operation for Accept {
       let fd = syscall!(accept(
         self.fd,
         self.addr.get() as *mut libc::sockaddr,
-        &mut socklen
+        self.len.get() as *mut libc::socklen_t
       ))
       .and_then(|socket| {
         // Ensure the socket is closed if either of the `fcntl` calls
@@ -114,8 +111,6 @@ impl Operation for Accept {
 
         Ok(socket)
       })?;
-
-      // syscall!(ioctl(fd, libc::FIOCLEX))?;
 
       fd
     };

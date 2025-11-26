@@ -115,6 +115,7 @@
 
 use std::{
   ffi::{CString, NulError},
+  net::SocketAddr,
   os::fd::RawFd,
 };
 
@@ -138,19 +139,20 @@ mod op_registration;
 
 pub use op_progress::OperationProgress;
 
-use socket2::SockAddr;
-
 use crate::driver::Driver;
 use std::path::Path;
 
 macro_rules! impl_op {
-
+  (__inner_doc, $($arg_ty:ty),*) => {
+  };
   (
     $desc:tt,
     $(#[$($doc:tt)*])*
     $operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty ; $err:ty
   ) => {
     #[doc = $desc]
+    #[doc = "# Behavior"]
+    #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
     #[doc = "# Returns"]
     #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
     #[doc = "This function signature is equivalent to:\n```ignore"]
@@ -168,6 +170,8 @@ macro_rules! impl_op {
     $operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty
   ) => {
     #[doc = $desc]
+    #[doc = "# Behavior"]
+    #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
     #[doc = "# Returns"]
     #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
     #[doc = "This function signature is equivalent to:\n```ignore"]
@@ -363,7 +367,7 @@ impl_op!(
   /// }
   ///
   /// ```
-  Bind, fn bind(fd: RawFd, addr: socket2::SockAddr) -> std::io::Result<()>
+  Bind, fn bind(fd: RawFd, addr: SocketAddr) -> std::io::Result<()>
 );
 
 impl_op!(
@@ -411,17 +415,17 @@ impl_op!(
   ///
   /// ```rust
   /// use lio::connect;
-  /// use socket2::SockAddr;
+  /// use std::net::SocketAddr;
   ///
   /// async fn connect_example() -> std::io::Result<()> {
   ///     let sock = /* socket fd */;
-  ///     let addr = SockAddr::from("127.0.0.1:8080".parse::<std::net::SocketAddr>().unwrap());
-  ///     let (bytes_written, _buf) = connect(sock, addr).await?;
+  ///     let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+  ///     connect(sock, addr).await?;
   ///     println!("Connected to remote address");
   ///     Ok(())
   /// }
   /// ```
-  Connect, fn connect(fd: RawFd, addr: SockAddr) -> std::io::Result<()>
+  Connect, fn connect(fd: RawFd, addr: SocketAddr) -> std::io::Result<()>
 );
 
 impl_op!(

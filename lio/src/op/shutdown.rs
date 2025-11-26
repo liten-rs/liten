@@ -14,7 +14,7 @@ pub struct Shutdown {
 }
 
 impl Shutdown {
-  pub fn new(fd: RawFd, how: i32) -> Self {
+  pub(crate) fn new(fd: RawFd, how: i32) -> Self {
     Self { fd, how }
   }
 }

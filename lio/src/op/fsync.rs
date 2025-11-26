@@ -13,7 +13,7 @@ pub struct Fsync {
 }
 
 impl Fsync {
-  pub fn new(fd: RawFd) -> Self {
+  pub(crate) fn new(fd: RawFd) -> Self {
     Self { fd }
   }
 }

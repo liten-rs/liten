@@ -1,7 +1,6 @@
 use lio::{accept, bind, connect, listen, recv, send, socket};
 use proptest::prelude::*;
-use proptest::test_runner::TestCaseError;
-use socket2::{Domain, Protocol, SockAddr, Type};
+use socket2::{Domain, Protocol, Type};
 use std::mem::MaybeUninit;
 use std::net::SocketAddr;
 
@@ -16,7 +15,7 @@ fn test_send_basic() {
     println!("before");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    bind(server_sock, SockAddr::from(addr)).await.expect("Failed to bind");
+    bind(server_sock, addr).await.expect("Failed to bind");
     println!("after bind");
 
     let bound_addr = unsafe {
@@ -44,7 +43,7 @@ fn test_send_basic() {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("Failed to connect");
       client_sock
@@ -76,7 +75,7 @@ fn test_send_large_data() {
       .expect("Failed to create server socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    bind(server_sock, SockAddr::from(addr)).await.expect("Failed to bind");
+    bind(server_sock, addr).await.expect("Failed to bind");
 
     let bound_addr = unsafe {
       let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -101,7 +100,7 @@ fn test_send_large_data() {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("Failed to connect");
       client_sock
@@ -135,7 +134,7 @@ fn test_send_multiple() {
       .expect("Failed to create server socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    bind(server_sock, SockAddr::from(addr)).await.expect("Failed to bind");
+    bind(server_sock, addr).await.expect("Failed to bind");
 
     let bound_addr = unsafe {
       let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -160,7 +159,7 @@ fn test_send_multiple() {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("Failed to connect");
       client_sock
@@ -182,7 +181,6 @@ fn test_send_multiple() {
       libc::close(server_client_fd);
       libc::close(server_sock);
     }
-    lio::exit();
   });
 }
 
@@ -195,7 +193,7 @@ fn test_send_with_flags() {
       .expect("Failed to create server socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    bind(server_sock, SockAddr::from(addr)).await.expect("Failed to bind");
+    bind(server_sock, addr).await.expect("Failed to bind");
 
     let bound_addr = unsafe {
       let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -220,7 +218,7 @@ fn test_send_with_flags() {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("Failed to connect");
       client_sock
@@ -241,7 +239,6 @@ fn test_send_with_flags() {
       libc::close(server_client_fd);
       libc::close(server_sock);
     }
-    lio::exit();
   });
 }
 
@@ -253,7 +250,7 @@ fn test_send_on_closed_socket() {
       .expect("Failed to create server socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    bind(server_sock, SockAddr::from(addr)).await.expect("Failed to bind");
+    bind(server_sock, addr).await.expect("Failed to bind");
 
     let bound_addr = unsafe {
       let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -278,7 +275,7 @@ fn test_send_on_closed_socket() {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("Failed to connect");
       client_sock
@@ -312,7 +309,7 @@ fn test_send_concurrent() {
       .expect("Failed to create server socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    bind(server_sock, SockAddr::from(addr)).await.expect("Failed to bind");
+    bind(server_sock, addr).await.expect("Failed to bind");
 
     let bound_addr = unsafe {
       let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -341,7 +338,7 @@ fn test_send_concurrent() {
           socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
             .await
             .expect("Failed to create client socket");
-        connect(client_sock, SockAddr::from(bound_addr))
+        connect(client_sock, bound_addr)
           .await
           .expect("Failed to connect");
         client_sock
@@ -361,7 +358,7 @@ fn test_send_concurrent() {
       lio::close(_server_client_fd).await.unwrap();
     }
 
-    lio::close(server_sock).await;
+    let _ = lio::close(server_sock).await.unwrap();
   });
 }
 
@@ -384,7 +381,7 @@ proptest! {
 
       // Bind to any available port on localhost
       let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-      bind(server_sock, SockAddr::from(addr))
+      bind(server_sock, addr)
         .await
         .expect("Failed to bind");
 
@@ -414,7 +411,7 @@ proptest! {
           let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
             .await
             .expect("Failed to create client socket");
-          connect(sock, SockAddr::from(bound_addr))
+          connect(sock, bound_addr)
             .await
             .expect("Connect failed");
           sock

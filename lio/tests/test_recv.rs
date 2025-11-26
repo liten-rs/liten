@@ -1,6 +1,6 @@
 use lio::{accept, bind, connect, listen, recv, send, socket};
 use proptest::prelude::*;
-use socket2::{Domain, Protocol, SockAddr, Type};
+use socket2::{Domain, Protocol, Type};
 use std::mem::MaybeUninit;
 use std::net::SocketAddr;
 
@@ -12,7 +12,7 @@ fn test_recv_multiple() {
       .expect("Failed to create server socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    bind(server_sock, SockAddr::from(addr)).await.expect("Failed to bind");
+    bind(server_sock, addr).await.expect("Failed to bind");
 
     let bound_addr = unsafe {
       let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -55,7 +55,7 @@ fn test_recv_multiple() {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("Failed to connect");
 
@@ -95,7 +95,7 @@ fn test_recv_with_flags() {
       .expect("Failed to create server socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    bind(server_sock, SockAddr::from(addr)).await.expect("Failed to bind");
+    bind(server_sock, addr).await.expect("Failed to bind");
 
     let bound_addr = unsafe {
       let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -130,7 +130,7 @@ fn test_recv_with_flags() {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("Failed to connect");
 
@@ -161,7 +161,7 @@ fn test_recv_on_closed() {
       .expect("Failed to create server socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    bind(server_sock, SockAddr::from(addr)).await.expect("Failed to bind");
+    bind(server_sock, addr).await.expect("Failed to bind");
 
     let bound_addr = unsafe {
       let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -189,7 +189,7 @@ fn test_recv_on_closed() {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("Failed to connect");
       client_sock
@@ -236,8 +236,7 @@ proptest! {
 
       // Bind using lio
       let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-      let sock_addr = SockAddr::from(addr);
-      bind(server_sock, sock_addr).await.expect("Failed to bind");
+      bind(server_sock, addr).await.expect("Failed to bind");
 
       // Get bound address
       let bound_addr = unsafe {
@@ -259,7 +258,7 @@ proptest! {
           let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
             .await
             .expect("Failed to create client socket");
-          connect(sock, SockAddr::from(bound_addr)).await.expect("Connect failed");
+          connect(sock, bound_addr).await.expect("Connect failed");
           sock
         }
       );

@@ -18,19 +18,6 @@ pub mod testing_util;
 #[doc(hidden)]
 pub use liten_macros::internal_test;
 
-// cfg_blocking! {
-//   pub mod blocking;
-// }
-
-// cfg_fs! {
-//   pub mod fs;
-// }
-
-// #[cfg(unix)]
-// cfg_io! {
-//   pub mod io;
-// }
-
 cfg_rt! {
   pub mod runtime;
   pub use liten_macros::{main, test};
@@ -46,9 +33,6 @@ cfg_rt! {
 cfg_sync! {
   pub mod sync;
 }
-
-#[cfg(not(feature = "sync"))]
-mod sync;
 
 pub mod task;
 

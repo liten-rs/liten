@@ -1,3 +1,4 @@
+// NOTE: OpRegistration should **NEVER** impl Sync.
 use std::task::Waker;
 
 #[cfg(not(linux))]

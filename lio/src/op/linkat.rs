@@ -21,7 +21,7 @@ pub struct LinkAt {
 
 // TODO: test
 impl LinkAt {
-  pub fn new(
+  pub(crate) fn new(
     old_dir_fd: RawFd,
     old_path: impl AsRef<Path>,
     new_dir_fd: RawFd,

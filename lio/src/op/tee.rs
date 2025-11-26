@@ -13,7 +13,7 @@ pub struct Tee {
 }
 
 impl Tee {
-  pub fn new(fd_in: RawFd, fd_out: RawFd, size: u32) -> Self {
+  pub(crate) fn new(fd_in: RawFd, fd_out: RawFd, size: u32) -> Self {
     Self { fd_in, fd_out, size }
   }
 }

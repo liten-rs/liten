@@ -16,7 +16,7 @@ pub struct Send {
 }
 
 impl Send {
-  pub fn new(fd: RawFd, buf: Vec<u8>, flags: Option<i32>) -> Self {
+  pub(crate) fn new(fd: RawFd, buf: Vec<u8>, flags: Option<i32>) -> Self {
     assert!((buf.len()) <= u32::MAX as usize);
     Self { fd, buf: Some(buf), flags: flags.unwrap_or(0) }
   }

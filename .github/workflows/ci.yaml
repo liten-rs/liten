@@ -29,7 +29,7 @@ jobs:
           key: cargo-build-cache
 
       - name: Run tests
-        run: nix develop .#ci -c just miri-test loom-test
+        run: nix develop .#ci -c cargo nextest r --release
 
       - name: Check flags
         run: nix develop .#ci -c cargo hack check --each-features --no-dev-deps

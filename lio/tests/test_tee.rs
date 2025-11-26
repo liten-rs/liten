@@ -62,12 +62,10 @@ fn test_tee_basic() {
     assert_eq!(&buf1, test_data);
 
     // Cleanup
-    unsafe {
-      lio::close(pipe1_fds[0]);
-      lio::close(pipe1_fds[1]);
-      lio::close(pipe2_fds[0]);
-      lio::close(pipe2_fds[1]);
-    }
+    lio::close(pipe1_fds[0]).await.unwrap();
+    lio::close(pipe1_fds[1]).await.unwrap();
+    lio::close(pipe2_fds[0]).await.unwrap();
+    lio::close(pipe2_fds[1]).await.unwrap();
   });
 }
 
@@ -119,12 +117,10 @@ fn test_tee_large_data() {
     assert_eq!(&buf2, &test_data[..bytes_copied as usize]);
 
     // Cleanup
-    unsafe {
-      lio::close(pipe1_fds[0]);
-      lio::close(pipe1_fds[1]);
-      lio::close(pipe2_fds[0]);
-      lio::close(pipe2_fds[1]);
-    }
+    lio::close(pipe1_fds[0]).await.unwrap();
+    lio::close(pipe1_fds[1]).await.unwrap();
+    lio::close(pipe2_fds[0]).await.unwrap();
+    lio::close(pipe2_fds[1]).await.unwrap();
   });
 }
 
@@ -186,12 +182,9 @@ fn test_tee_partial() {
     assert_eq!(&buf1, test_data);
 
     // Cleanup
-    unsafe {
-      lio::close(pipe1_fds[0]);
-      lio::close(pipe1_fds[1]);
-      lio::close(pipe2_fds[0]);
-      lio::close(pipe2_fds[1]);
-    }
+    lio::close(pipe1_fds[1]).await.unwrap();
+    lio::close(pipe2_fds[0]).await.unwrap();
+    lio::close(pipe2_fds[1]).await.unwrap();
   });
 }
 
@@ -333,14 +326,12 @@ fn test_tee_multiple() {
     assert_eq!(&buf3, test_data);
 
     // Cleanup
-    unsafe {
-      lio::close(pipe1_fds[0]).await.unwrap();
-      lio::close(pipe1_fds[1]).await.unwrap();
-      lio::close(pipe2_fds[0]).await.unwrap();
-      lio::close(pipe2_fds[1]).await.unwrap();
-      lio::close(pipe3_fds[0]).await.unwrap();
-      lio::close(pipe3_fds[1]).await.unwrap();
-    }
+    lio::close(pipe1_fds[0]).await.unwrap();
+    lio::close(pipe1_fds[1]).await.unwrap();
+    lio::close(pipe2_fds[0]).await.unwrap();
+    lio::close(pipe2_fds[1]).await.unwrap();
+    lio::close(pipe3_fds[0]).await.unwrap();
+    lio::close(pipe3_fds[1]).await.unwrap();
   });
 }
 

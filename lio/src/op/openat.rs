@@ -15,7 +15,7 @@ pub struct OpenAt {
 }
 
 impl OpenAt {
-  pub fn new(fd: RawFd, pathname: CString, flags: i32) -> Self {
+  pub(crate) fn new(fd: RawFd, pathname: CString, flags: i32) -> Self {
     Self { fd, pathname, flags }
   }
 }

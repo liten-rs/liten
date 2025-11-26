@@ -14,7 +14,7 @@ pub struct Socket {
 }
 
 impl Socket {
-  pub fn new(
+  pub(crate) fn new(
     domain: socket2::Domain,
     ty: socket2::Type,
     proto: Option<socket2::Protocol>,
@@ -22,12 +22,13 @@ impl Socket {
     Self { domain, ty, proto }
   }
 
+  #[cfg(not(linux))]
   fn set_nonblocking(fd: RawFd) -> io::Result<()> {
     let mut nonblocking = true as libc::c_int;
     syscall!(ioctl(fd, libc::FIONBIO, &mut nonblocking)).map(drop)
   }
 
-  fn disable_sigpipe(fd: RawFd) -> io::Result<()> {
+  fn disable_sigpipe(#[allow(unused)] fd: RawFd) -> io::Result<()> {
     #[cfg(any(
       target_os = "freebsd",
       target_os = "netbsd",

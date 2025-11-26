@@ -17,7 +17,7 @@ pub struct Read {
 
 impl Read {
   /// Will return errn 22 "EINVAL" if offset < 0
-  pub fn new(fd: RawFd, mem: Vec<u8>, offset: i64) -> Self {
+  pub(crate) fn new(fd: RawFd, mem: Vec<u8>, offset: i64) -> Self {
     Self { fd, buf: Some(mem), offset }
   }
 }

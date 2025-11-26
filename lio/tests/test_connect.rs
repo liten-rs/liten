@@ -1,5 +1,5 @@
 use lio::{bind, connect, listen, socket};
-use socket2::{Domain, Protocol, SockAddr, Type};
+use socket2::{Domain, Protocol, Type};
 use std::mem::MaybeUninit;
 use std::net::SocketAddr;
 
@@ -12,9 +12,8 @@ fn test_connect_basic() {
         .expect("Failed to create server socket");
 
       let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-      let sock_addr = SockAddr::from(addr);
       println!("bind");
-      bind(server_sock, sock_addr).await.expect("Failed to bind");
+      bind(server_sock, addr).await.expect("Failed to bind");
 
       let bound_addr = unsafe {
         let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -40,7 +39,7 @@ fn test_connect_basic() {
         .expect("Failed to create client socket");
 
       println!("connect");
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("Failed to connect");
       println!("connect after");
@@ -71,8 +70,7 @@ fn test_connect_ipv6() {
         .expect("Failed to create IPv6 server socket");
 
       let addr: SocketAddr = "[::1]:0".parse().unwrap();
-      let sock_addr = SockAddr::from(addr);
-      bind(server_sock, sock_addr).await.expect("Failed to bind IPv6");
+      bind(server_sock, addr).await.expect("Failed to bind IPv6");
 
       let bound_addr = unsafe {
         let mut addr_storage = MaybeUninit::<libc::sockaddr_in6>::zeroed();
@@ -94,7 +92,7 @@ fn test_connect_ipv6() {
         .await
         .expect("Failed to create IPv6 client socket");
 
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("Failed to connect IPv6");
 
@@ -124,9 +122,8 @@ fn test_connect_to_nonexistent() {
 
       // Try to connect to a port that's (hopefully) not listening
       let addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
-      let sock_addr = SockAddr::from(addr);
 
-      let result = connect(client_sock, sock_addr).await;
+      let result = connect(client_sock, addr).await;
 
       // Should fail with connection refused
       assert!(result.is_err(), "Connect to non-listening port should fail");
@@ -145,8 +142,7 @@ fn test_connect_multiple_clients() {
         .expect("Failed to create server socket");
 
       let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-      let sock_addr = SockAddr::from(addr);
-      bind(server_sock, sock_addr).await.expect("Failed to bind");
+      bind(server_sock, addr).await.expect("Failed to bind");
 
       let bound_addr = unsafe {
         let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -172,7 +168,7 @@ fn test_connect_multiple_clients() {
             .await
             .expect("Failed to create client socket");
 
-        connect(client_sock, SockAddr::from(bound_addr))
+        connect(client_sock, bound_addr)
           .await
           .expect("Failed to connect");
 
@@ -199,8 +195,7 @@ fn test_connect_already_connected() {
         .expect("Failed to create server socket");
 
       let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-      let sock_addr = SockAddr::from(addr);
-      bind(server_sock, sock_addr).await.expect("Failed to bind");
+      bind(server_sock, addr).await.expect("Failed to bind");
 
       let bound_addr = unsafe {
         let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -222,12 +217,12 @@ fn test_connect_already_connected() {
         .await
         .expect("Failed to create client socket");
 
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("First connect should succeed");
 
       // Try to connect again
-      let result = connect(client_sock, SockAddr::from(bound_addr)).await;
+      let result = connect(client_sock, bound_addr).await;
 
       // Should fail with already connected
       assert!(result.is_err(), "Second connect should fail");
@@ -247,8 +242,7 @@ fn test_connect_to_localhost() {
         .expect("Failed to create server socket");
 
       let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-      let sock_addr = SockAddr::from(addr);
-      bind(server_sock, sock_addr).await.expect("Failed to bind");
+      bind(server_sock, addr).await.expect("Failed to bind");
 
       let bound_addr = unsafe {
         let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -270,7 +264,7 @@ fn test_connect_to_localhost() {
         .await
         .expect("Failed to create client socket");
 
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("Failed to connect to localhost");
 
@@ -301,8 +295,7 @@ fn test_connect_concurrent() {
         .expect("Failed to create server socket");
 
       let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-      let sock_addr = SockAddr::from(addr);
-      bind(server_sock, sock_addr).await.expect("Failed to bind");
+      bind(server_sock, addr).await.expect("Failed to bind");
 
       let bound_addr = unsafe {
         let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -328,7 +321,7 @@ fn test_connect_concurrent() {
             .await
             .expect("Failed to create client socket");
 
-        connect(client_sock, SockAddr::from(bound_addr))
+        connect(client_sock, bound_addr)
           .await
           .expect("Failed to connect");
 
@@ -355,8 +348,7 @@ fn test_connect_with_bind() {
         .expect("Failed to create server socket");
 
       let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-      let sock_addr = SockAddr::from(addr);
-      bind(server_sock, sock_addr).await.expect("Failed to bind server");
+      bind(server_sock, addr).await.expect("Failed to bind server");
 
       let bound_addr = unsafe {
         let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -380,12 +372,12 @@ fn test_connect_with_bind() {
         .expect("Failed to create client socket");
 
       let client_bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-      bind(client_sock, SockAddr::from(client_bind_addr))
+      bind(client_sock, client_bind_addr)
         .await
         .expect("Failed to bind client");
 
       // Now connect
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("Failed to connect");
 

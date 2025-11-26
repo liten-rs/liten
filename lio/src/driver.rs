@@ -195,7 +195,7 @@ impl Driver {
 
   pub fn background(
     &'static self,
-    mut receiver: mpsc::Receiver<()>,
+    receiver: mpsc::Receiver<()>,
   ) -> thread::JoinHandle<()> {
     // SAFETY: completion_shared is only accessed here so it's a singlethreaded access, hence
     // guaranteed only to have one completion queue.
@@ -663,7 +663,7 @@ impl Driver {
 
   pub fn background(
     &'static self,
-    mut sender: mpsc::Receiver<()>,
+    sender: mpsc::Receiver<()>,
   ) -> thread::JoinHandle<()> {
     utils::create_worker(move || {
       #[cfg(feature = "tracing")]

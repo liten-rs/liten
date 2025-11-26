@@ -15,7 +15,7 @@ pub struct Timeout {
 }
 
 impl Timeout {
-  pub fn new(duration: Duration) -> Self {
+  pub(crate) fn new(duration: Duration) -> Self {
     Self {
       timespec: Timespec::new()
         .sec(duration.as_secs())

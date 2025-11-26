@@ -1,5 +1,5 @@
 use lio::{bind, listen, socket};
-use socket2::{Domain, Protocol, SockAddr, Type};
+use socket2::{Domain, Protocol, Type};
 use std::net::SocketAddr;
 
 #[cfg(linux)]
@@ -11,8 +11,7 @@ fn test_listen_basic() {
       .expect("Failed to create socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let sock_addr = SockAddr::from(addr);
-    bind(sock, sock_addr).await.expect("Failed to bind socket");
+    bind(sock, addr).await.expect("Failed to bind socket");
 
     listen(sock, 128).await.expect("Failed to listen on socket");
 
@@ -48,8 +47,7 @@ fn test_listen_with_backlog() {
       .expect("Failed to create socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let sock_addr = SockAddr::from(addr);
-    bind(sock, sock_addr).await.expect("Failed to bind socket");
+    bind(sock, addr).await.expect("Failed to bind socket");
 
     // Listen with custom backlog
     listen(sock, 10).await.expect("Failed to listen with backlog 10");
@@ -80,8 +78,7 @@ fn test_listen_large_backlog() {
       .expect("Failed to create socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let sock_addr = SockAddr::from(addr);
-    bind(sock, sock_addr).await.expect("Failed to bind socket");
+    bind(sock, addr).await.expect("Failed to bind socket");
 
     // Listen with large backlog
     listen(sock, 1024).await.expect("Failed to listen with large backlog");
@@ -111,7 +108,7 @@ fn test_listen_without_bind() {
       .expect("Failed to create socket");
 
     // Try to listen without binding first
-    let result = listen(sock, 128).await;
+    let _ = listen(sock, 128).await;
 
     // On most systems this will succeed (bind to INADDR_ANY:0)
     // but behavior may vary by platform
@@ -130,8 +127,7 @@ fn test_listen_ipv6() {
       .expect("Failed to create IPv6 socket");
 
     let addr: SocketAddr = "[::1]:0".parse().unwrap();
-    let sock_addr = SockAddr::from(addr);
-    bind(sock, sock_addr).await.expect("Failed to bind IPv6 socket");
+    bind(sock, addr).await.expect("Failed to bind IPv6 socket");
 
     listen(sock, 128).await.expect("Failed to listen on IPv6 socket");
 
@@ -160,8 +156,7 @@ fn test_listen_on_udp() {
       .expect("Failed to create UDP socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let sock_addr = SockAddr::from(addr);
-    bind(sock, sock_addr).await.expect("Failed to bind UDP socket");
+    bind(sock, addr).await.expect("Failed to bind UDP socket");
 
     // Try to listen on UDP socket (should fail)
     let result = listen(sock, 128).await;
@@ -183,13 +178,12 @@ fn test_listen_twice() {
       .expect("Failed to create socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let sock_addr = SockAddr::from(addr);
-    bind(sock, sock_addr).await.expect("Failed to bind socket");
+    bind(sock, addr).await.expect("Failed to bind socket");
 
     listen(sock, 128).await.expect("First listen should succeed");
 
     // Try to listen again on the same socket
-    let result = listen(sock, 256).await;
+    let _ = listen(sock, 256).await;
 
     // Behavior may vary - some systems allow it, some don't
     unsafe {
@@ -207,8 +201,7 @@ fn test_listen_zero_backlog() {
       .expect("Failed to create socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let sock_addr = SockAddr::from(addr);
-    bind(sock, sock_addr).await.expect("Failed to bind socket");
+    bind(sock, addr).await.expect("Failed to bind socket");
 
     // Listen with backlog of 0 (system may adjust to minimum)
     listen(sock, 0).await.expect("Failed to listen with backlog 0");
@@ -238,8 +231,7 @@ fn test_listen_after_close() {
       .expect("Failed to create socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let sock_addr = SockAddr::from(addr);
-    bind(sock, sock_addr).await.expect("Failed to bind socket");
+    bind(sock, addr).await.expect("Failed to bind socket");
 
     unsafe {
       libc::close(sock);
@@ -264,8 +256,7 @@ fn test_listen_concurrent() {
           .expect("Failed to create socket");
 
         let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-        let sock_addr = SockAddr::from(addr);
-        bind(sock, sock_addr).await.expect("Failed to bind socket");
+        bind(sock, addr).await.expect("Failed to bind socket");
 
         listen(sock, 128).await.expect("Failed to listen");
 
@@ -301,8 +292,7 @@ fn test_listen_on_all_interfaces() {
 
     // Bind to 0.0.0.0 (all interfaces)
     let addr: SocketAddr = "0.0.0.0:0".parse().unwrap();
-    let sock_addr = SockAddr::from(addr);
-    bind(sock, sock_addr).await.expect("Failed to bind to all interfaces");
+    bind(sock, addr).await.expect("Failed to bind to all interfaces");
 
     listen(sock, 128).await.expect("Failed to listen on all interfaces");
 

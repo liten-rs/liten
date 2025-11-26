@@ -16,7 +16,7 @@ pub struct Write {
 }
 
 impl Write {
-  pub fn new(fd: RawFd, buf: Vec<u8>, offset: i64) -> Write {
+  pub(crate) fn new(fd: RawFd, buf: Vec<u8>, offset: i64) -> Write {
     assert!((buf.len()) <= u32::MAX as usize);
     Self { fd, buf: Some(buf), offset }
   }

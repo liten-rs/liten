@@ -1,5 +1,5 @@
 use lio::{accept, bind, connect, listen, socket};
-use socket2::{Domain, Protocol, SockAddr, Type};
+use socket2::{Domain, Protocol, Type};
 use std::mem::MaybeUninit;
 use std::net::SocketAddr;
 
@@ -12,8 +12,7 @@ fn test_accept_basic() {
       .expect("Failed to create server socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let sock_addr = SockAddr::from(addr);
-    bind(server_sock, sock_addr).await.expect("Failed to bind");
+    bind(server_sock, addr).await.expect("Failed to bind");
 
     // Get the bound address
     let bound_addr = unsafe {
@@ -46,7 +45,7 @@ fn test_accept_basic() {
         .await
         .expect("Failed to create client socket");
 
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("Failed to connect");
 
@@ -77,8 +76,7 @@ fn test_accept_multiple() {
       .expect("Failed to create server socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let sock_addr = SockAddr::from(addr);
-    bind(server_sock, sock_addr).await.expect("Failed to bind");
+    bind(server_sock, addr).await.expect("Failed to bind");
 
     let bound_addr = unsafe {
       let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -115,7 +113,7 @@ fn test_accept_multiple() {
             .await
             .expect("Failed to create client socket");
 
-        connect(client_sock, SockAddr::from(bound_addr))
+        connect(client_sock, bound_addr)
           .await
           .expect("Failed to connect");
 
@@ -153,8 +151,7 @@ fn test_accept_with_client_info() {
       .expect("Failed to create server socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let sock_addr = SockAddr::from(addr);
-    bind(server_sock, sock_addr).await.expect("Failed to bind");
+    bind(server_sock, addr).await.expect("Failed to bind");
 
     let bound_addr = unsafe {
       let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -183,15 +180,15 @@ fn test_accept_with_client_info() {
         .await
         .expect("Failed to create client socket");
 
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("Failed to connect");
 
       client_sock
     };
 
-    let ((accepted_fd, server_sock), client_sock) =
-      liten::join!(accept_fut, client_fut);
+    let (client_sock, (accepted_fd, server_sock)) =
+      liten::join!(client_fut, accept_fut);
 
     // Cleanup
     unsafe {
@@ -210,8 +207,7 @@ fn test_accept_ipv6() {
       .expect("Failed to create IPv6 server socket");
 
     let addr: SocketAddr = "[::1]:0".parse().unwrap();
-    let sock_addr = SockAddr::from(addr);
-    bind(server_sock, sock_addr).await.expect("Failed to bind IPv6");
+    bind(server_sock, addr).await.expect("Failed to bind IPv6");
 
     let bound_addr = unsafe {
       let mut addr_storage = MaybeUninit::<libc::sockaddr_in6>::zeroed();
@@ -240,15 +236,15 @@ fn test_accept_ipv6() {
         .await
         .expect("Failed to create IPv6 client socket");
 
-      connect(client_sock, SockAddr::from(bound_addr))
+      connect(client_sock, bound_addr)
         .await
         .expect("Failed to connect IPv6");
 
       client_sock
     };
 
-    let ((accepted_fd, server_sock), client_sock) =
-      liten::join!(accept_fut, client_fut);
+    let (client_sock, (accepted_fd, server_sock)) =
+      liten::join!(client_fut, accept_fut);
 
     assert!(accepted_fd >= 0);
 
@@ -269,8 +265,7 @@ fn test_accept_concurrent() {
       .expect("Failed to create server socket");
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let sock_addr = SockAddr::from(addr);
-    bind(server_sock, sock_addr).await.expect("Failed to bind");
+    bind(server_sock, addr).await.expect("Failed to bind");
 
     let bound_addr = unsafe {
       let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
@@ -307,7 +302,7 @@ fn test_accept_concurrent() {
             .await
             .expect("Failed to create client socket");
 
-        connect(client_sock, SockAddr::from(bound_addr))
+        connect(client_sock, bound_addr)
           .await
           .expect("Failed to connect");
 

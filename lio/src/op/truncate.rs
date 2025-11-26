@@ -14,7 +14,7 @@ pub struct Truncate {
 }
 
 impl Truncate {
-  pub fn new(fd: RawFd, size: u64) -> Self {
+  pub(crate) fn new(fd: RawFd, size: u64) -> Self {
     Self { fd, size }
   }
 }

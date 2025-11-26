@@ -14,7 +14,7 @@ pub struct Listen {
 }
 
 impl Listen {
-  pub fn new(fd: RawFd, backlog: i32) -> Self {
+  pub(crate) fn new(fd: RawFd, backlog: i32) -> Self {
     Self { fd, backlog }
   }
 }

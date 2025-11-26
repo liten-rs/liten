@@ -1,5 +1,6 @@
 #[test]
 fn test_driver() {
   lio::init();
-  lio::exit();
+  // Note: Removed lio::exit() to prevent shutting down the shared Driver
+  // during parallel test execution
 }
