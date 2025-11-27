@@ -70,15 +70,16 @@ jobs:
             ~/.cargo/git
           key: cargo-build-cache
 
+      - name: Check flags
+        # Hmmm not sure if I should put this into the matrix.
+        run: nix develop .#ci -c cargo hack check --feature-powerset --lib --tests --no-dev-deps
+
       - name: Run build
         run: nix develop .#ci -c cargo build --release
 
       - name: Run tests
         run: nix develop .#ci -c cargo nextest r --release
 
-      - name: Check flags
-        # Hmmm not sure if I should put this into the matrix.
-        run: nix develop .#ci -c cargo hack check --feature-powerset --lib --tests --no-dev-deps
 
   nix-flake-check:
     runs-on: ubuntu-latest
