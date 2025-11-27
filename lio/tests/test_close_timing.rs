@@ -26,9 +26,7 @@ fn test_close_timing() {
 
     // Do a tee operation
     let tee_start = Instant::now();
-    lio::tee(pipe1_fds[0], pipe2_fds[1], test_data.len() as u32)
-      .await
-      .unwrap();
+    lio::tee(pipe1_fds[0], pipe2_fds[1], test_data.len() as u32).await.unwrap();
     println!("Tee took: {:?}", tee_start.elapsed());
 
     lio::close(pipe1_fds[0]).await.unwrap();

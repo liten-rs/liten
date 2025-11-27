@@ -28,7 +28,6 @@ mod send;
 mod socket;
 
 mod fsync;
-// #[cfg(linux)]
 mod linkat;
 mod shutdown;
 mod symlink;
@@ -44,7 +43,6 @@ pub use bind::*;
 pub use close::*;
 pub use connect::*;
 pub use fsync::*;
-#[cfg(linux)]
 pub use linkat::*;
 pub use listen::*;
 pub use openat::*;

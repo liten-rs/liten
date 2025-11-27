@@ -45,7 +45,6 @@ pub struct TaskHandle<Out> {
   task: Option<async_task::Task<Out>>,
   be_stopped: bool,
 }
-// }
 
 impl<O> TaskHandle<O> {
   pub(crate) fn new(t: async_task::Task<O>) -> Self {

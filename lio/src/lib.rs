@@ -130,9 +130,10 @@ mod macros;
 
 mod driver;
 
-mod op;
-#[doc(inline)]
-pub use op::*;
+pub mod op;
+use op::*;
+// #[doc(inline)]
+// pub use op::*;
 
 mod op_progress;
 mod op_registration;
@@ -146,8 +147,10 @@ macro_rules! impl_op {
   (
     $desc:tt,
     $(#[$($doc:tt)*])*
-    $operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty ; $err:ty
+    $operation:ident, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty ; $err:ty
   ) => {
+    use op::$operation;
+
     #[doc = $desc]
     #[doc = "# Returns"]
     #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
@@ -158,13 +161,13 @@ macro_rules! impl_op {
     #[doc = "\n\nSee more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
     $(#[$($doc)*])*
     pub fn $name($($arg: $arg_ty),*) -> Result<OperationProgress<$operation>, $err> {
-      Ok(Driver::submit(<$operation>::new($($arg),*)?))
+      Ok(Driver::submit($operation::new($($arg),*)?))
     }
   };
   (
     $desc:tt,
     $(#[$($doc:tt)*])*
-    $operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty
+    $operation:ident, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty
   ) => {
     #[doc = $desc]
     #[doc = "# Returns"]
@@ -176,7 +179,7 @@ macro_rules! impl_op {
     #[doc = "\n\nSee more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
     $(#[$($doc)*])*
     pub fn $name($($arg: $arg_ty),*) -> OperationProgress<$operation> {
-      Driver::submit(<$operation>::new($($arg),*))
+      Driver::submit($operation::new($($arg),*))
     }
   };
 
@@ -241,8 +244,6 @@ impl_op!(
     SymlinkAt, fn symlinkat(new_dir_fd: RawFd, target: impl AsRef<Path>, linkpath: impl AsRef<Path>) -> io::Result<()> ; NulError
 );
 
-// TODO: not linux.
-#[cfg(linux)]
 impl_op!(
     "Create a hard-link",
     /// # Examples

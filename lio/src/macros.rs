@@ -1,13 +1,3 @@
-macro_rules! cfg_feature {
-   ($item:tt) => {
-       $(
-            #[cfg(feature = $item)]
-            #[cfg_attr(docsrs, doc(cfg(feature = $tt)))]
-            $item
-        )*
-    }
-}
-
 macro_rules! impl_result {
   (()) => {
     type Output = ();

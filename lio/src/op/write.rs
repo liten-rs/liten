@@ -32,13 +32,9 @@ impl Operation for Write {
   #[cfg(linux)]
   fn create_entry(&mut self) -> io_uring::squeue::Entry {
     let buf = self.buf.as_ref().unwrap();
-    io_uring::opcode::Write::new(
-      Fd(self.fd),
-      buf.as_ptr(),
-      buf.len() as u32,
-    )
-    .offset(self.offset as u64)
-    .build()
+    io_uring::opcode::Write::new(Fd(self.fd), buf.as_ptr(), buf.len() as u32)
+      .offset(self.offset as u64)
+      .build()
   }
 
   #[cfg(not(linux))]

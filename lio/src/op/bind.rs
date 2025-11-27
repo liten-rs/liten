@@ -3,8 +3,6 @@ use std::{cell::UnsafeCell, io, mem, net::SocketAddr, os::fd::RawFd};
 #[cfg(linux)]
 use io_uring::types::Fd;
 
-#[cfg(not(linux))]
-use crate::op::EventType;
 use crate::op::net_utils::std_socketaddr_into_libc;
 
 use super::Operation;

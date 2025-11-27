@@ -45,9 +45,7 @@ fn test_send_basic() {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, bound_addr)
-        .await
-        .expect("Failed to connect");
+      connect(client_sock, bound_addr).await.expect("Failed to connect");
       client_sock
     };
 
@@ -95,19 +93,16 @@ fn test_send_large_data() {
 
     listen(server_sock, 128).await.expect("Failed to listen");
 
-    let accept_fut =
-      async move {
-        let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
-        fd
-      };
+    let accept_fut = async move {
+      let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
+      fd
+    };
 
     let connect_fut = async {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, bound_addr)
-        .await
-        .expect("Failed to connect");
+      connect(client_sock, bound_addr).await.expect("Failed to connect");
       client_sock
     };
 
@@ -157,19 +152,16 @@ fn test_send_multiple() {
 
     listen(server_sock, 128).await.expect("Failed to listen");
 
-    let accept_fut =
-      async move {
-        let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
-        fd
-      };
+    let accept_fut = async move {
+      let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
+      fd
+    };
 
     let connect_fut = async {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, bound_addr)
-        .await
-        .expect("Failed to connect");
+      connect(client_sock, bound_addr).await.expect("Failed to connect");
       client_sock
     };
 
@@ -219,19 +211,16 @@ fn test_send_with_flags() {
 
     listen(server_sock, 128).await.expect("Failed to listen");
 
-    let accept_fut =
-      async move {
-        let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
-        fd
-      };
+    let accept_fut = async move {
+      let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
+      fd
+    };
 
     let connect_fut = async {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, bound_addr)
-        .await
-        .expect("Failed to connect");
+      connect(client_sock, bound_addr).await.expect("Failed to connect");
       client_sock
     };
 
@@ -279,19 +268,16 @@ fn test_send_on_closed_socket() {
 
     listen(server_sock, 128).await.expect("Failed to listen");
 
-    let accept_fut =
-      async move {
-        let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
-        fd
-      };
+    let accept_fut = async move {
+      let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
+      fd
+    };
 
     let connect_fut = async {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
         .await
         .expect("Failed to create client socket");
-      connect(client_sock, bound_addr)
-        .await
-        .expect("Failed to connect");
+      connect(client_sock, bound_addr).await.expect("Failed to connect");
       client_sock
     };
 
@@ -343,8 +329,7 @@ fn test_send_concurrent() {
 
     // Note: Simplified concurrent test without actual concurrency
     for i in 0..5 {
-      let accept_fut =
-        async move {
+      let accept_fut = async move {
         let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
         fd
       };
@@ -355,9 +340,7 @@ fn test_send_concurrent() {
           socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
             .await
             .expect("Failed to create client socket");
-        connect(client_sock, bound_addr)
-          .await
-          .expect("Failed to connect");
+        connect(client_sock, bound_addr).await.expect("Failed to connect");
         client_sock
       };
 

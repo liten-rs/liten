@@ -3,24 +3,18 @@ name: CI
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-test:
-    name: Build and test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+
+  check-fmt-n-doc:
+    name: Check format and docs
     steps:
       - uses: actions/checkout@v3
 
       - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/flake-checker-action@main
 
       - name: Cache cargo registry
         uses: actions/cache@v3
@@ -31,11 +25,61 @@ jobs:
             ~/.cargo/git
           key: cargo-build-cache
 
-      - name: Run tests
-        run: nix develop .#ci -c cargo check
+      - name: Check format
+        run: nix develop .#ci -c cargo fmt --check
+        run: nix develop .#ci -c cargo test --doc
+
+  clippy:
+    name: Clippy
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        continue-on-error: false
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-build-cache
+
+      - name: Check format
+        run: nix develop .#ci -c cargo clippy
+
+  build-test:
+    name: Build and test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        continue-on-error: false
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-build-cache
+
+      - name: Run build
+        run: nix develop .#ci -c cargo build --release
 
       - name: Run tests
         run: nix develop .#ci -c cargo nextest r --release
 
       - name: Check flags
-        run: nix develop .#ci -c cargo hack check --each-feature --no-dev-deps
+        # Hmmm not sure if I should put this into the matrix.
+        run: nix develop .#ci -c cargo hack check --feature-powerset --lib --tests --no-dev-deps
+
+  nix-flake-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/flake-checker-action@main

@@ -5,10 +5,6 @@
 pub mod macros;
 mod loom;
 
-cfg_coro! {
-  pub mod coro;
-}
-
 pub mod future;
 
 // pub(crate) mod data;

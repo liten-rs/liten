@@ -31,7 +31,8 @@ fn test_recv_multiple() {
     listen(server_sock, 128).await.expect("Failed to listen");
 
     let server_fut = async move {
-      let (client_fd, _client_addr) = accept(server_sock).await.expect("Failed to accept");
+      let (client_fd, _client_addr) =
+        accept(server_sock).await.expect("Failed to accept");
 
       // Receive until EOF
       let mut all_data = Vec::new();
@@ -114,7 +115,8 @@ fn test_recv_with_flags() {
     let send_data = b"Data with flags".to_vec();
 
     let server_fut = async move {
-      let (client_fd, _client_addr) = accept(server_sock).await.expect("Failed to accept");
+      let (client_fd, _client_addr) =
+        accept(server_sock).await.expect("Failed to accept");
 
       let buf = vec![0u8; 1024];
       let (bytes_received, received_buf) = recv(client_fd, buf, Some(0)).await;
@@ -176,7 +178,8 @@ fn test_recv_on_closed() {
     listen(server_sock, 128).await.expect("Failed to listen");
 
     let server_fut = async move {
-      let (client_fd, _client_addr) = accept(server_sock).await.expect("Failed to accept");
+      let (client_fd, _client_addr) =
+        accept(server_sock).await.expect("Failed to accept");
 
       (client_fd, server_sock)
     };

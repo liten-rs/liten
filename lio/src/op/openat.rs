@@ -3,9 +3,6 @@ use std::{ffi::CString, os::fd::RawFd};
 #[cfg(linux)]
 use io_uring::types::Fd;
 
-#[cfg(not(linux))]
-use crate::op::EventType;
-
 use super::Operation;
 
 pub struct OpenAt {

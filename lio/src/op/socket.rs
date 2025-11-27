@@ -209,45 +209,6 @@ impl Operation for Socket {
     None
   }
 
-  /// Creates a new socket and configures it with essential options.
-  ///
-  /// **Critical: Error Cleanup Pattern**
-  ///
-  /// This implementation demonstrates the essential error handling pattern for socket
-  /// creation: if socket() succeeds but any subsequent setup fails, we MUST close the
-  /// file descriptor before returning the error.
-  ///
-  /// **Why error cleanup is critical:**
-  /// 1. Socket creation (socket syscall) allocates a file descriptor
-  /// 2. If setup_socket_options() fails, we have an FD but return an error
-  /// 3. Without cleanup, the FD leaks (never closed, never used)
-  /// 4. Each leak consumes one FD from the process limit (typically 1024-65536)
-  /// 5. Eventually hits EMFILE (too many open files), breaking the application
-  ///
-  /// **The pattern:**
-  /// ```rust
-  /// let fd = socket(...)?;  // FD allocated here
-  ///
-  /// match setup(fd) {
-  ///     Ok(()) => Ok(fd),    // Success: return the FD
-  ///     Err(e) => {
-  ///         close(fd);        // Failure: MUST clean up before returning error
-  ///         Err(e)
-  ///     }
-  /// }
-  /// ```
-  ///
-  /// **Platform-specific behavior:**
-  ///
-  /// Linux/BSD with SOCK_CLOEXEC support:
-  /// - Sets CLOEXEC atomically during socket creation (no race window)
-  /// - Non-blocking set separately on non-Linux platforms
-  ///
-  /// macOS and platforms without SOCK_CLOEXEC:
-  /// - Creates socket first (blocking, no CLOEXEC)
-  /// - Sets CLOEXEC via ioctl (small race: child could exec before this)
-  /// - Sets non-blocking via ioctl
-  /// - If any ioctl fails, closes the socket and returns error (no leak)
   fn run_blocking(&self) -> io::Result<i32> {
     // Path 1: Platforms with SOCK_CLOEXEC support (atomic CLOEXEC flag)
     #[cfg(any(
@@ -316,7 +277,7 @@ impl Operation for Socket {
       {
         // CRITICAL ERROR CLEANUP: If CLOEXEC fails, close FD before returning error
         if let Err(e) = Self::set_cloexec(fd) {
-          unsafe { libc::close(fd) };
+          let _ = unsafe { libc::close(fd) };
           return Err(e);
         }
       }
@@ -325,7 +286,7 @@ impl Operation for Socket {
       match self.setup_socket_options(fd) {
         Ok(()) => Ok(fd),
         Err(e) => {
-          unsafe { libc::close(fd) };
+          let _ = unsafe { libc::close(fd) };
           Err(e)
         }
       }?

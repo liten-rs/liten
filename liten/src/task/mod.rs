@@ -10,9 +10,9 @@
 //!
 
 #![allow(clippy::module_inception)]
-mod handle;
-pub(crate) mod store;
+// pub(crate) mod store;
 cfg_rt! {
+  mod handle;
   pub use handle::*;
   use crate::runtime::RuntimeHandle;
 }
