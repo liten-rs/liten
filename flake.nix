@@ -32,8 +32,6 @@
               (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
               cargo-nextest
               cargo-hack
-
-              just
             ];
           in
           {
@@ -44,11 +42,8 @@
               buildInputs =
                 buildInputs
                 ++ (with pkgs; [
-                  mdbook
                   cargo-watch
                   cargo-expand
-
-                  bacon
                 ]);
             };
           };
