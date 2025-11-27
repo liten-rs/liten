@@ -27,6 +27,7 @@ jobs:
 
       - name: Check format
         run: nix develop .#ci -c cargo fmt --check
+      - name: Check docs
         run: nix develop .#ci -c cargo test --doc
 
   clippy:
