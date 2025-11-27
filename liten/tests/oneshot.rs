@@ -76,6 +76,7 @@ fn try_recv() {
 }
 
 #[liten::internal_test]
+#[cfg(feature = "runtime")]
 fn channel_try_recv_sender_dropped() {
   let (sender, receiver) = oneshot::channel::<u8>();
 
