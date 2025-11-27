@@ -15,7 +15,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v3
 
@@ -30,6 +30,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: cargo-build-cache
+
+      - name: Run tests
+        run: nix develop .#ci -c cargo check
 
       - name: Run tests
         run: nix develop .#ci -c cargo nextest r --release

@@ -174,9 +174,8 @@ impl Driver {
     let old = mem::replace(&mut thing.status, OpRegistrationStatus::Cancelling);
 
     match old {
-      OpRegistrationStatus::Waiting { ref registered_waker } => {
-        println!("det is waiting");
-        if let Some(waker) = registered_waker.take() {
+      OpRegistrationStatus::Waiting { registered_waker } => {
+        if let Some(waker) = registered_waker {
           waker.wake();
         };
       }
@@ -184,7 +183,6 @@ impl Driver {
         unreachable!("already was cancelling.");
       }
       OpRegistrationStatus::Done { .. } => {
-        println!("det is done");
         // We don't care here because we shouldn't cancel anything, we just don't care about the
         // result anymore.
       }
@@ -246,21 +244,18 @@ impl Driver {
           );
 
           match old_value {
-            OpRegistrationStatus::Waiting { ref registered_waker } => {
-              println!("is waiting");
-              if let Some(waker) = registered_waker.take() {
+            OpRegistrationStatus::Waiting { registered_waker } => {
+              if let Some(waker) = registered_waker {
                 waker.wake();
               };
             }
             OpRegistrationStatus::Cancelling => {
-              println!("cancelling");
               let reg = wakers.remove(&operation_id).unwrap();
 
               // Dropping the operation.
               (reg.drop_fn)(reg.op);
             }
             OpRegistrationStatus::Done { .. } => {
-              println!("done");
               unreachable!("already processed entry");
             }
           };
@@ -283,6 +278,8 @@ impl Driver {
   }
   fn push<T: op::Operation>(&self, op: T) -> u64 {
     let operation_id = Self::next_id();
+
+    let mut op = Box::new(op);
     let entry = op.create_entry().user_data(operation_id);
 
     // Insert the operation into wakers first
@@ -340,7 +337,7 @@ impl Driver {
         CheckRegistrationResult::Value(value.result(raw_ret))
       }
       OpRegistrationStatus::Waiting { ref mut registered_waker } => {
-        registered_waker.replace(Some(waker));
+        *registered_waker = Some(waker);
         CheckRegistrationResult::WakerSet
       }
       OpRegistrationStatus::Cancelling => {
@@ -719,7 +716,7 @@ impl Driver {
           let operation_id = event.key as u64;
           #[cfg(feature = "tracing")]
           tracing::debug!(
-            operation_id = _operation_id,
+            operation_id = operation_id,
             "background thread: processing event"
           );
 

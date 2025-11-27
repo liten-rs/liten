@@ -30,7 +30,7 @@ impl Operation for Send {
   const OPCODE: u8 = 26;
 
   #[cfg(linux)]
-  fn create_entry(&self) -> io_uring::squeue::Entry {
+  fn create_entry(&mut self) -> io_uring::squeue::Entry {
     let buf = self.buf.as_ref().unwrap();
     io_uring::opcode::Send::new(Fd(self.fd), buf.as_ptr(), buf.len() as u32)
       .flags(self.flags)

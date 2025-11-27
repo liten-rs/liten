@@ -29,14 +29,18 @@ impl Operation for Recv {
   const OPCODE: u8 = 27;
 
   #[cfg(linux)]
-  fn create_entry(&self) -> io_uring::squeue::Entry {
-    io_uring::opcode::Recv::new(
-      Fd(self.fd),
-      self.buf.as_ref().unwrap().as_ptr() as *mut _,
-      self.buf.as_ref().unwrap().len() as u32,
-    )
-    .flags(self.flags)
-    .build()
+  fn create_entry(&mut self) -> io_uring::squeue::Entry {
+    if let Some(ref mut buf) = self.buf {
+      io_uring::opcode::Recv::new(
+        Fd(self.fd),
+        buf.as_mut_ptr(),
+        buf.len() as u32,
+      )
+      .flags(self.flags)
+      .build()
+    } else {
+      unreachable!()
+    }
   }
 
   #[cfg(not(linux))]

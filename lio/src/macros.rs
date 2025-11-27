@@ -1,3 +1,13 @@
+macro_rules! cfg_feature {
+   ($item:tt) => {
+       $(
+            #[cfg(feature = $item)]
+            #[cfg_attr(docsrs, doc(cfg(feature = $tt)))]
+            $item
+        )*
+    }
+}
+
 macro_rules! impl_result {
   (()) => {
     type Output = ();
@@ -19,6 +29,18 @@ macro_rules! impl_result {
     /// File descriptor returned from the operation.
     fn result(&mut self, fd: std::io::Result<i32>) -> Self::Result {
       fd
+    }
+  };
+}
+
+macro_rules! impl_no_readyness {
+  () => {
+    #[cfg(not(linux))]
+    const EVENT_TYPE: Option<crate::op::EventType> = None;
+
+    #[cfg(not(linux))]
+    fn fd(&self) -> Option<std::os::fd::RawFd> {
+      None
     }
   };
 }

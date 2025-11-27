@@ -160,10 +160,8 @@ impl TimeHandle {
     let mut last_advance = Instant::now();
 
     'outer: loop {
-      println!("start iter");
       loop {
-        println!("message iter");
-        let message = match dbg!(receiver.try_recv()) {
+        let message = match receiver.try_recv() {
           Ok(value) => value,
           Err(err) => match err {
             TryRecvError::Empty => break,
@@ -174,7 +172,6 @@ impl TimeHandle {
 
         match message.payload {
           MessagePayload::Shutdown => {
-            println!("shutting down");
             let _ = message.confirmer.send(0);
             break 'outer;
           }
@@ -188,7 +185,6 @@ impl TimeHandle {
             let _ = message.confirmer.send(next_id);
           }
           MessagePayload::UpdateTimer { timer_id, variant } => {
-            println!("updating timer");
             match state.state.entry(timer_id) {
               Entry::Vacant(_) => {
                 let _ = message.confirmer.send(1);
@@ -210,17 +206,14 @@ impl TimeHandle {
       let timers = clock.advance(to_advance.as_millis() as usize);
       last_advance += to_advance;
 
-      println!("calling");
       for timer_id in timers {
         // If doesn't exist, means it's cancelled.
         if let Some((_, entry)) = state.state.remove(&timer_id) {
           entry.call();
         }
       }
-      println!("calling end");
 
       loop {
-        println!("message iter");
         let message = match dbg!(receiver.try_recv()) {
           Ok(value) => value,
           Err(err) => match err {
@@ -228,11 +221,9 @@ impl TimeHandle {
             TryRecvError::Disconnected => break 'outer,
           },
         };
-        println!("received message {:#?}", message.payload);
 
         match message.payload {
           MessagePayload::Shutdown => {
-            println!("shutting down");
             let _ = message.confirmer.send(0);
             break 'outer;
           }

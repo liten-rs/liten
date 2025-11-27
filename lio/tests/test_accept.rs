@@ -33,7 +33,7 @@ fn test_accept_basic() {
 
     // Spawn accept task
     let accept_fut = async move {
-      let client_fd = accept(server_sock).await.expect("Failed to accept");
+      let (client_fd, _client_addr) = accept(server_sock).await.expect("Failed to accept");
 
       (client_fd, server_sock)
     };
@@ -101,7 +101,7 @@ fn test_accept_multiple() {
     for _ in 0..num_clients {
       // Spawn accept task
       let accept_fut = async move {
-        let client_fd = accept(server_sock).await.expect("Failed to accept");
+        let (client_fd, _client_addr) = accept(server_sock).await.expect("Failed to accept");
 
         (client_fd, server_sock)
       };
@@ -170,7 +170,7 @@ fn test_accept_with_client_info() {
     listen(server_sock, 128).await.expect("Failed to listen");
 
     let accept_fut = async move {
-      let client_fd = accept(server_sock).await.expect("Failed to accept");
+      let (client_fd, _client_addr) = accept(server_sock).await.expect("Failed to accept");
 
       (client_fd, server_sock)
     };
@@ -226,7 +226,7 @@ fn test_accept_ipv6() {
     listen(server_sock, 128).await.expect("Failed to listen");
 
     let accept_fut = async move {
-      let client_fd = accept(server_sock).await.expect("Failed to accept IPv6");
+      let (client_fd, _client_addr) = accept(server_sock).await.expect("Failed to accept IPv6");
 
       (client_fd, server_sock)
     };
@@ -287,7 +287,7 @@ fn test_accept_concurrent() {
     let accept_fut = async {
       let mut accepted_fds = Vec::new();
       for _ in 0..3 {
-        let client_fd = accept(server_sock).await.expect("Failed to accept");
+        let (client_fd, _client_addr) = accept(server_sock).await.expect("Failed to accept");
 
         accepted_fds.push(client_fd);
       }

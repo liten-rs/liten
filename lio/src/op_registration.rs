@@ -1,11 +1,8 @@
-// NOTE: OpRegistration should **NEVER** impl Sync.
+// NOTE: OpRegistration should **NEVER** impl Sync.gg
 use std::task::Waker;
 
 #[cfg(not(linux))]
 use std::os::fd::RawFd;
-
-#[cfg(linux)]
-use std::cell::Cell;
 
 #[cfg(linux)]
 pub struct OpRegistration {
@@ -17,7 +14,7 @@ pub struct OpRegistration {
 #[cfg(linux)]
 pub enum OpRegistrationStatus {
   Waiting {
-    registered_waker: Cell<Option<Waker>>,
+    registered_waker: Option<Waker>,
   },
   /// This operation is not tied to any entity waiting for it, either because they got dropped or
   /// because they weren't interested in the result.
@@ -29,16 +26,14 @@ pub enum OpRegistrationStatus {
 
 #[cfg(linux)]
 impl OpRegistration {
-  pub fn new<T>(op: T) -> Self {
+  pub fn new<T>(op: Box<T>) -> Self {
     fn drop_op<T>(ptr: *const ()) {
       drop(unsafe { Box::from_raw(ptr as *mut T) })
     }
 
     OpRegistration {
-      op: Box::into_raw(Box::new(op)) as *const (),
-      status: OpRegistrationStatus::Waiting {
-        registered_waker: Cell::new(None),
-      },
+      op: Box::into_raw(op) as *const (),
+      status: OpRegistrationStatus::Waiting { registered_waker: None },
       drop_fn: drop_op::<T>,
     }
   }

@@ -50,7 +50,7 @@ impl Operation for Timeout {
   const OPCODE: u8 = 11;
 
   #[cfg(linux)]
-  fn create_entry(&self) -> squeue::Entry {
+  fn create_entry(&mut self) -> squeue::Entry {
     opcode::Timeout::new(&self.timespec as *const _).build()
   }
 

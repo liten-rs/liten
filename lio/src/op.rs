@@ -20,6 +20,7 @@ mod bind;
 mod close;
 mod connect;
 mod listen;
+mod net_utils;
 mod openat;
 mod read;
 mod recv;
@@ -27,7 +28,7 @@ mod send;
 mod socket;
 
 mod fsync;
-#[cfg(linux)]
+// #[cfg(linux)]
 mod linkat;
 mod shutdown;
 mod symlink;
@@ -81,7 +82,7 @@ pub trait Operation: Sealed {
   }
 
   #[cfg(linux)]
-  fn create_entry(&self) -> io_uring::squeue::Entry;
+  fn create_entry(&mut self) -> io_uring::squeue::Entry;
 
   #[cfg(not(linux))]
   const EVENT_TYPE: Option<EventType>;

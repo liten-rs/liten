@@ -36,8 +36,10 @@ fn test_send_basic() {
     println!("after listen");
 
     // Accept and connect concurrently using liten::join!
-    let accept_fut =
-      async move { accept(server_sock).await.expect("Failed to accept") };
+    let accept_fut = async move {
+      let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
+      fd
+    };
 
     let connect_fut = async {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
@@ -94,7 +96,10 @@ fn test_send_large_data() {
     listen(server_sock, 128).await.expect("Failed to listen");
 
     let accept_fut =
-      async move { accept(server_sock).await.expect("Failed to accept") };
+      async move {
+        let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
+        fd
+      };
 
     let connect_fut = async {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
@@ -153,7 +158,10 @@ fn test_send_multiple() {
     listen(server_sock, 128).await.expect("Failed to listen");
 
     let accept_fut =
-      async move { accept(server_sock).await.expect("Failed to accept") };
+      async move {
+        let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
+        fd
+      };
 
     let connect_fut = async {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
@@ -212,7 +220,10 @@ fn test_send_with_flags() {
     listen(server_sock, 128).await.expect("Failed to listen");
 
     let accept_fut =
-      async move { accept(server_sock).await.expect("Failed to accept") };
+      async move {
+        let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
+        fd
+      };
 
     let connect_fut = async {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
@@ -269,7 +280,10 @@ fn test_send_on_closed_socket() {
     listen(server_sock, 128).await.expect("Failed to listen");
 
     let accept_fut =
-      async move { accept(server_sock).await.expect("Failed to accept") };
+      async move {
+        let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
+        fd
+      };
 
     let connect_fut = async {
       let client_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
@@ -330,7 +344,10 @@ fn test_send_concurrent() {
     // Note: Simplified concurrent test without actual concurrency
     for i in 0..5 {
       let accept_fut =
-        async move { accept(server_sock).await.expect("Failed to accept") };
+        async move {
+        let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
+        fd
+      };
 
       let client_fut = async {
         // Create and connect client
@@ -406,7 +423,10 @@ proptest! {
 
       // Accept connection and connect client concurrently
       let (server_client_fd, client_sock) = liten::join!(
-        async { accept(server_sock).await.expect("Accept failed") },
+        async {
+          let (fd, _addr) = accept(server_sock).await.expect("Accept failed");
+          fd
+        },
         async {
           let sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
             .await

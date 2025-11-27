@@ -31,7 +31,7 @@ fn test_shutdown_write() {
       listen(server_sock, 128).await.expect("Failed to listen");
 
       let accept_fut = async move {
-        let client_fd = accept(server_sock).await.expect("Failed to accept");
+        let (client_fd, _client_addr) = accept(server_sock).await.expect("Failed to accept");
         (client_fd, server_sock)
       };
 
@@ -109,7 +109,7 @@ fn test_shutdown_read() {
       listen(server_sock, 128).await.expect("Failed to listen");
 
       let accept_fut = async move {
-        let client_fd = accept(server_sock).await.expect("Failed to accept");
+        let (client_fd, _client_addr) = accept(server_sock).await.expect("Failed to accept");
         (client_fd, server_sock)
       };
 
@@ -183,7 +183,7 @@ fn test_shutdown_both() {
       listen(server_sock, 128).await.expect("Failed to listen");
 
       let accept_fut = async move {
-        let client_fd = accept(server_sock).await.expect("Failed to accept");
+        let (client_fd, _client_addr) = accept(server_sock).await.expect("Failed to accept");
         (client_fd, server_sock)
       };
 
@@ -318,7 +318,8 @@ fn test_shutdown_twice() {
       listen(server_sock, 128).await.expect("Failed to listen");
 
       let accept_fut = async move {
-        accept(server_sock).await.expect("Failed to accept")
+        let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
+        fd
       };
 
       let client_fut = async {
@@ -381,7 +382,7 @@ fn test_shutdown_sequential_directions() {
       listen(server_sock, 128).await.expect("Failed to listen");
 
       let accept_fut = async move {
-        let client_fd = accept(server_sock).await.expect("Failed to accept");
+        let (client_fd, _client_addr) = accept(server_sock).await.expect("Failed to accept");
         (client_fd, server_sock)
       };
 
@@ -464,7 +465,7 @@ fn test_shutdown_before_data_sent() {
       listen(server_sock, 128).await.expect("Failed to listen");
 
       let accept_fut = async move {
-        let client_fd = accept(server_sock).await.expect("Failed to accept");
+        let (client_fd, _client_addr) = accept(server_sock).await.expect("Failed to accept");
         (client_fd, server_sock)
       };
 
@@ -528,7 +529,8 @@ fn test_shutdown_ipv6() {
       listen(server_sock, 128).await.expect("Failed to listen");
 
       let accept_fut = async move {
-        accept(server_sock).await.expect("Failed to accept IPv6")
+        let (fd, _addr) = accept(server_sock).await.expect("Failed to accept IPv6");
+        fd
       };
 
       let client_fut = async {
@@ -594,7 +596,8 @@ fn test_shutdown_concurrent() {
           listen(server_sock, 128).await.expect("Failed to listen");
 
           let accept_fut = async move {
-            accept(server_sock).await.expect("Failed to accept")
+            let (fd, _addr) = accept(server_sock).await.expect("Failed to accept");
+            fd
           };
 
           let client_fut = async {
@@ -657,7 +660,7 @@ fn test_shutdown_with_pending_data() {
       listen(server_sock, 128).await.expect("Failed to listen");
 
       let accept_fut = async move {
-        let client_fd = accept(server_sock).await.expect("Failed to accept");
+        let (client_fd, _client_addr) = accept(server_sock).await.expect("Failed to accept");
         (client_fd, server_sock)
       };
 

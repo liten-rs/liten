@@ -104,22 +104,18 @@ impl<T> Inner<T> {
   }
 
   pub fn increment_sender_count(&self) {
-    dbg!(self.sender_count.load(Ordering::Acquire));
     self.sender_count.fetch_add(1, Ordering::Acquire);
   }
 
   pub fn decrement_sender_count(&self) {
-    dbg!(self.sender_count.load(Ordering::Acquire));
     self.sender_count.fetch_sub(1, Ordering::Acquire);
   }
 
   pub fn increment_receiver_count(&self) {
-    dbg!(self.receiver_count.load(Ordering::Acquire));
     self.receiver_count.fetch_add(1, Ordering::Acquire);
   }
 
   pub fn decrement_receiver_count(&self) {
-    dbg!(self.receiver_count.load(Ordering::Acquire));
     self.receiver_count.fetch_sub(1, Ordering::Acquire);
   }
 }

@@ -26,7 +26,7 @@ impl Operation for Tee {
   type Output = i32;
 
   #[cfg(linux)]
-  fn create_entry(&self) -> io_uring::squeue::Entry {
+  fn create_entry(&mut self) -> io_uring::squeue::Entry {
     io_uring::opcode::Tee::new(Fd(self.fd_in), Fd(self.fd_out), self.size)
       .build()
   }

@@ -106,8 +106,6 @@ impl Runtime {
   where
     F: Future,
   {
-    // parking::set_thread();
-
     let mut fut = std::pin::pin!(fut);
 
     let res = loop {

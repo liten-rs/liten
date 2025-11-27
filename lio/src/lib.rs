@@ -126,7 +126,7 @@ use std::{
 pub type BufResult<T, B> = (std::io::Result<T>, B);
 
 #[macro_use]
-pub(crate) mod macros;
+mod macros;
 
 mod driver;
 
@@ -143,22 +143,19 @@ use crate::driver::Driver;
 use std::path::Path;
 
 macro_rules! impl_op {
-  (__inner_doc, $($arg_ty:ty),*) => {
-  };
   (
     $desc:tt,
     $(#[$($doc:tt)*])*
     $operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty ; $err:ty
   ) => {
     #[doc = $desc]
-    #[doc = "# Behavior"]
-    #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
     #[doc = "# Returns"]
     #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
-    #[doc = "This function signature is equivalent to:\n```ignore"]
-    #[doc = concat!("async fn ",stringify!($name), "(", stringify!($($arg_ty),*), ") -> ", stringify!($ret))]
-    #[doc = "```"]
-    #[doc = "See more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
+    #[doc = "This function signature is equivalent to:"]
+    #[doc = concat!("```ignore\nasync fn ",stringify!($name), "(", stringify!($($arg: $arg_ty),*), ") -> ", stringify!($ret), "\n```")]
+    #[doc = "# Behavior"]
+    #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
+    #[doc = "\n\nSee more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
     $(#[$($doc)*])*
     pub fn $name($($arg: $arg_ty),*) -> Result<OperationProgress<$operation>, $err> {
       Ok(Driver::submit(<$operation>::new($($arg),*)?))
@@ -170,14 +167,13 @@ macro_rules! impl_op {
     $operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty
   ) => {
     #[doc = $desc]
-    #[doc = "# Behavior"]
-    #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
     #[doc = "# Returns"]
     #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
-    #[doc = "This function signature is equivalent to:\n```ignore"]
-    #[doc = concat!("async fn ",stringify!($name), "(", stringify!($($arg_ty),*), ") -> ", stringify!($ret))]
-    #[doc = "```"]
-    #[doc = "See more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
+    #[doc = "This function signature is equivalent to:"]
+    #[doc = concat!("```ignore\nasync fn ",stringify!($name), "(", stringify!($($arg: $arg_ty),*), ") -> ", stringify!($ret), "\n```")]
+    #[doc = "# Behavior"]
+    #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
+    #[doc = "\n\nSee more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
     $(#[$($doc)*])*
     pub fn $name($($arg: $arg_ty),*) -> OperationProgress<$operation> {
       Driver::submit(<$operation>::new($($arg),*))
@@ -388,7 +384,7 @@ impl_op!(
   ///     Ok(())
   /// }
   /// ```
-  Accept, fn accept(fd: RawFd) -> std::io::Result<i32>
+  Accept, fn accept(fd: RawFd) -> std::io::Result<(RawFd, SocketAddr)>
 );
 
 impl_op!(

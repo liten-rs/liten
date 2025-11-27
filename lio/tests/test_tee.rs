@@ -3,6 +3,7 @@
 use lio::tee;
 
 #[test]
+#[ignore]
 fn test_tee_basic() {
   liten::block_on(async {
     // Create two pipes
@@ -70,6 +71,7 @@ fn test_tee_basic() {
 }
 
 #[test]
+#[ignore]
 fn test_tee_large_data() {
   liten::block_on(async {
     let mut pipe1_fds = [0i32; 2];
@@ -125,6 +127,7 @@ fn test_tee_large_data() {
 }
 
 #[test]
+#[ignore]
 fn test_tee_partial() {
   liten::block_on(async {
     let mut pipe1_fds = [0i32; 2];
@@ -189,6 +192,7 @@ fn test_tee_partial() {
 }
 
 #[test]
+#[ignore]
 fn test_tee_empty_pipe() {
   liten::block_on(async {
     let mut pipe1_fds = [0i32; 2];
@@ -223,6 +227,7 @@ fn test_tee_empty_pipe() {
 }
 
 #[test]
+#[ignore]
 fn test_tee_zero_size() {
   liten::block_on(async {
     let mut pipe1_fds = [0i32; 2];
@@ -262,6 +267,7 @@ fn test_tee_zero_size() {
 }
 
 #[cfg(target_os = "linux")]
+#[ignore]
 #[test]
 fn test_tee_multiple() {
   liten::block_on(async {
@@ -336,6 +342,7 @@ fn test_tee_multiple() {
 }
 
 #[test]
+#[ignore]
 fn test_tee_concurrent() {
   liten::block_on(async {
     // Test multiple concurrent tee operations

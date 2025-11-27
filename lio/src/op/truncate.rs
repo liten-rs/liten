@@ -26,7 +26,7 @@ impl Operation for Truncate {
   const OPCODE: u8 = 55;
 
   #[cfg(linux)]
-  fn create_entry(&self) -> squeue::Entry {
+  fn create_entry(&mut self) -> squeue::Entry {
     opcode::Ftruncate::new(Fd(self.fd), self.size).build()
   }
 

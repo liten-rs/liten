@@ -4,8 +4,6 @@ use std::{io, os::fd::RawFd};
 use io_uring::types::Fd;
 
 use crate::BufResult;
-#[cfg(not(linux))]
-use crate::op::EventType;
 
 use super::Operation;
 
@@ -27,11 +25,11 @@ impl Operation for Read {
   const OPCODE: u8 = 22;
 
   #[cfg(linux)]
-  fn create_entry(&self) -> io_uring::squeue::Entry {
-    if let Some(ref buf) = self.buf {
+  fn create_entry(&mut self) -> io_uring::squeue::Entry {
+    if let Some(ref mut buf) = self.buf {
       io_uring::opcode::Read::new(
         Fd(self.fd),
-        buf.as_ptr() as *mut _,
+        buf.as_mut_ptr(),
         buf.len() as u32,
       )
       .offset(self.offset as u64)
@@ -43,13 +41,7 @@ impl Operation for Read {
   type Output = i32;
   type Result = BufResult<Self::Output, Vec<u8>>;
 
-  #[cfg(not(linux))]
-  const EVENT_TYPE: Option<EventType> = None;
-
-  #[cfg(not(linux))]
-  fn fd(&self) -> Option<RawFd> {
-    None
-  }
+  impl_no_readyness!();
 
   fn run_blocking(&self) -> io::Result<i32> {
     let buf = self.buf.as_ref().unwrap();

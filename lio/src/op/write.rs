@@ -30,11 +30,12 @@ impl Operation for Write {
   const OPCODE: u8 = 23;
 
   #[cfg(linux)]
-  fn create_entry(&self) -> io_uring::squeue::Entry {
+  fn create_entry(&mut self) -> io_uring::squeue::Entry {
+    let buf = self.buf.as_ref().unwrap();
     io_uring::opcode::Write::new(
       Fd(self.fd),
-      self.buf.as_ref().unwrap().as_ptr(),
-      self.buf.as_ref().unwrap().len() as u32,
+      buf.as_ptr(),
+      buf.len() as u32,
     )
     .offset(self.offset as u64)
     .build()

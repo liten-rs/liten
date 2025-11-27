@@ -34,16 +34,10 @@ impl Operation for OpenAt {
   #[cfg(linux)]
   const OPCODE: u8 = 18;
 
-  #[cfg(not(linux))]
-  const EVENT_TYPE: Option<EventType> = None;
-
-  #[cfg(not(linux))]
-  fn fd(&self) -> Option<RawFd> {
-    None
-  }
+  impl_no_readyness!();
 
   #[cfg(linux)]
-  fn create_entry(&self) -> io_uring::squeue::Entry {
+  fn create_entry(&mut self) -> io_uring::squeue::Entry {
     io_uring::opcode::OpenAt::new(Fd(self.fd), self.pathname.as_ptr())
       .flags(self.flags)
       .build()

@@ -1,6 +1,7 @@
 use std::{
   cell::UnsafeCell,
   mem::{self},
+  net::SocketAddr,
   os::fd::RawFd,
 };
 
@@ -9,44 +10,43 @@ use io_uring::{opcode, squeue, types::Fd};
 
 #[cfg(not(linux))]
 use crate::op::EventType;
+use crate::op::net_utils::libc_socketaddr_into_std;
 
 use super::Operation;
 
 pub struct Accept {
   fd: RawFd,
-  addr: UnsafeCell<libc::sockaddr_in>,
+  addr: UnsafeCell<libc::sockaddr_storage>,
   len: UnsafeCell<libc::socklen_t>,
 }
 
 impl Accept {
   pub(crate) fn new(fd: RawFd) -> Self {
-    let client_addr: libc::sockaddr_in = unsafe { mem::zeroed() };
-    let client_addr_len: libc::socklen_t =
-      mem::size_of_val(&client_addr) as libc::socklen_t;
+    let addr: libc::sockaddr_storage = unsafe { mem::zeroed() };
     Self {
       fd,
-      addr: UnsafeCell::new(client_addr),
-      len: UnsafeCell::new(client_addr_len),
+      addr: UnsafeCell::new(addr),
+      len: UnsafeCell::new(mem::size_of_val(&addr) as libc::socklen_t),
     }
   }
 }
 
 impl Operation for Accept {
-  type Output = RawFd;
+  type Output = (RawFd, SocketAddr);
   type Result = std::io::Result<Self::Output>;
 
   fn result(&mut self, res: std::io::Result<i32>) -> Self::Result {
-    res
+    Ok((res?, libc_socketaddr_into_std(self.addr.get())?))
   }
 
   #[cfg(linux)]
   const OPCODE: u8 = 13;
 
   #[cfg(linux)]
-  fn create_entry(&self) -> squeue::Entry {
+  fn create_entry(&mut self) -> squeue::Entry {
     opcode::Accept::new(
       Fd(self.fd),
-      self.addr.get() as *mut libc::sockaddr,
+      self.addr.get().cast::<libc::sockaddr>(),
       self.len.get(),
     )
     .build()
