@@ -36,8 +36,8 @@
 //!     let data = b"Hello, World!\n".to_vec();
 //!     
 //!     // Async write operation
-//!     let (result, _buf) = write(fd, data, 0).await?;
-//!     println!("Wrote {} bytes", result);
+//!     let (result, _buf) = write(fd, data, 0).await;
+//!     println!("Wrote {} bytes", result?);
 //!     
 //!     Ok(())
 //! }
@@ -72,9 +72,11 @@
 //!     let fd = lio::openat(libc::AT_FDCWD, path, libc::O_CREAT | libc::O_WRONLY).await?;
 //!     
 //!     let data = b"Hello, async I/O!".to_vec();
-//!     let (bytes_written, _buf) = lio::write(fd, data, 0).await?;
+//!     let (result_bytes_written, _buf) = lio::write(fd, data, 0).await;
+//!
+//!     let _ = result_bytes_written?;
 //!     
-//!     close(fd).await?;
+//!     lio::close(fd).await?;
 //!     Ok(())
 //! }
 //! ```
@@ -85,11 +87,11 @@
 //! use socket2::{Domain, Type, Protocol};
 //!
 //! async fn network_operations() -> std::io::Result<()> {
-//!     let sock = libc::socket(Domain::INET, Type::STREAM, Some(Protocol::TCP)).await?;
-//!     let addr = socket2::SockAddr::from("127.0.0.1:8080".parse::<std::net::SocketAddr>().unwrap());
+//!     let sock = lio::socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).await?;
+//!     let addr = "127.0.0.1:8080".parse::<std::net::SocketAddr>().unwrap();
 //!     
-//!     libc::bind(sock, addr).await?;
-//!     libc::listen(sock).await?;
+//!     lio::bind(sock, addr).await?;
+//!     lio::listen(sock, 128).await?;
 //!     
 //!     // Accept connections...
 //!     Ok(())
@@ -199,12 +201,10 @@ impl_op!(
     /// # Examples
     ///
     /// ```rust
-    /// use lio::shutdown;
-    /// use std::os::fd::RawFd;
-    ///
     /// async fn write_example() -> std::io::Result<()> {
-    ///     let socket = lio::socket(/*....*/).await?;
-    ///     shutdown(socket, Duration::from_millis(10)).await?;
+    ///     let socket = lio::socket(socket2::Domain::IPV4, socket2::Type::STREAM, None).await?;
+    ///     let how = 0;
+    ///     lio::shutdown(socket, how).await?;
     ///     Ok(())
     /// }
     /// ```
@@ -218,7 +218,7 @@ impl_op!(
     ///
     /// ```rust
     /// use lio::timeout;
-    /// use std::os::fd::RawFd;
+    /// use std::{time::Duration, os::fd::RawFd};
     ///
     /// async fn write_example() -> std::io::Result<()> {
     ///     timeout(Duration::from_millis(10)).await?;
@@ -233,11 +233,10 @@ impl_op!(
     /// # Examples
     ///
     /// ```rust
-    /// use lio::symlink;
-    /// use std::os::fd::RawFd;
-    ///
     /// async fn write_example() -> std::io::Result<()> {
-    ///     let (bytes_written, _buf) = linkat(fd).await?;
+    ///     # let fd = 0;
+    ///     // todo
+    // ///     let (bytes_written, _buf) = lio::symlinkat(fd).await?;
     ///     Ok(())
     /// }
     /// ```
@@ -249,11 +248,10 @@ impl_op!(
     /// # Examples
     ///
     /// ```rust
-    /// use lio::linkat;
-    /// use std::os::fd::RawFd;
-    ///
     /// async fn write_example() -> std::io::Result<()> {
-    ///     let (bytes_written, _buf) = linkat(fd).await?;
+    ///     # let fd = 0;
+    ///       // todo
+    // ///     let (bytes_written, _buf) = lio::linkat(fd)?.await?;
     ///     Ok(())
     /// }
     /// ```
@@ -265,11 +263,9 @@ impl_op!(
     /// # Examples
     ///
     /// ```rust
-    /// use lio::fsync;
-    /// use std::os::fd::RawFd;
-    ///
     /// async fn write_example() -> std::io::Result<()> {
-    ///     let (bytes_written, _buf) = fsync(fd).await?;
+    ///     # let fd = 0;
+    ///     lio::fsync(fd).await?;
     ///     Ok(())
     /// }
     /// ```
@@ -281,14 +277,11 @@ impl_op!(
     /// # Examples
     ///
     /// ```rust
-    /// use lio::write;
-    /// use std::os::fd::RawFd;
-    ///
     /// async fn write_example() -> std::io::Result<()> {
-    ///     let fd: RawFd = 1; // stdout
+    ///     # let fd = 0;
     ///     let data = b"Hello, World!".to_vec();
-    ///     let (bytes_written, _buf) = write(fd, data, 0).await?;
-    ///     println!("Wrote {} bytes", bytes_written);
+    ///     let (result_bytes_written, _buf) = lio::write(fd, data, 0).await;
+    ///     println!("Wrote {} bytes", result_bytes_written?);
     ///     Ok(())
     /// }
     /// ```
@@ -300,14 +293,12 @@ impl_op!(
     /// # Examples
     ///
     /// ```rust
-    /// use lio::read;
-    /// use std::os::fd::RawFd;
-    ///
     /// async fn read_example() -> std::io::Result<()> {
-    ///     let fd: RawFd = 0; // stdin
+    ///     # let fd = 0;
     ///     let mut buffer = vec![0u8; 1024];
-    ///     let (bytes_read, buf) = read(fd, buffer, 0).await;
-    ///     println!("Read {} bytes: {:?}", bytes_read?, &buf[..bytes_read as usize]);
+    ///     let (res_bytes_read, buf) = lio::read(fd, buffer, 0).await;
+    ///     let bytes_read = res_bytes_read?;
+    ///     println!("Read {} bytes: {:?}", bytes_read, &buf[..bytes_read as usize]);
     ///     Ok(())
     /// }
     /// ```
@@ -319,12 +310,9 @@ impl_op!(
     /// # Examples
     ///
     /// ```rust
-    /// use lio::truncate;
-    /// use std::os::fd::RawFd;
-    ///
     /// async fn truncate_example() -> std::io::Result<()> {
-    ///     let fd: RawFd = /* file descriptor */;
-    ///     truncate(fd, 1024).await?; // Truncate to 1KB
+    ///     # let fd = 0;
+    ///     lio::truncate(fd, 1024).await?; // Truncate to 1KB
     ///     Ok(())
     /// }
     /// ```
@@ -336,11 +324,10 @@ impl_op!(
     /// # Examples
     ///
     /// ```rust
-    /// use lio::socket;
     /// use socket2::{Domain, Type, Protocol};
     ///
     /// async fn socket_example() -> std::io::Result<()> {
-    ///     let sock = socket(Domain::INET, Type::STREAM, Some(Protocol::TCP)).await?;
+    ///     let sock = lio::socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).await?;
     ///     println!("Created socket with fd: {}", sock);
     ///     Ok(())
     /// }
@@ -353,13 +340,12 @@ impl_op!(
   /// # Examples
   ///
   /// ```rust
-  /// use lio::bind;
   /// use socket2::SockAddr;
   ///
   /// async fn bind_example() -> std::io::Result<()> {
-  ///     let sock = /* socket fd */;
-  ///     let addr = SockAddr::from("127.0.0.1:8080".parse::<std::net::SocketAddr>().unwrap());
-  ///     bind(sock, addr).await?;
+  ///     # let fd = 0;
+  ///     let addr = "127.0.0.1:8080".parse::<std::net::SocketAddr>().unwrap();
+  ///     lio::bind(fd, addr).await?;
   ///     Ok(())
   /// }
   ///
@@ -373,14 +359,11 @@ impl_op!(
   ///
   /// ```rust
   /// use std::mem::MaybeUninit;
-  /// use std::os::fd::RawFd;
   ///
   /// async fn accept_example() -> std::io::Result<()> {
-  ///     let listen_fd: RawFd = /* listening socket */;
-  ///     let mut addr_storage: MaybeUninit<socket2::SockAddrStorage> = MaybeUninit::uninit();
-  ///     let mut addr_len = std::mem::size_of::<socket2::SockAddrStorage>() as libc::socklen_t;
+  ///     # let fd = 0;
   ///
-  ///     let client_fd = lio::accept(listen_fd, addr_storage.as_mut_ptr(), &mut addr_len).await?;
+  ///     let (client_fd, addr) = lio::accept(fd).await?;
   ///     println!("Accepted connection on fd: {}", client_fd);
   ///     Ok(())
   /// }
@@ -393,12 +376,11 @@ impl_op!(
   /// # Examples
   ///
   /// ```rust
-  /// use lio::listen;
   /// use std::os::fd::RawFd;
   ///
   /// async fn listen_example() -> std::io::Result<()> {
-  ///     let sock: RawFd = /* socket fd */;
-  ///     listen(sock).await?;
+  ///     # let fd = 0;
+  ///     lio::listen(fd, 128).await?;
   ///     println!("Socket is now listening for connections");
   ///     Ok(())
   /// }
@@ -411,13 +393,12 @@ impl_op!(
   /// # Examples
   ///
   /// ```rust
-  /// use lio::connect;
   /// use std::net::SocketAddr;
   ///
   /// async fn connect_example() -> std::io::Result<()> {
-  ///     let sock = /* socket fd */;
+  ///     # let fd = 0;
   ///     let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-  ///     connect(sock, addr).await?;
+  ///     lio::connect(fd, addr).await?;
   ///     println!("Connected to remote address");
   ///     Ok(())
   /// }
@@ -430,14 +411,11 @@ impl_op!(
   /// # Examples
   ///
   /// ```rust
-  /// use lio::send;
-  /// use std::os::fd::RawFd;
-  ///
   /// async fn send_example() -> std::io::Result<()> {
-  ///     let sock: RawFd = /* connected socket */;
+  ///     # let fd = 0;
   ///     let data = b"Hello, server!".to_vec();
-  ///     let (bytes_sent, _buf) = send(sock, data, None).await?;
-  ///     println!("Sent {} bytes", bytes_sent);
+  ///     let (bytes_sent, _buf) = lio::send(fd, data, None).await;
+  ///     println!("Sent {} bytes", bytes_sent?);
   ///     Ok(())
   /// }
   /// ```
@@ -449,13 +427,11 @@ impl_op!(
   /// # Examples
   ///
   /// ```rust
-  /// use lio::recv;
-  /// use std::os::fd::RawFd;
-  ///
   /// async fn recv_example() -> std::io::Result<()> {
-  ///     let sock: RawFd = /* connected socket */;
+  ///     # let fd = 0;
   ///     let mut buffer = vec![0u8; 1024];
-  ///     let (bytes_received, buf) = recv(sock, buffer, None).await?;
+  ///     let (res_bytes_received, buf) = lio::recv(fd, buffer, None).await;
+  ///     let bytes_received = res_bytes_received?;
   ///     println!("Received {} bytes: {:?}", bytes_received, &buf[..bytes_received as usize]);
   ///     Ok(())
   /// }
@@ -468,12 +444,9 @@ impl_op!(
   /// # Examples
   ///
   /// ```rust
-  /// use lio::close;
-  /// use std::os::fd::RawFd;
-  ///
   /// async fn close_example() -> std::io::Result<()> {
-  ///     let fd: RawFd = /* file descriptor */;
-  ///     close(fd).await?;
+  ///     # let fd = 0;
+  ///     lio::close(fd).await?;
   ///     println!("File descriptor closed successfully");
   ///     Ok(())
   /// }
@@ -486,12 +459,11 @@ impl_op!(
   /// # Examples
   ///
   /// ```rust
-  /// use lio::openat;
   /// use std::ffi::CString;
   ///
   /// async fn openat_example() -> std::io::Result<()> {
   ///     let path = CString::new("/tmp/test.txt").unwrap();
-  ///     let fd = openat(libc::AT_FDCWD, path, libc::O_RDONLY).await?;
+  ///     let fd = lio::openat(libc::AT_FDCWD, path, libc::O_RDONLY).await?;
   ///     println!("Opened file with fd: {}", fd);
   ///     Ok(())
   /// }
@@ -510,10 +482,9 @@ impl_op!(
   /// ```rust
   /// #[cfg(linux)]
   /// async fn tee_example() -> std::io::Result<()> {
-  ///     use lio::tee;
-  ///     let fd_in: RawFd = /* input file descriptor */;
-  ///     let fd_out: RawFd = /* output file descriptor */;
-  ///     let bytes_copied = tee(fd_in, fd_out, 1024).await?;
+  ///     # let fd_in = 0;
+  ///     # let fd_out = 0;
+  ///     let bytes_copied = lio::tee(fd_in, fd_out, 1024).await?;
   ///     println!("Copied {} bytes", bytes_copied);
   ///     Ok(())
   /// }

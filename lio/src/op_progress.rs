@@ -69,9 +69,9 @@ pub enum OperationProgress<T> {
 ///     let buffer = vec![0u8; 1024];
 ///     
 ///     let progress: OperationProgress<lio::op::Read> = read(fd, buffer, 0);
-///     let (bytes_read, buf) = progress.await?;
+///     let (result_bytes_read, buf) = progress.await;
 ///     
-///     println!("Read {} bytes", bytes_read);
+///     println!("Read {} bytes", result_bytes_read?);
 ///     Ok(())
 /// }
 /// ```
@@ -94,6 +94,7 @@ impl<T> OperationProgress<T> {
   ///
   /// ```rust
   /// use lio::{read, OperationProgress};
+  /// use std::os::fd::RawFd;
   ///
   /// async fn detach_example() -> std::io::Result<()> {
   ///     let fd: RawFd = 0;

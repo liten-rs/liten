@@ -49,7 +49,7 @@ cfg_rt! {
   ///
   ///   // Wait for the task to complete
   ///   // the future can panic inside the task, hence the .unwrap()
-  ///   let result = handle.await.unwrap();
+  ///   let result = handle.await;
   ///   assert_eq!(result, 42);
   /// # }
   /// ```
@@ -70,7 +70,7 @@ cfg_rt! {
   ///       task::spawn(async move { 2u8 })
   ///     );
   ///
-  ///     assert_eq!(results, (Ok(1u8), Ok(2u8)));
+  ///     assert_eq!(results, (1u8, 2u8));
   /// # }
   /// ```
   ///

@@ -8,33 +8,35 @@ use std::{future::Future, pin::Pin};
 ///
 /// # Examples
 ///
-/// ```rust
-/// use liten::task;
-/// use liten::future::go;
-///
-/// let handle = task::spawn(async {
-///     // Some async work
-///     42
-/// });
-///
-/// // Join with the task to get the result
-/// let result = handle.join();
-/// assert_eq!(result, 42);
-/// ```
+// /// ```rust
+// /// use liten::task;
+// ///
+// /// let handle = task::spawn(async {
+// ///     // Some async work
+// ///     42
+// /// });
+// ///
+// /// // Join with the task to get the result
+// /// let result = handle.join();
+// /// assert_eq!(result, 42);
+// /// ```
 ///
 /// You can also use it as a future:
 ///
 /// ```rust
-/// use liten::future::go;
+/// # #![cfg(feature = "runtime")]
 ///
+/// use liten::task;
+///
+/// # #[liten::main]
+/// # async fn main() {
 /// let handle = task::spawn(async {
 ///     // Some async work
 ///     "hello".to_string()
 /// });
 ///
-/// // Poll the handle as a future
-/// let result = go(handle).await;
-/// assert_eq!(result, "hello");
+/// assert_eq!(handle.await, "hello");
+/// # }
 /// ```
 ///
 /// # Drop behavior
@@ -55,6 +57,10 @@ impl<O> TaskHandle<O> {
     self.be_stopped = true;
     let task = self.task.take().unwrap();
     drop(task);
+  }
+
+  pub fn join(self) -> O {
+    crate::block_on(self)
   }
 }
 

@@ -69,6 +69,7 @@ impl Default for Runtime {
 
 impl Drop for Runtime {
   fn drop(&mut self) {
+    eprintln!("running drop");
     let _ = THREAD_RUNTIME.replace(None);
   }
 }
@@ -85,6 +86,7 @@ impl Runtime {
     S: Scheduler + 'static,
   {
     let task_store = Arc::new(TaskStore::new());
+
     THREAD_RUNTIME
       .set(Some(RuntimeHandle { tasks: task_store.clone(), _p: PhantomData }));
 
@@ -94,6 +96,7 @@ impl Runtime {
       _p: PhantomData,
     }
   }
+
   pub fn spawn<F>(&self, fut: F) -> task::TaskHandle<F::Output>
   where
     F: Future + 'static,
@@ -109,10 +112,6 @@ impl Runtime {
     let mut fut = std::pin::pin!(fut);
 
     let res = loop {
-      while let Some(runnable) = self.tasks.pop() {
-        self.scheduler.schedule(runnable);
-      }
-
       let waker = waker::park_waker(thread::current());
       if let Poll::Ready(value) =
         fut.as_mut().poll(&mut Context::from_waker(&waker))
@@ -120,11 +119,12 @@ impl Runtime {
         break value;
       }
 
+      while let Some(runnable) = self.tasks.pop() {
+        self.scheduler.schedule(runnable);
+      }
+
       thread::park();
     };
-
-    // Call drop on it.
-    let _ = THREAD_RUNTIME.replace(None);
 
     res
   }
