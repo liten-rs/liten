@@ -28,9 +28,9 @@ jobs:
       - name: Check format
         run: nix develop .#ci -c cargo fmt --check
 
-  clippy:
+  clippy-n-flags:
     runs-on: ubuntu-latest
-    name: Clippy
+    name: Clippy n Flags
     steps:
       - uses: actions/checkout@v3
 
@@ -47,6 +47,10 @@ jobs:
 
       - name: Check format
         run: nix develop .#ci -c cargo clippy
+
+      - name: Check flags
+        # Hmmm not sure if I should put this into the matrix.
+        run: nix develop .#ci -c cargo hack check --feature-powerset --lib --tests
 
   build-test:
     name: Build and test
@@ -71,15 +75,11 @@ jobs:
       - name: Check docs
         run: nix develop .#ci -c cargo test --doc
 
-      - name: Check flags
-        # Hmmm not sure if I should put this into the matrix.
-        run: nix develop .#ci -c cargo hack check --feature-powerset --lib --tests
-
       - name: Run build
-        run: nix develop .#ci -c cargo build --release
+        run: nix develop .#ci -c cargo build
 
       - name: Run tests
-        run: nix develop .#ci -c cargo nextest r --release
+        run: nix develop .#ci -c cargo nextest r
 
 
   nix-flake-check:
