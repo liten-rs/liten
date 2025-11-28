@@ -35,9 +35,9 @@ use crate::{Driver, op};
 ///     let buffer = vec![0u8; 1024];
 ///     
 ///     let progress: OperationProgress<lio::op::Read> = read(fd, buffer, 0);
-///     let (bytes_read, buf) = progress.await?;
+///     let (bytes_read, buf) = progress.await;
 ///     
-///     println!("Read {} bytes", bytes_read);
+///     println!("Read {} bytes", bytes_read?);
 ///     Ok(())
 /// }
 /// ```

@@ -9,7 +9,7 @@ env:
 
 jobs:
   check-fmt-n-doc:
-    name: Check format and docs
+    name: Check fmt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -27,8 +27,6 @@ jobs:
 
       - name: Check format
         run: nix develop .#ci -c cargo fmt --check
-      - name: Check docs
-        run: nix develop .#ci -c cargo test --doc
 
   clippy:
     runs-on: ubuntu-latest
@@ -69,6 +67,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: cargo-build-cache
+
+      - name: Check docs
+        run: nix develop .#ci -c cargo test --doc
 
       - name: Check flags
         # Hmmm not sure if I should put this into the matrix.
