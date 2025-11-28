@@ -108,6 +108,7 @@ impl<T> OperationProgress<T> {
   /// }
   /// ```
   pub fn detach(self) {
+    // FIXME: If blocking, this needs to run now.
     // Engages the Driver::detach(..)
     drop(self);
   }

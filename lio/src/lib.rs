@@ -1,34 +1,29 @@
 //! # Lio - Platform-Independent Async I/O Library
 //!
-//! Lio is a high-performance, platform-independent async I/O library that provides
-//! native support for the most efficient I/O mechanisms on each platform:
-//!
-//! - **Linux**: Uses [io_uring](https://man7.org/linux/man-pages/man7/io_uring.7.html) for maximum performance
-//! - **Windows**: Uses [IOCP](https://docs.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports) (I/O Completion Ports)
-//! - **macOS**: Uses [kqueue](https://man.openbsd.org/kqueue.2) for event notification
+//! Lio is a high-performance, platform-independent async I/O library that uses
+//! the most efficient IO for each platform.
 //!
 //! ## Features
+//! - **Zero-copy operations** where possible.
+//! - **Automatic fallback** to blocking operations when async isn't supported.
+//! - **Manual control** with high level async API.
 //!
-//! - **Zero-copy operations** where possible
-//! - **Async/await support** with standard Rust futures
-//! - **Platform-specific optimizations** automatically selected
-//! - **File I/O operations**: read, write, open, close, truncate
-//! - **Network operations**: socket, bind, listen, accept, connect, send, recv
-//! - **Automatic fallback** to blocking operations when async isn't supported
+//! *Note:* This is a quite low-level library. This library creates resources
+//! (fd's) which it doesn't cleanup itself.
 //!
-//! ## **NOTE**
-//! Currently this library is a bit finicky ([`libc::accept`] especially) on linux machines that doesn't support
-//! io-uring operations, like wsl2. If anyone has a good idea of api design and detecting io-uring support on linux,
-//! please file an issue.
+//! ## Platform support
 //!
-//! This problem arises when the library checks for the specific operation support, if yes
-//! everything works. If no, it will call the blocking normal syscall. With accept, that means
-//! blocking in a future which is really bad.
+//! | Platform   | I/O Mechanism            | Status                  |
+//! |------------|--------------------------|-------------------------|
+//! | Linux      | io_uring                 | Yes                     |
+//! | Windows    | IOCP                     | Not supported (planned) |
+//! | macOS      | kqueue                   | Yes                     |
+//! | Other Unix | poll/epoll/event ports   | Yes                     |
+//!
 //!
 //! ## Quick Start
 //!
 //! ```rust
-//! use lio::{read, write, close};
 //! use std::os::fd::RawFd;
 //!
 //! async fn example() -> std::io::Result<()> {
@@ -36,29 +31,12 @@
 //!     let data = b"Hello, World!\n".to_vec();
 //!     
 //!     // Async write operation
-//!     let (result, _buf) = write(fd, data, 0).await;
+//!     let (result, _buf) = lio::write(fd, data, 0).await;
 //!     println!("Wrote {} bytes", result?);
 //!     
 //!     Ok(())
 //! }
 //! ```
-//!
-//! ## Architecture
-//!
-//! The library automatically selects the most efficient I/O mechanism:
-//!
-//! - On Linux with io_uring support, operations are submitted to the kernel's submission queue
-//! - On other platforms, operations use polling-based async I/O with automatic fallback to blocking
-//! - All operations return `OperationProgress<T>` which implements `Future<Output = io::Result<[different based on operation]>>`
-//!
-//! ## Platform Support
-//!
-//! | Platform | I/O Mechanism | Status |
-//! |----------|---------------|---------|
-//! | Linux    | io_uring      | ✅ Async IO support |
-//! | Windows  | IOCP          | ✅ Full support |
-//! | macOS    | kqueue        | ✅ event notification (kqueue) |
-//! | Other Unix | poll/epoll   | ✅ event notification (epoll/poll/event ports) |
 //!
 //! ## Examples
 //!
@@ -72,7 +50,7 @@
 //!     let fd = lio::openat(libc::AT_FDCWD, path, libc::O_CREAT | libc::O_WRONLY).await?;
 //!     
 //!     let data = b"Hello, async I/O!".to_vec();
-//!     let (result_bytes_written, _buf) = lio::write(fd, data, 0).await;
+//!     let (result_bytes_written, _buf) = lio::write(fd, data, 1 /* stdout fd */).await;
 //!
 //!     let _ = result_bytes_written?;
 //!     
@@ -94,26 +72,22 @@
 //!     lio::listen(sock, 128).await?;
 //!     
 //!     // Accept connections...
+//!
+//!     lio::close(sock).await?;
 //!     Ok(())
 //! }
 //! ```
 //!
 //! ## Safety and Threading
 //!
-//! - All operations are safe and follow Rust's memory safety guarantees
-//! - The library automatically handles thread management for background I/O processing
+//! - The library handles thread management for background I/O processing
 //! - Operations can be safely used across different threads
-//! - Proper cleanup is guaranteed through Rust's drop semantics
 //!
 //! ## Error Handling
 //!
 //! All operations return `std::io::Result<T>` or `BufResult<T, B>` for operations
 //! that return buffers. Errors are automatically converted from platform-specific
 //! error codes to Rust's standard I/O error types.
-//!
-//! ## License
-//!
-//! This project is licensed under the MIT License - see the LICENSE file for details.
 
 use std::{
   ffi::{CString, NulError},
@@ -157,7 +131,7 @@ macro_rules! impl_op {
     #[doc = "# Returns"]
     #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
     #[doc = "This function signature is equivalent to:"]
-    #[doc = concat!("```ignore\nasync fn ",stringify!($name), "(", stringify!($($arg: $arg_ty),*), ") -> ", stringify!($ret), "\n```")]
+    #[doc = concat!("```ignore\nasync fn ",stringify!($name), "(", stringify!($($arg),*), ") -> ", stringify!($ret), "\n```")]
     #[doc = "# Behavior"]
     #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
     #[doc = "\n\nSee more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
@@ -175,7 +149,7 @@ macro_rules! impl_op {
     #[doc = "# Returns"]
     #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
     #[doc = "This function signature is equivalent to:"]
-    #[doc = concat!("```ignore\nasync fn ",stringify!($name), "(", stringify!($($arg: $arg_ty),*), ") -> ", stringify!($ret), "\n```")]
+    #[doc = concat!("```ignore\nasync fn ",stringify!($name), "(", stringify!($($arg),*), ") -> ", stringify!($ret), "\n```")]
     #[doc = "# Behavior"]
     #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
     #[doc = "\n\nSee more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
