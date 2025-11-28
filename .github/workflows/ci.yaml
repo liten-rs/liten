@@ -29,9 +29,30 @@ jobs:
       - name: Check format
         run: nix develop .#ci -c cargo fmt --check
 
-  clippy-n-flags:
+  flags:
     runs-on: ubuntu-latest
-    name: Clippy n Flags
+    name: Check feature flags
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        continue-on-error: false
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-build-cache
+
+      - name: Check flags
+        # Hmmm not sure if I should put this into the matrix.
+        run: nix develop .#ci -c cargo hack check --feature-powerset --lib --tests
+
+  clippy:
+    runs-on: ubuntu-latest
+    name: Clippy
     steps:
       - uses: actions/checkout@v3
 
@@ -48,10 +69,6 @@ jobs:
 
       - name: Check format
         run: nix develop .#ci -c cargo clippy
-
-      - name: Check flags
-        # Hmmm not sure if I should put this into the matrix.
-        run: nix develop .#ci -c cargo hack check --feature-powerset --lib --tests
 
   build-test:
     name: Build and test
