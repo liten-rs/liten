@@ -8,7 +8,7 @@
 //! - **Automatic fallback** to blocking operations when async isn't supported.
 //! - **Manual control** with high level async API.
 //!
-//! *Note:* This is a quite low-level library. This library creates resources
+//! *Note:* This is a quite low-level library. This library creates os resources
 //! (fd's) which it doesn't cleanup automatically.
 //!
 //! ## Platform support
@@ -40,12 +40,12 @@
 //!     handle_result(result, buf);
 //!
 //!     // Channel API (on "high" feature flag).
-//!     let receiver: oneshot::Receiver<(std::io::Result<i32>, buf)> = lio::write(fd, data.clone(), 0).get_receiver();
+//!     let receiver: oneshot::Receiver<(std::io::Result<i32>, Vec<u8>)> = lio::write(fd, data.clone(), 0).get_receiver();
 //!     let (result, buf) = receiver.recv().unwrap();
 //!     handle_result(result, buf);
 //!
 //!     // Callback API.
-//!     let receiver: oneshot::Receiver = lio::write(fd, data.clone(), 0).when_done(|(result, buf)| {
+//!     lio::write(fd, data.clone(), 0).when_done(|(result, buf)| {
 //!       handle_result(result, buf);
 //!     });
 //!
@@ -53,82 +53,7 @@
 //! }
 //! ```
 //!
-//! ## Callback-Based I/O
-//!
-//! Lio supports both Future-based (`.await`) and callback-based execution models.
-//! Use callbacks for fire-and-forget operations or when you need results in a
-//! different context than the async caller.
-//!
-//! ```rust
-//! use std::sync::mpsc::channel;
-//!
-//! async fn callback_example() -> std::io::Result<()> {
-//!     # let fd = 0;
-//!     let buffer = vec![0u8; 1024];
-//!     let (tx, rx) = channel();
-//!
-//!     // Register callback - operation continues in background
-//!     lio::read(fd, buffer, 0).when_done(move |(result, buf)| {
-//!         match result {
-//!             Ok(bytes_read) => {
-//!                 println!("Read {} bytes", bytes_read);
-//!                 tx.send(buf).unwrap();
-//!             }
-//!             Err(e) => eprintln!("Error: {}", e),
-//!         }
-//!     });
-//!
-//!     // Continue with other work while I/O happens
-//!     // ...
-//!
-//!     // Later, get the result
-//!     let buffer = rx.recv().unwrap();
-//!     Ok(())
-//! }
-//! ```
-//!
-//! **Note**: Once `.when_done()` is called, the operation cannot be polled as a
-//! Future. Choose one execution model per operation.
-//!
-//! ## Examples
-//!
-//! ### File I/O
-//!
-//! ```rust
-//! use std::ffi::CString;
-//!
-//! async fn file_operations() -> std::io::Result<()> {
-//!     let path = CString::new("/tmp/test.txt").unwrap();
-//!     let fd = lio::openat(libc::AT_FDCWD, path, libc::O_CREAT | libc::O_WRONLY).await?;
-//!     
-//!     let data = b"Hello, async I/O!".to_vec();
-//!     let (result_bytes_written, _buf) = lio::write(fd, data, 1 /* stdout fd */).await;
-//!
-//!     let _ = result_bytes_written?;
-//!     
-//!     lio::close(fd).await?;
-//!     Ok(())
-//! }
-//! ```
-//!
-//! ### Network I/O
-//!
-//! ```rust
-//! use socket2::{Domain, Type, Protocol};
-//!
-//! async fn network_operations() -> std::io::Result<()> {
-//!     let sock = lio::socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).await?;
-//!     let addr = "127.0.0.1:8080".parse::<std::net::SocketAddr>().unwrap();
-//!     
-//!     lio::bind(sock, addr).await?;
-//!     lio::listen(sock, 128).await?;
-//!     
-//!     // Accept connections...
-//!
-//!     lio::close(sock).await?;
-//!     Ok(())
-//! }
-//! ```
+//! **Note**: Only one of these API's can be used for one operation.
 //!
 //! ## Safety and Threading
 //!
@@ -137,7 +62,7 @@
 //!
 //! ## Error Handling
 //!
-//! All operations return `std::io::Result<T>` or `BufResult<T, B>` for operations
+//! All operations return [`std::io::Result`] or [`BufResult`] for operations
 //! that return buffers. Errors are automatically converted from platform-specific
 //! error codes to Rust's standard I/O error types.
 
@@ -151,6 +76,8 @@ use std::{
 ///
 /// This is commonly used for read/write operations where the buffer
 /// is returned along with the operation result.
+///
+/// Example: See [`lio::read`](crate::read).
 pub type BufResult<T, B> = (std::io::Result<T>, B);
 
 #[macro_use]
