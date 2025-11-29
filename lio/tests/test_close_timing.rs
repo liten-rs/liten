@@ -1,3 +1,4 @@
+#![cfg(feature = "high")]
 #![cfg(linux)]
 
 use std::time::Instant;

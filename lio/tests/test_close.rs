@@ -1,3 +1,4 @@
+#![cfg(feature = "high")]
 use lio::close;
 use std::ffi::CString;
 

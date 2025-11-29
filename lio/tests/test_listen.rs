@@ -1,3 +1,4 @@
+#![cfg(feature = "high")]
 use lio::{bind, listen, socket};
 use socket2::{Domain, Protocol, Type};
 use std::net::SocketAddr;

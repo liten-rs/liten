@@ -1,3 +1,4 @@
+#![cfg(feature = "high")]
 use lio::openat;
 use std::ffi::CString;
 

@@ -1,3 +1,4 @@
+#![cfg(feature = "high")]
 use lio::{accept, bind, connect, listen, recv, send, shutdown, socket};
 use socket2::{Domain, Protocol, Type};
 use std::mem::MaybeUninit;
