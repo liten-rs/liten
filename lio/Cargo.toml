@@ -9,9 +9,11 @@ documentation = "https://docs.rs/lio"
 keywords = ["async", "io", "networking", "filesystem"]
 categories = ["asynchronous", "network-programming", "filesystem", "os"]
 authors = ["Vincent Thomas <vincent@v-thomas.com>"]
+build = "build.rs"
 
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 tracing = ["dep:tracing"]
