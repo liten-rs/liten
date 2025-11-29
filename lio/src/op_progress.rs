@@ -279,7 +279,7 @@ where
     cx: &mut Context<'_>,
   ) -> Poll<Self::Output> {
     let result = match *self {
-      OperationProgress::IoUring { ref id, ref _m } => {
+      OperationProgress::IoUring { ref id } => {
         let is_done = Driver::get()
           .check_registration::<T>(*id, cx.waker().clone())
           .expect("Polled OperationProgress when not even registered");
