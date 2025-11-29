@@ -4,12 +4,29 @@ use std::task::Waker;
 #[cfg(not(linux))]
 use std::os::fd::RawFd;
 
-#[cfg(linux)]
-pub struct OpRegistration {
-  pub op: *const (),
-  pub status: OpRegistrationStatus,
-  pub drop_fn: fn(*const ()), // Function to properly drop the operation
+pub struct OpCallback {
+  pub callback: *const (),
+  pub call_callback_fn: fn(*const (), *const (), i32),
 }
+
+unsafe impl Send for OpCallback {}
+
+pub struct OpRegistration {
+  #[cfg(linux)]
+  pub status: OpRegistrationStatus,
+
+  // Fields common to both platforms
+  pub op: *const (),
+  pub drop_fn: fn(*const ()), // Function to properly drop the operation
+  pub callback: Option<OpCallback>,
+
+  #[cfg(not(linux))]
+  registered_waker: Option<Waker>,
+  #[cfg(not(linux))]
+  pub(crate) fd: RawFd,
+}
+
+unsafe impl Send for OpRegistration {}
 
 #[cfg(linux)]
 pub enum OpRegistrationStatus {
@@ -35,23 +52,27 @@ impl OpRegistration {
       op: Box::into_raw(op) as *const (),
       status: OpRegistrationStatus::Waiting { registered_waker: None },
       drop_fn: drop_op::<T>,
+      callback: None,
     }
   }
 }
 
-unsafe impl Send for OpRegistration {}
-
-#[cfg(not(linux))]
-pub struct OpRegistration {
-  registered_waker: Option<Waker>,
-  pub(crate) fd: RawFd,
-}
-
 #[cfg(not(linux))]
 impl OpRegistration {
-  pub fn new(fd: RawFd) -> Self {
+  pub fn new<T>(op: Box<T>, fd: RawFd) -> Self {
     assert!(fd != 0);
-    OpRegistration { registered_waker: None, fd }
+
+    fn drop_op<T>(ptr: *const ()) {
+      drop(unsafe { Box::from_raw(ptr as *mut T) })
+    }
+
+    OpRegistration {
+      op: Box::into_raw(op) as *const (),
+      drop_fn: drop_op::<T>,
+      callback: None,
+      registered_waker: None,
+      fd,
+    }
   }
 
   pub fn waker(&mut self) -> Option<Waker> {
@@ -60,6 +81,12 @@ impl OpRegistration {
 
   /// Sets the waker, replacing any existing waker
   pub fn set_waker(&mut self, waker: Waker) {
+    // Assert mutual exclusion: can't have both waker and callback
+    assert!(
+      self.callback.is_none(),
+      "Cannot set waker when callback is already set (operation_id has callback)"
+    );
+
     let _had_previous_waker = self.registered_waker.replace(waker).is_some();
     #[cfg(feature = "tracing")]
     if _had_previous_waker {

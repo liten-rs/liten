@@ -29,14 +29,51 @@
 //! async fn example() -> std::io::Result<()> {
 //!     let fd: RawFd = 1; // stdout
 //!     let data = b"Hello, World!\n".to_vec();
-//!     
+//!
 //!     // Async write operation
 //!     let (result, _buf) = lio::write(fd, data, 0).await;
 //!     println!("Wrote {} bytes", result?);
-//!     
+//!
 //!     Ok(())
 //! }
 //! ```
+//!
+//! ## Callback-Based I/O
+//!
+//! Lio supports both Future-based (`.await`) and callback-based execution models.
+//! Use callbacks for fire-and-forget operations or when you need results in a
+//! different context than the async caller.
+//!
+//! ```rust
+//! use std::sync::mpsc::channel;
+//!
+//! async fn callback_example() -> std::io::Result<()> {
+//!     let fd = /* open a file */;
+//!     let buffer = vec![0u8; 1024];
+//!     let (tx, rx) = channel();
+//!
+//!     // Register callback - operation continues in background
+//!     lio::read(fd, buffer, 0).when_done(move |(result, buf)| {
+//!         match result {
+//!             Ok(bytes_read) => {
+//!                 println!("Read {} bytes", bytes_read);
+//!                 tx.send(buf).unwrap();
+//!             }
+//!             Err(e) => eprintln!("Error: {}", e),
+//!         }
+//!     });
+//!
+//!     // Continue with other work while I/O happens
+//!     // ...
+//!
+//!     // Later, get the result
+//!     let buffer = rx.recv().unwrap();
+//!     Ok(())
+//! }
+//! ```
+//!
+//! **Note**: Once `.when_done()` is called, the operation cannot be polled as a
+//! Future. Choose one execution model per operation.
 //!
 //! ## Examples
 //!
@@ -108,8 +145,6 @@ mod driver;
 
 pub mod op;
 use op::*;
-// #[doc(inline)]
-// pub use op::*;
 
 mod op_progress;
 mod op_registration;
@@ -121,7 +156,31 @@ use std::path::Path;
 
 macro_rules! impl_op {
   (
-    $desc:tt,
+    !detach $desc:tt,
+    $(#[$($doc:tt)*])*
+    $operation:ident, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty ; $err:ty
+  ) => {
+      impl_op!(
+          concat!($desc, "\n\n**Not detach safe**\n: This method can be dangerous to call when_done on. It is not `detach safe' which means that resources will not be cleaned up if not handled carefully."),
+          $(#[$($doc)*])*
+          $operation,
+          fn $name($($arg: $arg_ty),*) -> $ret:ty ; $err:ty
+      );
+  };
+  (
+    !detach $desc:tt,
+    $(#[$($doc:tt)*])*
+    $operation:ident, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty
+  ) => {
+      impl_op!(
+          concat!($desc, "\n\n**Not detach safe**\n: This method can be dangerous to call when_done on. It is not `detach safe` which means that resources will not be cleaned up if not handled carefully."),
+          $(#[$($doc)*])*
+          $operation,
+          fn $name($($arg: $arg_ty),*) -> $ret
+      );
+  };
+  (
+    $desc:expr,
     $(#[$($doc:tt)*])*
     $operation:ident, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty ; $err:ty
   ) => {
@@ -141,7 +200,7 @@ macro_rules! impl_op {
     }
   };
   (
-    $desc:tt,
+    $desc:expr,
     $(#[$($doc:tt)*])*
     $operation:ident, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty
   ) => {
@@ -150,10 +209,10 @@ macro_rules! impl_op {
     #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
     #[doc = "This function signature is equivalent to:"]
     #[doc = concat!("```ignore\nasync fn ",stringify!($name), "(", stringify!($($arg),*), ") -> ", stringify!($ret), "\n```")]
+    $(#[$($doc)*])*
     #[doc = "# Behavior"]
     #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
     #[doc = "\n\nSee more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
-    $(#[$($doc)*])*
     pub fn $name($($arg: $arg_ty),*) -> OperationProgress<$operation> {
       Driver::submit($operation::new($($arg),*))
     }
@@ -171,142 +230,143 @@ macro_rules! impl_op {
 use std::time::Duration;
 
 impl_op!(
-    "Shuts socket down.",
-    /// # Examples
-    ///
-    /// ```rust
-    /// async fn write_example() -> std::io::Result<()> {
-    ///     let socket = lio::socket(socket2::Domain::IPV4, socket2::Type::STREAM, None).await?;
-    ///     let how = 0;
-    ///     lio::shutdown(socket, how).await?;
-    ///     Ok(())
-    /// }
-    /// ```
-    Shutdown, fn shutdown(fd: RawFd, how: i32) -> io::Result<()>
+ "Shuts socket down.",
+ /// # Examples
+ ///
+ /// ```rust
+ /// async fn write_example() -> std::io::Result<()> {
+ ///     let socket = lio::socket(socket2::Domain::IPV4, socket2::Type::STREAM, None).await?;
+ ///     let how = 0;
+ ///     lio::shutdown(socket, how).await?;
+ ///     Ok(())
+ /// }
+ /// ```
+ Shutdown, fn shutdown(fd: RawFd, how: i32) -> io::Result<()>
 );
 
 #[cfg(linux)]
 impl_op!(
-    "Times out something",
-    /// # Examples
-    ///
-    /// ```rust
-    /// use lio::timeout;
-    /// use std::{time::Duration, os::fd::RawFd};
-    ///
-    /// async fn write_example() -> std::io::Result<()> {
-    ///     timeout(Duration::from_millis(10)).await?;
-    ///     Ok(())
-    /// }
-    /// ```
-    Timeout, fn timeout(duration: Duration) -> BufResult<i32, Vec<u8>>
+  "Times out something",
+  /// # Examples
+  ///
+  /// ```rust
+  /// use lio::timeout;
+  /// use std::{time::Duration, os::fd::RawFd};
+  ///
+  /// async fn write_example() -> std::io::Result<()> {
+  ///     timeout(Duration::from_millis(10)).await?;
+  ///     Ok(())
+  /// }
+  /// ```
+  Timeout, fn timeout(duration: Duration) -> BufResult<i32, Vec<u8>>
 );
 
 impl_op!(
-    "Create a soft-link",
-    /// # Examples
-    ///
-    /// ```rust
-    /// async fn write_example() -> std::io::Result<()> {
-    ///     # let fd = 0;
-    ///     // todo
-    // ///     let (bytes_written, _buf) = lio::symlinkat(fd).await?;
-    ///     Ok(())
-    /// }
-    /// ```
-    SymlinkAt, fn symlinkat(new_dir_fd: RawFd, target: impl AsRef<Path>, linkpath: impl AsRef<Path>) -> io::Result<()> ; NulError
+  "Create a soft-link",
+  /// # Examples
+  ///
+  /// ```rust
+  /// async fn write_example() -> std::io::Result<()> {
+  ///     # let fd = 0;
+  ///     // todo
+  // ///     let (bytes_written, _buf) = lio::symlinkat(fd).await?;
+  ///     Ok(())
+  /// }
+  /// ```
+  SymlinkAt, fn symlinkat(new_dir_fd: RawFd, target: impl AsRef<Path>, linkpath: impl AsRef<Path>) -> io::Result<()> ; NulError
 );
 
 impl_op!(
-    "Create a hard-link",
-    /// # Examples
-    ///
-    /// ```rust
-    /// async fn write_example() -> std::io::Result<()> {
-    ///     # let fd = 0;
-    ///       // todo
-    // ///     let (bytes_written, _buf) = lio::linkat(fd)?.await?;
-    ///     Ok(())
-    /// }
-    /// ```
-    LinkAt, fn linkat(old_dir_fd: RawFd, old_path: impl AsRef<Path>, new_dir_fd: RawFd, new_path: impl AsRef<Path>) -> io::Result<()> ; NulError
+  "Create a hard-link",
+  /// # Examples
+  ///
+  /// ```rust
+  /// async fn write_example() -> std::io::Result<()> {
+  ///     # let fd = 0;
+  ///       // todo
+  // ///     let (bytes_written, _buf) = lio::linkat(fd)?.await?;
+  ///     Ok(())
+  /// }
+  /// ```
+  LinkAt, fn linkat(old_dir_fd: RawFd, old_path: impl AsRef<Path>, new_dir_fd: RawFd, new_path: impl AsRef<Path>) -> io::Result<()> ; NulError
 );
 
 impl_op!(
-    "Sync to fd.",
-    /// # Examples
-    ///
-    /// ```rust
-    /// async fn write_example() -> std::io::Result<()> {
-    ///     # let fd = 0;
-    ///     lio::fsync(fd).await?;
-    ///     Ok(())
-    /// }
-    /// ```
-    Fsync, fn fsync(fd: RawFd) -> io::Result<()>
+  "Sync to fd.",
+  /// # Examples
+  ///
+  /// ```rust
+  /// async fn write_example() -> std::io::Result<()> {
+  ///     # let fd = 0;
+  ///     lio::fsync(fd).await?;
+  ///     Ok(())
+  /// }
+  /// ```
+  Fsync, fn fsync(fd: RawFd) -> io::Result<()>
 );
 
 impl_op!(
-    "Performs a write operation on a file descriptor. Equivalent to the `pwrite` syscall.",
-    /// # Examples
-    ///
-    /// ```rust
-    /// async fn write_example() -> std::io::Result<()> {
-    ///     # let fd = 0;
-    ///     let data = b"Hello, World!".to_vec();
-    ///     let (result_bytes_written, _buf) = lio::write(fd, data, 0).await;
-    ///     println!("Wrote {} bytes", result_bytes_written?);
-    ///     Ok(())
-    /// }
-    /// ```
-    Write, fn write(fd: RawFd, buf: Vec<u8>, offset: i64) -> BufResult<i32, Vec<u8>>
+  "Performs a write operation on a file descriptor. Equivalent to the `pwrite` syscall.",
+  /// # Examples
+  ///
+  /// ```rust
+  /// async fn write_example() -> std::io::Result<()> {
+  ///     # let fd = 0;
+  ///     let data = b"Hello, World!".to_vec();
+  ///     let (result_bytes_written, _buf) = lio::write(fd, data, 0).await;
+  ///     println!("Wrote {} bytes", result_bytes_written?);
+  ///     Ok(())
+  /// }
+  /// ```
+  Write, fn write(fd: RawFd, buf: Vec<u8>, offset: i64) -> BufResult<i32, Vec<u8>>
 );
 
 impl_op!(
-    "Performs a read operation on a file descriptor. Equivalent of the `pread` syscall.",
-    /// # Examples
-    ///
-    /// ```rust
-    /// async fn read_example() -> std::io::Result<()> {
-    ///     # let fd = 0;
-    ///     let mut buffer = vec![0u8; 1024];
-    ///     let (res_bytes_read, buf) = lio::read(fd, buffer, 0).await;
-    ///     let bytes_read = res_bytes_read?;
-    ///     println!("Read {} bytes: {:?}", bytes_read, &buf[..bytes_read as usize]);
-    ///     Ok(())
-    /// }
-    /// ```
-    Read, fn read(fd: RawFd, mem: Vec<u8>, offset: i64) -> BufResult<i32, Vec<u8>>
+  "Performs a read operation on a file descriptor. Equivalent of the `pread` syscall.",
+  /// # Examples
+  ///
+  /// ```rust
+  /// async fn read_example() -> std::io::Result<()> {
+  ///     # let fd = 0;
+  ///     let mut buffer = vec![0u8; 1024];
+  ///     let (res_bytes_read, buf) = lio::read(fd, buffer, 0).await;
+  ///     let bytes_read = res_bytes_read?;
+  ///     println!("Read {} bytes: {:?}", bytes_read, &buf[..bytes_read as usize]);
+  ///     Ok(())
+  /// }
+  /// ```
+  Read, fn read(fd: RawFd, mem: Vec<u8>, offset: i64) -> BufResult<i32, Vec<u8>>
 );
 
 impl_op!(
-    "Truncates a file to a specified length.",
-    /// # Examples
-    ///
-    /// ```rust
-    /// async fn truncate_example() -> std::io::Result<()> {
-    ///     # let fd = 0;
-    ///     lio::truncate(fd, 1024).await?; // Truncate to 1KB
-    ///     Ok(())
-    /// }
-    /// ```
-    Truncate, fn truncate(fd: RawFd, len: u64) -> std::io::Result<()>
+  "Truncates a file to a specified length.",
+  /// # Examples
+  ///
+  /// ```rust
+  /// async fn truncate_example() -> std::io::Result<()> {
+  ///     # let fd = 0;
+  ///     lio::truncate(fd, 1024).await?; // Truncate to 1KB
+  ///     Ok(())
+  /// }
+  /// ```
+  Truncate, fn truncate(fd: RawFd, len: u64) -> std::io::Result<()>
 );
 
 impl_op!(
-    "Creates a new socket with the specified domain, type, and protocol.",
-    /// # Examples
-    ///
-    /// ```rust
-    /// use socket2::{Domain, Type, Protocol};
-    ///
-    /// async fn socket_example() -> std::io::Result<()> {
-    ///     let sock = lio::socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).await?;
-    ///     println!("Created socket with fd: {}", sock);
-    ///     Ok(())
-    /// }
-    /// ```
-    Socket, fn socket(domain: socket2::Domain, ty: socket2::Type, proto: Option<socket2::Protocol>) -> std::io::Result<i32>
+  !detach
+  "Creates a new socket with the specified domain, type, and protocol.",
+  /// # Examples
+  ///
+  /// ```rust
+  /// use socket2::{Domain, Type, Protocol};
+  ///
+  /// async fn socket_example() -> std::io::Result<()> {
+  ///     let sock = lio::socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).await?;
+  ///     println!("Created socket with fd: {}", sock);
+  ///     Ok(())
+  /// }
+  /// ```
+  Socket, fn socket(domain: socket2::Domain, ty: socket2::Type, proto: Option<socket2::Protocol>) -> std::io::Result<i32>
 );
 
 impl_op!(

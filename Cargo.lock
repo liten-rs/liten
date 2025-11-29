@@ -204,6 +204,7 @@ dependencies = [
  "libc",
  "liten",
  "loom",
+ "oneshot",
  "parking_lot",
  "polling",
  "proptest",

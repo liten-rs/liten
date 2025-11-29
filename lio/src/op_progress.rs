@@ -1,6 +1,5 @@
 #[cfg(linux)]
 use crate::driver::CheckRegistrationResult;
-#[cfg(not(linux))]
 use crate::op::Operation;
 #[cfg(linux)]
 use std::marker::PhantomData;
@@ -11,41 +10,10 @@ use std::{
   task::{Context, Poll},
 };
 
-use crate::{Driver, op};
-
-/// Represents the progress of an I/O operation across different platforms.
-///
-/// This enum provides a unified interface for tracking I/O operations regardless
-/// of the underlying platform implementation. It automatically selects the most
-/// efficient execution method for each platform.
-///
-/// # Platform-Specific Behavior
-///
-/// - **Linux**: Uses io_uring for maximum performance when supported
-/// - **Other platforms**: Falls back to polling-based async I/O or blocking execution
-///
-/// # Examples
-///
-/// ```rust
-/// use lio::{read, OperationProgress};
-/// use std::os::fd::RawFd;
-///
-/// async fn example() -> std::io::Result<()> {
-///     let fd: RawFd = 0; // stdin
-///     let buffer = vec![0u8; 1024];
-///     
-///     let progress: OperationProgress<lio::op::Read> = read(fd, buffer, 0);
-///     let (bytes_read, buf) = progress.await;
-///     
-///     println!("Read {} bytes", bytes_read?);
-///     Ok(())
-/// }
-/// ```
-#[cfg(linux)]
-pub enum OperationProgress<T> {
-  IoUring { id: u64, _m: PhantomData<T> },
-  Blocking { operation: T },
-}
+use crate::{
+  Driver,
+  op::{self, DetachSafe},
+};
 
 /// Represents the progress of an I/O operation across different platforms.
 ///
@@ -75,15 +43,29 @@ pub enum OperationProgress<T> {
 ///     Ok(())
 /// }
 /// ```
-#[cfg(not(linux))]
-pub enum OperationProgress<T> {
-  Poll { event: polling::Event, id: u64, operation: T },
-  Blocking { operation: T },
+pub enum OperationProgress<T>
+where
+  T: op::Operation,
+{
+  #[cfg(not(linux))]
+  Poll {
+    event: polling::Event,
+    id: u64,
+  },
+
+  #[cfg(linux)]
+  IoUring {
+    id: u64,
+  },
+
+  Blocking {
+    operation: Option<T>,
+  },
 }
 
-unsafe impl<T> Send for OperationProgress<T> where T: Send {}
+unsafe impl<T> Send for OperationProgress<T> where T: Send + op::Operation {}
 
-impl<T> OperationProgress<T> {
+impl<T: op::Operation> OperationProgress<T> {
   /// Detaches this progress tracker from the driver without binding it to any object.
   ///
   /// This function is useful when you want to clean up the operation registration
@@ -107,46 +89,176 @@ impl<T> OperationProgress<T> {
   ///     Ok(())
   /// }
   /// ```
-  pub fn detach(self) {
-    // FIXME: If blocking, this needs to run now.
-    // Engages the Driver::detach(..)
-    drop(self);
+  pub fn detach(self)
+  where
+    T: DetachSafe + 'static,
+  {
+    self.when_done(drop);
+  }
+
+  /// Registers a callback to be invoked when the operation completes.
+  ///
+  /// This method takes ownership of the `OperationProgress`, preventing it from being
+  /// polled as a Future. The callback will receive the operation result when the I/O
+  /// operation completes.
+  ///
+  /// # Mutual Exclusion with Future Polling
+  ///
+  /// Once `when_done` is called, the operation cannot be polled as a Future. This is
+  /// enforced by taking ownership of `self`. You must choose one execution model:
+  /// - **Await the Future**: Use `.await` to get the result synchronously in your async code
+  /// - **Use a callback**: Use `.when_done()` for fire-and-forget operations or when you
+  ///   need the result in a different context
+  ///
+  /// # Callback Requirements
+  ///
+  /// The callback must be `FnOnce(T::Result) + Send + 'static`:
+  /// - `FnOnce`: The callback is invoked exactly once when the operation completes
+  /// - `Send`: The callback may be executed on a background I/O thread
+  /// - `'static`: The callback must not borrow data with lifetimes (use `move` closures
+  ///   with owned data or `Arc`/`Arc<Mutex<T>>` for shared state)
+  ///
+  /// # Platform-Specific Behavior
+  ///
+  /// - **Blocking operations**: The callback is invoked immediately (synchronously)
+  /// - **Async operations** (io_uring/polling): The callback is invoked asynchronously
+  ///   on the background I/O thread when the operation completes
+  ///
+  /// # Examples
+  ///
+  /// ## Basic callback usage
+  ///
+  /// ```rust
+  /// use lio::read;
+  /// use std::sync::mpsc::channel;
+  ///
+  /// async fn example() -> std::io::Result<()> {
+  ///     let fd = /* open a file */;
+  ///     let buffer = vec![0u8; 1024];
+  ///     let (tx, rx) = channel();
+  ///
+  ///     // Use callback instead of awaiting
+  ///     read(fd, buffer, 0).when_done(move |(result, buf)| {
+  ///         match result {
+  ///             Ok(bytes_read) => {
+  ///                 println!("Read {} bytes", bytes_read);
+  ///                 tx.send(buf).unwrap();
+  ///             }
+  ///             Err(e) => eprintln!("Error: {}", e),
+  ///         }
+  ///     });
+  ///
+  ///     // Continue with other work while I/O happens in background
+  ///     // ...
+  ///
+  ///     // Later, wait for the result
+  ///     let buffer = rx.recv().unwrap();
+  ///     Ok(())
+  /// }
+  /// ```
+  ///
+  /// ## Shared state with Arc
+  ///
+  /// ```rust
+  /// use lio::write;
+  /// use std::sync::{Arc, Mutex};
+  ///
+  /// async fn example() -> std::io::Result<()> {
+  ///     let fd = /* open a file */;
+  ///     let data = b"Hello, callbacks!".to_vec();
+  ///     let result = Arc::new(Mutex::new(None));
+  ///     let result_clone = result.clone();
+  ///
+  ///     write(fd, data, 0).when_done(move |(bytes_written, _buf)| {
+  ///         *result_clone.lock().unwrap() = Some(bytes_written);
+  ///     });
+  ///
+  ///     // Continue with other work...
+  ///     Ok(())
+  /// }
+  /// ```
+  pub fn when_done<F>(mut self, callback: F)
+  where
+    F: FnOnce(T::Result) + Send + 'static,
+  {
+    match self {
+      #[cfg(linux)]
+      OperationProgress::IoUring { id, .. } => {
+        Driver::get().set_callback::<T>(id, Box::new(callback));
+        std::mem::forget(self); // Prevent Drop from cancelling the operation
+      }
+      #[cfg(not(linux))]
+      OperationProgress::Poll { id, .. } => {
+        Driver::get().set_callback::<T>(id, Box::new(callback));
+        std::mem::forget(self); // Prevent Drop from cancelling the operation
+      }
+      OperationProgress::Blocking { ref mut operation } => {
+        // For blocking operations, run immediately and invoke callback
+        let mut op =
+          operation.take().expect("Blocking operation already consumed");
+        let result = op.run_blocking();
+        let output = op.result(result);
+        callback(output);
+      }
+    }
+  }
+
+  #[cfg(feature = "high")]
+  pub fn get_receiver(self) -> oneshot::Receiver<T::Result>
+  where
+    T::Result: Send + 'static,
+  {
+    let (sender, receiver) = oneshot::channel();
+
+    self.when_done(move |res| {
+      let _ = sender.send(res);
+    });
+
+    receiver
   }
 }
 
 #[cfg(linux)]
-impl<T> OperationProgress<T> {
+impl<T> OperationProgress<T>
+where
+  T: op::Operation,
+{
   pub(crate) fn new_uring(id: u64) -> Self {
-    Self::IoUring { id, _m: PhantomData }
+    Self::IoUring { id }
   }
 
   pub(crate) fn new_blocking(op: T) -> Self {
-    Self::Blocking { operation: op }
+    Self::Blocking { operation: Some(op) }
   }
 }
 
 #[cfg(not(linux))]
-impl<T> OperationProgress<T> {
-  pub(crate) fn new(id: u64, operation: T) -> Self
+impl<T> OperationProgress<T>
+where
+  T: op::Operation,
+{
+  pub(crate) fn new(id: u64) -> Self
   where
     T: Operation,
   {
-    if let Some(test) = T::EVENT_TYPE {
-      use crate::op::EventType;
+    let test = match T::EVENT_TYPE {
+      None => panic!(
+        "tried running OperationProgress::new without associated op event type"
+      ),
+      Some(test) => test,
+    };
+    use crate::op::EventType;
 
-      let event = match test {
-        EventType::Read => polling::Event::readable(id as usize),
-        EventType::Write => polling::Event::writable(id as usize),
-      };
+    let event = match test {
+      EventType::Read => polling::Event::readable(id as usize),
+      EventType::Write => polling::Event::writable(id as usize),
+    };
 
-      Self::Poll { id, event, operation }
-    } else {
-      Self::Blocking { operation }
-    }
+    Self::Poll { id, event }
   }
 
   pub(crate) fn new_blocking(operation: T) -> Self {
-    Self::Blocking { operation }
+    Self::Blocking { operation: Some(operation) }
   }
 }
 
@@ -178,8 +290,10 @@ where
         }
       }
       OperationProgress::Blocking { ref mut operation } => {
-        let result = operation.run_blocking();
-        Poll::Ready(operation.result(result))
+        let mut op =
+          operation.take().expect("Blocking operation polled after completion");
+        let result = op.run_blocking();
+        Poll::Ready(op.result(result))
       }
     };
 
@@ -204,57 +318,35 @@ where
   ) -> Poll<Self::Output> {
     let result = match *self {
       OperationProgress::Blocking { ref mut operation } => {
-        let result = operation.run_blocking();
-        Poll::Ready(operation.result(result))
+        let mut op =
+          operation.take().expect("Blocking operation polled after completion");
+        let result = op.run_blocking();
+        Poll::Ready(op.result(result))
       }
-      OperationProgress::Poll { id, ref mut operation, event } => {
-        use std::io;
-
-        match operation.run_blocking() {
-          Ok(result) => {
-            #[cfg(feature = "tracing")]
-            tracing::debug!(
-              operation_id = id,
-              result = result,
-              "poll: operation succeeded"
-            );
-            Poll::Ready(operation.result(Ok(result)))
-          }
-          Err(err) => {
-            if err.kind() == io::ErrorKind::WouldBlock
-              || err.raw_os_error() == Some(libc::EINPROGRESS)
-            {
-              #[cfg(feature = "tracing")]
-              tracing::debug!(operation_id = id, error = ?err, "poll: got WouldBlock/EINPROGRESS, registering repoll");
-              let fd = operation.fd().expect(
-                "operation has event_type.is_some(), but not fd Some(...)",
-              );
-              let result = Driver::get()
-                .register_repoll(id, event, cx.waker().clone(), fd)
-                .expect("why didn't exist");
-              if let Err(err) = result {
-                #[cfg(feature = "tracing")]
-                tracing::error!(operation_id = id, error = ?err, "poll: register_repoll failed");
-                Poll::Ready(operation.result(Err(err)))
-              } else {
-                #[cfg(feature = "tracing")]
-                tracing::debug!(
-                  operation_id = id,
-                  "poll: registered repoll, returning Pending"
-                );
-                Poll::Pending
-              }
-            } else {
-              #[cfg(feature = "tracing")]
-              tracing::debug!(operation_id = id, error = ?err, "poll: got non-WouldBlock error, returning Ready");
-              Poll::Ready(operation.result(Err(err)))
-            }
-          }
-        }
+      OperationProgress::Poll { id, event } => {
+        // Delegate to Driver to execute the operation
+        Driver::get().try_execute_operation::<T>(id, event, cx.waker().clone())
       }
     };
 
     result
+  }
+}
+
+#[cfg(not(linux))]
+impl<T> Drop for OperationProgress<T>
+where
+  T: op::Operation,
+{
+  fn drop(&mut self) {
+    match self {
+      OperationProgress::Poll { id, .. } => {
+        Driver::get().detach(*id);
+      }
+      OperationProgress::Blocking { .. } => {
+        // Blocking operations don't need cleanup
+      }
+    }
   }
 }
 
@@ -263,28 +355,34 @@ where
 /// When an `OperationProgress` is dropped, this implementation ensures
 /// that the operation is properly cancelled and cleaned up from the driver.
 #[cfg(linux)]
-impl<T> Drop for OperationProgress<T> {
+impl<T> Drop for OperationProgress<T>
+where
+  T: op::Operation,
+{
   fn drop(&mut self) {
-    if let OperationProgress::IoUring { id, .. } = *self {
-      Driver::get().detach(id);
+    match self {
+      OperationProgress::IoUring { id, .. } => {
+        Driver::get().detach(*id);
+      }
+      OperationProgress::Blocking { .. } => {
+        // Blocking operations don't need cleanup
+      }
     }
   }
 }
-
-/// Implements automatic cleanup for polling operations on non-Linux platforms.
-///
-/// When an `OperationProgress` is dropped, this implementation ensures
-/// that the operation is properly cancelled and cleaned up from the driver.
-#[cfg(not(linux))]
-impl<T> Drop for OperationProgress<T> {
-  fn drop(&mut self) {
-    if let OperationProgress::Poll { id, .. } = *self {
-      #[cfg(feature = "tracing")]
-      tracing::debug!(
-        operation_id = id,
-        "OperationProgress: dropping, calling detach"
-      );
-      Driver::get().detach(id);
-    }
-  }
-}
+// ///
+// /// When an `OperationProgress` is dropped, this implementation ensures
+// /// that the operation is properly cancelled and cleaned up from the driver.
+// #[cfg(not(linux))]
+// impl<T> Drop for OperationProgress<T> {
+//   fn drop(&mut self) {
+//     if let OperationProgress::Poll { id, .. } = *self {
+//       #[cfg(feature = "tracing")]
+//       tracing::debug!(
+//         operation_id = id,
+//         "OperationProgress: dropping, calling detach"
+//       );
+//       Driver::get().detach(id);
+//     }
+//   }
+// }

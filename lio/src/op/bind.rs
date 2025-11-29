@@ -3,7 +3,7 @@ use std::{cell::UnsafeCell, io, mem, net::SocketAddr, os::fd::RawFd};
 #[cfg(linux)]
 use io_uring::types::Fd;
 
-use crate::op::net_utils::std_socketaddr_into_libc;
+use crate::op::{DetachSafe, net_utils::std_socketaddr_into_libc};
 
 use super::Operation;
 
@@ -11,6 +11,9 @@ pub struct Bind {
   fd: RawFd,
   addr: UnsafeCell<libc::sockaddr_storage>, // addr: SocketAddr,
 }
+
+unsafe impl DetachSafe for Bind {}
+
 impl Bind {
   pub(crate) fn new(fd: RawFd, addr: SocketAddr) -> Self {
     Self { fd, addr: UnsafeCell::new(std_socketaddr_into_libc(addr)) }
