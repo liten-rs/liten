@@ -133,7 +133,7 @@ impl<T: op::Operation> OperationProgress<T> {
   /// use std::sync::mpsc::channel;
   ///
   /// async fn example() -> std::io::Result<()> {
-  ///     let fd = /* open a file */;
+  ///     # let fd = 0;
   ///     let buffer = vec![0u8; 1024];
   ///     let (tx, rx) = channel();
   ///
@@ -164,7 +164,7 @@ impl<T: op::Operation> OperationProgress<T> {
   /// use std::sync::{Arc, Mutex};
   ///
   /// async fn example() -> std::io::Result<()> {
-  ///     let fd = /* open a file */;
+  ///     # let fd = 0;
   ///     let data = b"Hello, callbacks!".to_vec();
   ///     let result = Arc::new(Mutex::new(None));
   ///     let result_clone = result.clone();

@@ -3,6 +3,7 @@ use std::os::fd::RawFd;
 #[cfg(linux)]
 use io_uring::{opcode, squeue, types::Fd};
 
+use crate::op::DetachSafe;
 #[cfg(not(linux))]
 use crate::op::EventType;
 
@@ -12,6 +13,8 @@ pub struct Truncate {
   fd: RawFd,
   size: u64,
 }
+
+unsafe impl DetachSafe for Truncate {}
 
 impl Truncate {
   pub(crate) fn new(fd: RawFd, size: u64) -> Self {

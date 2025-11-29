@@ -48,7 +48,7 @@
 //! use std::sync::mpsc::channel;
 //!
 //! async fn callback_example() -> std::io::Result<()> {
-//!     let fd = /* open a file */;
+//!     # let fd = 0;
 //!     let buffer = vec![0u8; 1024];
 //!     let (tx, rx) = channel();
 //!
@@ -155,6 +155,25 @@ use crate::driver::Driver;
 use std::path::Path;
 
 macro_rules! impl_op {
+  // Internal helper: Generate function with common documentation
+  (@impl_fn
+    { $desc:expr, $operation:ident, $name:ident, [$($arg:ident : $arg_ty:ty),*], $ret:ty }
+    $( #[$($doc:tt)*] )*
+    { $($body:tt)* }
+  ) => {
+    #[doc = $desc]
+    #[doc = "# Returns"]
+    #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
+    #[doc = "This function signature is equivalent to:"]
+    #[doc = concat!("```ignore\nasync fn ",stringify!($name), "(", stringify!($($arg),*), ") -> ", stringify!($ret), "\n```")]
+    #[doc = "# Behavior"]
+    #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
+    #[doc = "\n\nSee more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
+    $( #[$($doc)*] )*
+    $($body)*
+  };
+
+  // !detach variant with error type
   (
     !detach $desc:tt,
     $(#[$($doc:tt)*])*
@@ -167,6 +186,8 @@ macro_rules! impl_op {
           fn $name($($arg: $arg_ty),*) -> $ret:ty ; $err:ty
       );
   };
+
+  // !detach variant without error type
   (
     !detach $desc:tt,
     $(#[$($doc:tt)*])*
@@ -179,6 +200,8 @@ macro_rules! impl_op {
           fn $name($($arg: $arg_ty),*) -> $ret
       );
   };
+
+  // With error type - fallible constructor
   (
     $desc:expr,
     $(#[$($doc:tt)*])*
@@ -186,38 +209,35 @@ macro_rules! impl_op {
   ) => {
     use op::$operation;
 
-    #[doc = $desc]
-    #[doc = "# Returns"]
-    #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
-    #[doc = "This function signature is equivalent to:"]
-    #[doc = concat!("```ignore\nasync fn ",stringify!($name), "(", stringify!($($arg),*), ") -> ", stringify!($ret), "\n```")]
-    #[doc = "# Behavior"]
-    #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
-    #[doc = "\n\nSee more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
-    $(#[$($doc)*])*
-    pub fn $name($($arg: $arg_ty),*) -> Result<OperationProgress<$operation>, $err> {
-      Ok(Driver::submit($operation::new($($arg),*)?))
-    }
+    impl_op!(@impl_fn
+      { $desc, $operation, $name, [$($arg : $arg_ty),*], $ret }
+      $( #[$($doc)*] )*
+      {
+        pub fn $name($($arg: $arg_ty),*) -> Result<OperationProgress<$operation>, $err> {
+          Ok(Driver::submit($operation::new($($arg),*)?))
+        }
+      }
+    );
   };
+
+  // Without error type - infallible constructor
   (
     $desc:expr,
     $(#[$($doc:tt)*])*
     $operation:ident, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty
   ) => {
-    #[doc = $desc]
-    #[doc = "# Returns"]
-    #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
-    #[doc = "This function signature is equivalent to:"]
-    #[doc = concat!("```ignore\nasync fn ",stringify!($name), "(", stringify!($($arg),*), ") -> ", stringify!($ret), "\n```")]
-    $(#[$($doc)*])*
-    #[doc = "# Behavior"]
-    #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
-    #[doc = "\n\nSee more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
-    pub fn $name($($arg: $arg_ty),*) -> OperationProgress<$operation> {
-      Driver::submit($operation::new($($arg),*))
-    }
+    impl_op!(@impl_fn
+      { $desc, $operation, $name, [$($arg : $arg_ty),*], $ret }
+      $( #[$($doc)*] )*
+      {
+        pub fn $name($($arg: $arg_ty),*) -> OperationProgress<$operation> {
+          Driver::submit($operation::new($($arg),*))
+        }
+      }
+    );
   };
 
+  // Convenience: no description provided
   (
     $(#[$($doc:tt)*])*
     $operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty

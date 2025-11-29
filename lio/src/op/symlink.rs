@@ -18,6 +18,8 @@ pub struct SymlinkAt {
   linkpath: CString,
 }
 
+// Not detach safe.
+
 // TODO: test
 impl SymlinkAt {
   pub(crate) fn new(

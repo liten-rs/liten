@@ -3,12 +3,16 @@ use std::os::fd::RawFd;
 #[cfg(linux)]
 use io_uring::types::Fd;
 
+use crate::op::DetachSafe;
+
 use super::Operation;
 
 pub struct Listen {
   fd: RawFd,
   backlog: i32,
 }
+
+unsafe impl DetachSafe for Listen {}
 
 impl Listen {
   pub(crate) fn new(fd: RawFd, backlog: i32) -> Self {

@@ -3,7 +3,7 @@ use std::{io, os::fd::RawFd};
 #[cfg(linux)]
 use io_uring::types::Fd;
 
-use crate::BufResult;
+use crate::{BufResult, op::DetachSafe};
 
 use super::Operation;
 
@@ -12,6 +12,8 @@ pub struct Read {
   buf: Option<Vec<u8>>,
   offset: i64,
 }
+
+unsafe impl DetachSafe for Read {}
 
 impl Read {
   /// Will return errn 22 "EINVAL" if offset < 0

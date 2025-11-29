@@ -14,6 +14,7 @@ use crate::op::net_utils::libc_socketaddr_into_std;
 
 use super::Operation;
 
+// Not detach safe.
 pub struct Accept {
   fd: RawFd,
   addr: UnsafeCell<libc::sockaddr_storage>,

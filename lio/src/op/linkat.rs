@@ -7,6 +7,8 @@ use std::{
 #[cfg(linux)]
 use io_uring::types::Fd;
 
+use crate::op::DetachSafe;
+
 use super::Operation;
 
 pub struct LinkAt {
@@ -15,6 +17,8 @@ pub struct LinkAt {
   new_dir_fd: RawFd,
   new_path: CString,
 }
+
+unsafe impl DetachSafe for LinkAt {}
 
 // TODO: test
 impl LinkAt {
