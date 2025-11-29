@@ -1,6 +1,10 @@
 use crate::OperationProgress;
 
 use parking_lot::Mutex;
+#[cfg(not(linux))]
+use std::os::fd::RawFd;
+#[cfg(linux)]
+use std::sync::atomic::AtomicBool;
 use std::{
   collections::HashMap,
   sync::{
@@ -10,16 +14,16 @@ use std::{
   },
   thread,
 };
-#[cfg(not(linux))]
+#[cfg(all(not(linux), feature = "high"))]
 use std::{
   io,
-  os::fd::RawFd,
   task::{Poll, Waker},
 };
-#[cfg(linux)]
-use std::{sync::atomic::AtomicBool, task::Waker};
 
-#[cfg(not(linux))]
+#[cfg(all(linux, feature = "high"))]
+use std::task::Waker;
+
+#[cfg(all(not(linux), feature = "high"))]
 use polling::PollMode;
 
 #[cfg(linux)]
@@ -158,7 +162,7 @@ impl Driver {
   }
 }
 
-#[cfg(linux)]
+#[cfg(all(linux, feature = "high"))]
 pub(crate) enum CheckRegistrationResult<V> {
   /// Waker has been registered and future should return Poll::Pending
   WakerSet,
@@ -381,6 +385,7 @@ impl Driver {
     }
   }
 
+  #[cfg(feature = "high")]
   pub(crate) fn check_registration<T>(
     &self,
     id: u64,
@@ -486,6 +491,7 @@ impl Driver {
     operation_id
   }
 
+  #[cfg(feature = "high")]
   pub(crate) fn try_execute_operation<T>(
     &self,
     id: u64,
@@ -639,6 +645,7 @@ impl Driver {
     }
   }
 
+  #[cfg(feature = "high")]
   pub(crate) fn register_repoll(
     &self,
     key: u64,

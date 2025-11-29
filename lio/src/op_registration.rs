@@ -37,6 +37,8 @@ pub enum OpRegistrationStatus {
   /// because they weren't interested in the result.
   Cancelling,
   Done {
+    // TODO: wtf
+    #[cfg_attr(not(feature = "high"), allow(unused))]
     ret: i32,
   },
 }
@@ -80,6 +82,7 @@ impl OpRegistration {
   }
 
   /// Sets the waker, replacing any existing waker
+  #[cfg(feature = "high")]
   pub fn set_waker(&mut self, waker: Waker) {
     // Assert mutual exclusion: can't have both waker and callback
     assert!(

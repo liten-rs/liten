@@ -1,9 +1,9 @@
-#[cfg(linux)]
-use crate::driver::CheckRegistrationResult;
-use crate::op::Operation;
-#[cfg(linux)]
+#[cfg(all(linux, feature = "high"))]
+use crate::{driver::CheckRegistrationResult, op::Operation};
+#[cfg(all(linux, feature = "high"))]
 use std::marker::PhantomData;
 
+#[cfg(feature = "high")]
 use std::{
   future::Future,
   pin::Pin,
@@ -268,6 +268,7 @@ where
 /// io_uring subsystem, automatically waking the future when the operation
 /// completes.
 #[cfg(linux)]
+#[cfg(feature = "high")]
 impl<T> Future for OperationProgress<T>
 where
   T: op::Operation + Unpin,
@@ -306,6 +307,7 @@ where
 /// This implementation handles operations that use polling-based async I/O,
 /// automatically re-registering for events when operations would block.
 #[cfg(not(linux))]
+#[cfg(feature = "high")]
 impl<T> Future for OperationProgress<T>
 where
   T: op::Operation + Unpin,

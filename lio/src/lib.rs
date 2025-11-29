@@ -9,7 +9,7 @@
 //! - **Manual control** with high level async API.
 //!
 //! *Note:* This is a quite low-level library. This library creates resources
-//! (fd's) which it doesn't cleanup itself.
+//! (fd's) which it doesn't cleanup automatically.
 //!
 //! ## Platform support
 //!
@@ -24,15 +24,30 @@
 //! ## Quick Start
 //!
 //! ```rust
+//! # #![cfg(feature = "high")]
 //! use std::os::fd::RawFd;
+//!
+//! fn handle_result(result: std::io::Result<()>, buf: Vec<u8>) {
+//!   println!("result: {result:?}, buf: {buf:?}");
+//! }
 //!
 //! async fn example() -> std::io::Result<()> {
 //!     let fd: RawFd = 1; // stdout
 //!     let data = b"Hello, World!\n".to_vec();
 //!
-//!     // Async write operation
-//!     let (result, _buf) = lio::write(fd, data, 0).await;
-//!     println!("Wrote {} bytes", result?);
+//!     // Async API (on "high" feature flag).
+//!     let (result, buf) = lio::write(fd, data.clone(), 0).await;
+//!     handle_result(result, buf);
+//!
+//!     // Channel API (on "high" feature flag).
+//!     let receiver: oneshot::Receiver = lio::write(fd, data.clone(), 0).get_receiver();
+//!     let (result, buf) = receiver.recv();
+//!     handle_result(result, buf);
+//!
+//!     // Callback API.
+//!     let receiver: oneshot::Receiver = lio::write(fd, data.clone(), 0).when_done(|(result, buf)| {
+//!       handle_result(result, buf);
+//!     });
 //!
 //!     Ok(())
 //! }
@@ -165,7 +180,7 @@ macro_rules! impl_op {
     #[doc = "# Returns"]
     #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
     #[doc = "This function signature is equivalent to:"]
-    #[doc = concat!("```ignore\nasync fn ",stringify!($name), "(", stringify!($($arg),*), ") -> ", stringify!($ret), "\n```")]
+    #[doc = concat!("```ignore\nasync fn ",stringify!($name), "(", stringify!($($arg_ty),*), ") -> ", stringify!($ret), "\n```")]
     #[doc = "# Behavior"]
     #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
     #[doc = "\n\nSee more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
@@ -179,12 +194,12 @@ macro_rules! impl_op {
     $(#[$($doc:tt)*])*
     $operation:ident, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty ; $err:ty
   ) => {
-      impl_op!(
-          concat!($desc, "\n\n**Not detach safe**\n: This method can be dangerous to call when_done on. It is not `detach safe' which means that resources will not be cleaned up if not handled carefully."),
-          $(#[$($doc)*])*
-          $operation,
-          fn $name($($arg: $arg_ty),*) -> $ret:ty ; $err:ty
-      );
+    impl_op!(
+      concat!($desc, "\n\n**Not detach safe**\n: This method can be dangerous to call when_done on. It is not `detach safe' which means that resources will not be cleaned up if not handled carefully."),
+      $(#[$($doc)*])*
+      $operation,
+      fn $name($($arg: $arg_ty),*) -> $ret:ty ; $err:ty
+    );
   };
 
   // !detach variant without error type
@@ -193,12 +208,12 @@ macro_rules! impl_op {
     $(#[$($doc:tt)*])*
     $operation:ident, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty
   ) => {
-      impl_op!(
-          concat!($desc, "\n\n**Not detach safe**\n: This method can be dangerous to call when_done on. It is not `detach safe` which means that resources will not be cleaned up if not handled carefully."),
-          $(#[$($doc)*])*
-          $operation,
-          fn $name($($arg: $arg_ty),*) -> $ret
-      );
+    impl_op!(
+      concat!($desc, "\n\n**Not detach safe**\n: This method can be dangerous to call when_done on. It is not `detach safe` which means that resources will not be cleaned up if not handled carefully."),
+      $(#[$($doc)*])*
+      $operation,
+      fn $name($($arg: $arg_ty),*) -> $ret
+    );
   };
 
   // With error type - fallible constructor
@@ -242,7 +257,7 @@ macro_rules! impl_op {
     $(#[$($doc:tt)*])*
     $operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty
   ) => {
-      impl_op!("", $(#[$($doc)*])* $operation, fn $name($($arg: $arg_ty),*) -> $ret);
+    impl_op!("", $(#[$($doc)*])* $operation, fn $name($($arg: $arg_ty),*) -> $ret);
   };
 }
 
