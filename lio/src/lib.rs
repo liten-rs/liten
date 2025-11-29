@@ -40,8 +40,8 @@
 //!     handle_result(result, buf);
 //!
 //!     // Channel API (on "high" feature flag).
-//!     let receiver: oneshot::Receiver = lio::write(fd, data.clone(), 0).get_receiver();
-//!     let (result, buf) = receiver.recv();
+//!     let receiver: oneshot::Receiver<(std::io::Result<i32>, buf)> = lio::write(fd, data.clone(), 0).get_receiver();
+//!     let (result, buf) = receiver.recv().unwrap();
 //!     handle_result(result, buf);
 //!
 //!     // Callback API.
