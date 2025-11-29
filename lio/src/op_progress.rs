@@ -270,7 +270,7 @@ where
 /// io_uring subsystem, automatically waking the future when the operation
 /// completes.
 #[cfg(all(feature = "high", linux))]
-#[cfg_attr(docsrs, doc(cfg(all(feature = "high"))))]
+#[cfg_attr(docsrs, doc(cfg(feature = "high")))]
 impl<T> Future for OperationProgress<T>
 where
   T: op::Operation + Unpin,
@@ -309,7 +309,7 @@ where
 /// This implementation handles operations that use polling-based async I/O,
 /// automatically re-registering for events when operations would block.
 #[cfg(all(feature = "high", not(linux)))]
-#[cfg_attr(docsrs, doc(cfg(all(feature = "high"))))]
+#[cfg_attr(docsrs, doc(cfg(feature = "high")))]
 impl<T> Future for OperationProgress<T>
 where
   T: op::Operation + Unpin,
@@ -376,19 +376,3 @@ where
     }
   }
 }
-// ///
-// /// When an `OperationProgress` is dropped, this implementation ensures
-// /// that the operation is properly cancelled and cleaned up from the driver.
-// #[cfg(not(linux))]
-// impl<T> Drop for OperationProgress<T> {
-//   fn drop(&mut self) {
-//     if let OperationProgress::Poll { id, .. } = *self {
-//       #[cfg(feature = "tracing")]
-//       tracing::debug!(
-//         operation_id = id,
-//         "OperationProgress: dropping, calling detach"
-//       );
-//       Driver::get().detach(id);
-//     }
-//   }
-// }
