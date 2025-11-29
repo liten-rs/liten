@@ -1,9 +1,7 @@
 #[cfg(all(linux, feature = "high"))]
 use crate::driver::CheckRegistrationResult;
-#[cfg(any(all(linux, feature = "high"), not(linux)))]
+#[cfg(not(linux))]
 use crate::op::Operation;
-#[cfg(all(linux, feature = "high"))]
-use std::marker::PhantomData;
 
 #[cfg(feature = "high")]
 use std::{

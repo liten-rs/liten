@@ -27,7 +27,7 @@
 //! # #![cfg(feature = "high")]
 //! use std::os::fd::RawFd;
 //!
-//! fn handle_result(result: std::io::Result<()>, buf: Vec<u8>) {
+//! fn handle_result(result: std::io::Result<i32>, buf: Vec<u8>) {
 //!   println!("result: {result:?}, buf: {buf:?}");
 //! }
 //!
