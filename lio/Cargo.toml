@@ -1,6 +1,6 @@
 [package]
 name = "lio"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "A platform-independent async I/O library with native support for io_uring (Linux), IOCP (Windows), and kqueue (macOS)"
 license = "MIT"
