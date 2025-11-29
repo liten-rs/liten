@@ -21,7 +21,7 @@ loom = { version = "0.7", features = ["futures"] }
 
 [dependencies]
 liten-macros = { version = "0.1.0", path = "../liten-macros" }
-lio = { version = "0.1.1", path = "../lio", optional = true }
+lio = { version = "0.2.1", path = "../lio", optional = true }
 
 thiserror = "2.0.11"
 

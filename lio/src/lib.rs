@@ -1,3 +1,5 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 //! # Lio - Platform-Independent Async I/O Library
 //!
 //! Lio is a high-performance, platform-independent async I/O library that uses
@@ -207,6 +209,7 @@ impl_op!(
 );
 
 #[cfg(linux)]
+#[cfg_attr(docsrs, doc(cfg(linux)))]
 impl_op!(
   "Times out something",
   /// # Examples
@@ -468,6 +471,7 @@ impl_op!(
 );
 
 #[cfg(linux)]
+#[cfg_attr(docsrs, doc(cfg(linux)))]
 impl_op!(
   "Copies data between file descriptors without copying to userspace (Linux only).",
   /// This operation is only available on Linux systems with io_uring support.

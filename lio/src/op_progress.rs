@@ -48,12 +48,14 @@ where
   T: op::Operation,
 {
   #[cfg(not(linux))]
+  #[cfg_attr(docsrs, doc(cfg(not(linux))))]
   Poll {
     event: polling::Event,
     id: u64,
   },
 
   #[cfg(linux)]
+  #[cfg_attr(docsrs, doc(cfg(linux)))]
   IoUring {
     id: u64,
   },
@@ -267,8 +269,8 @@ where
 /// This implementation handles the completion of operations submitted to the
 /// io_uring subsystem, automatically waking the future when the operation
 /// completes.
-#[cfg(linux)]
-#[cfg(feature = "high")]
+#[cfg(all(feature = "high", linux))]
+#[cfg_attr(docsrs, doc(cfg(feature = "high")))]
 impl<T> Future for OperationProgress<T>
 where
   T: op::Operation + Unpin,
@@ -306,8 +308,8 @@ where
 ///
 /// This implementation handles operations that use polling-based async I/O,
 /// automatically re-registering for events when operations would block.
-#[cfg(not(linux))]
-#[cfg(feature = "high")]
+#[cfg(all(feature = "high", not(linux)))]
+#[cfg_attr(docsrs, doc(cfg(feature = "high")))]
 impl<T> Future for OperationProgress<T>
 where
   T: op::Operation + Unpin,
@@ -336,6 +338,7 @@ where
 }
 
 #[cfg(not(linux))]
+#[cfg_attr(docsrs, doc(auto_cfg = false))]
 impl<T> Drop for OperationProgress<T>
 where
   T: op::Operation,
@@ -357,6 +360,7 @@ where
 /// When an `OperationProgress` is dropped, this implementation ensures
 /// that the operation is properly cancelled and cleaned up from the driver.
 #[cfg(linux)]
+#[cfg_attr(docsrs, doc(auto_cfg = false))]
 impl<T> Drop for OperationProgress<T>
 where
   T: op::Operation,
@@ -372,19 +376,3 @@ where
     }
   }
 }
-// ///
-// /// When an `OperationProgress` is dropped, this implementation ensures
-// /// that the operation is properly cancelled and cleaned up from the driver.
-// #[cfg(not(linux))]
-// impl<T> Drop for OperationProgress<T> {
-//   fn drop(&mut self) {
-//     if let OperationProgress::Poll { id, .. } = *self {
-//       #[cfg(feature = "tracing")]
-//       tracing::debug!(
-//         operation_id = id,
-//         "OperationProgress: dropping, calling detach"
-//       );
-//       Driver::get().detach(id);
-//     }
-//   }
-// }
