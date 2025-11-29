@@ -1,6 +1,10 @@
 use crate::OperationProgress;
 
 use parking_lot::Mutex;
+#[cfg(not(linux))]
+use std::os::fd::RawFd;
+#[cfg(linux)]
+use std::sync::atomic::AtomicBool;
 use std::{
   collections::HashMap,
   sync::{
@@ -10,12 +14,16 @@ use std::{
   },
   thread,
 };
-#[cfg(not(linux))]
-use std::{io, os::fd::RawFd, task::Waker};
-#[cfg(linux)]
-use std::{sync::atomic::AtomicBool, task::Waker};
+#[cfg(all(not(linux), feature = "high"))]
+use std::{
+  io,
+  task::{Poll, Waker},
+};
 
-#[cfg(not(linux))]
+#[cfg(all(linux, feature = "high"))]
+use std::task::Waker;
+
+#[cfg(all(not(linux), feature = "high"))]
 use polling::PollMode;
 
 #[cfg(linux)]
@@ -154,7 +162,7 @@ impl Driver {
   }
 }
 
-#[cfg(linux)]
+#[cfg(all(linux, feature = "high"))]
 pub(crate) enum CheckRegistrationResult<V> {
   /// Waker has been registered and future should return Poll::Pending
   WakerSet,
@@ -245,9 +253,33 @@ impl Driver {
 
           match old_value {
             OpRegistrationStatus::Waiting { registered_waker } => {
-              if let Some(waker) = registered_waker {
+              let has_callback = op_registration.callback.is_some();
+              let has_waker = registered_waker.is_some();
+
+              // Assert mutual exclusion: only callback OR waker, never both
+              assert!(
+                !(has_callback && has_waker),
+                "operation has both callback and waker set"
+              );
+
+              if let Some(callback) = op_registration.callback.take() {
+                // Remove the registration since we're handling completion now
+                let reg = wakers.remove(&operation_id).unwrap();
+                // Drop the lock before calling user code
+                drop(wakers);
+
+                // Invoke the callback with operation pointer and result
+                (callback.call_callback_fn)(
+                  callback.callback,
+                  reg.op,
+                  entry.result(),
+                );
+
+                // Callback consumed both the callback and operation, nothing left to drop
+              } else if let Some(waker) = registered_waker {
+                // No callback, wake the future normally
                 waker.wake();
-              };
+              }
             }
             OpRegistrationStatus::Cancelling => {
               let reg = wakers.remove(&operation_id).unwrap();
@@ -307,6 +339,53 @@ impl Driver {
     operation_id
   }
 
+  pub(crate) fn set_callback<T>(
+    &self,
+    id: u64,
+    callback: Box<dyn FnOnce(T::Result) + Send>,
+  ) where
+    T: op::Operation,
+  {
+    fn call_callback<T: op::Operation>(
+      callback_ptr: *const (),
+      op_ptr: *const (),
+      raw_result: i32,
+    ) {
+      // SAFETY: We created this pointer with Box::into_raw from a Box<dyn FnOnce(T::Result) + Send>
+      let callback = unsafe {
+        Box::from_raw(callback_ptr as *mut Box<dyn FnOnce(T::Result) + Send>)
+      };
+
+      // SAFETY: The operation pointer was created with Box::into_raw in submit with concrete type T
+      let mut operation = unsafe { Box::from_raw(op_ptr as *mut T) };
+
+      // Convert raw i32 result to Result<i32, io::Error>
+      let raw_ret = if raw_result < 0 {
+        Err(std::io::Error::from_raw_os_error(-raw_result))
+      } else {
+        Ok(raw_result)
+      };
+
+      // Call operation.result() to get T::Result
+      let result = operation.result(raw_ret);
+
+      // Invoke the user's callback with the owned result
+      callback(result);
+    }
+
+    let callback_ptr = Box::into_raw(Box::new(callback)) as *const ();
+    let op_callback = crate::op_registration::OpCallback {
+      callback: callback_ptr,
+      call_callback_fn: call_callback::<T>,
+    };
+
+    let mut lock = self.wakers.lock();
+    if let Some(registration) = lock.get_mut(&id) {
+      registration.callback = Some(op_callback);
+    }
+  }
+
+  #[cfg(feature = "high")]
   pub(crate) fn check_registration<T>(
     &self,
     id: u64,
@@ -357,7 +436,7 @@ impl Driver {
   {
     if T::EVENT_TYPE.is_some() {
       let fd = op.fd().expect("operation has event_type but no fd");
-      let operation_id = Driver::get().reserve_driver_entry(fd);
+      let operation_id = Driver::get().reserve_driver_entry(Box::new(op), fd);
       #[cfg(feature = "tracing")]
       tracing::debug!(
         operation_id = operation_id,
@@ -365,7 +444,7 @@ impl Driver {
         operation = std::any::type_name::<T>(),
         "submit: created polling operation"
       );
-      OperationProgress::<T>::new(operation_id, op)
+      OperationProgress::<T>::new(operation_id)
     } else {
       #[cfg(feature = "tracing")]
       tracing::debug!(
@@ -376,8 +455,11 @@ impl Driver {
     }
   }
 
-  /// Returns None operation should be run blocking.
-  fn reserve_driver_entry(&self, fd: RawFd) -> u64 {
+  /// Reserves a driver entry and stores the operation for later execution
+  fn reserve_driver_entry<T>(&self, op: Box<T>, fd: RawFd) -> u64
+  where
+    T: op::Operation,
+  {
     assert!(fd > 0, "reserve_driver_entry: invalid fd {}", fd);
 
     let operation_id = Self::next_id();
@@ -390,7 +472,7 @@ impl Driver {
       operation_id
     );
 
-    _lock.insert(operation_id, OpRegistration::new(fd));
+    _lock.insert(operation_id, OpRegistration::new(op, fd));
 
     // Verify insertion
     assert!(
@@ -403,12 +485,167 @@ impl Driver {
     tracing::debug!(
       operation_id = operation_id,
       fd = fd,
-      "reserved driver entry"
+      "reserved driver entry with operation"
     );
 
     operation_id
   }
 
+  #[cfg(feature = "high")]
+  pub(crate) fn try_execute_operation<T>(
+    &self,
+    id: u64,
+    event: polling::Event,
+    waker: Waker,
+  ) -> Poll<T::Result>
+  where
+    T: op::Operation,
+  {
+    // Lock and get the registration
+    let mut _lock = self.wakers.lock();
+    let registration =
+      _lock.get_mut(&id).expect("try_execute_operation: operation not found");
+
+    // Assert no callback is set (mutual exclusion)
+    assert!(
+      registration.callback.is_none(),
+      "try_execute_operation: operation {} has callback set - should not be polled",
+      id
+    );
+
+    // Reconstruct the operation temporarily to execute it
+    // SAFETY: The pointer was created with Box::into_raw in reserve_driver_entry with concrete type T
+    let mut operation = unsafe { Box::from_raw(registration.op as *mut T) };
+    let fd = registration.fd;
+
+    // Drop the lock before executing the operation
+    drop(_lock);
+
+    // Execute the operation
+    match operation.run_blocking() {
+      Ok(result) => {
+        #[cfg(feature = "tracing")]
+        tracing::debug!(
+          operation_id = id,
+          result = result,
+          "try_execute_operation: operation succeeded"
+        );
+
+        // Remove the registration since operation completed
+        let mut _lock = self.wakers.lock();
+        _lock.remove(&id);
+        drop(_lock);
+
+        // Convert to T::Result and return
+        Poll::Ready(operation.result(Ok(result)))
+      }
+      Err(err) => {
+        if err.kind() == io::ErrorKind::WouldBlock
+          || err.raw_os_error() == Some(libc::EINPROGRESS)
+        {
+          #[cfg(feature = "tracing")]
+          tracing::debug!(
+            operation_id = id,
+            error = ?err,
+            "try_execute_operation: got WouldBlock/EINPROGRESS, will repoll"
+          );
+
+          // Put the operation back in the registration
+          let op_ptr = Box::into_raw(operation) as *const ();
+          let mut _lock = self.wakers.lock();
+          if let Some(reg) = _lock.get_mut(&id) {
+            reg.op = op_ptr;
+          }
+          drop(_lock);
+
+          // Register for repoll
+          let repoll_result = self.register_repoll(id, event, waker, fd);
+          if let Some(Err(err)) = repoll_result {
+            #[cfg(feature = "tracing")]
+            tracing::error!(operation_id = id, error = ?err, "try_execute_operation: register_repoll failed");
+
+            // Remove registration and return error
+            let mut _lock = self.wakers.lock();
+            _lock.remove(&id);
+            drop(_lock);
+
+            // Reconstruct operation to call result()
+            let mut operation = unsafe { Box::from_raw(op_ptr as *mut T) };
+            Poll::Ready(operation.result(Err(err)))
+          } else {
+            Poll::Pending
+          }
+        } else {
+          #[cfg(feature = "tracing")]
+          tracing::debug!(
+            operation_id = id,
+            error = ?err,
+            "try_execute_operation: got non-WouldBlock error"
+          );
+
+          // Remove the registration since operation failed
+          let mut _lock = self.wakers.lock();
+          _lock.remove(&id);
+          drop(_lock);
+
+          // Convert error to T::Result and return
+          Poll::Ready(operation.result(Err(err)))
+        }
+      }
+    }
+  }
+
+  pub(crate) fn set_callback<T>(
+    &self,
+    id: u64,
+    callback: Box<dyn FnOnce(T::Result) + Send>,
+  ) where
+    T: op::Operation,
+  {
+    fn call_callback<T: op::Operation>(
+      callback_ptr: *const (),
+      op_ptr: *const (),
+      _raw_result: i32,
+    ) {
+      // SAFETY: We created this pointer with Box::into_raw from a Box<dyn FnOnce(T::Result) + Send>
+      let callback = unsafe {
+        Box::from_raw(callback_ptr as *mut Box<dyn FnOnce(T::Result) + Send>)
+      };
+
+      // SAFETY: The operation pointer was created with Box::into_raw in reserve_driver_entry with concrete type T
+      let mut operation = unsafe { Box::from_raw(op_ptr as *mut T) };
+
+      // For non-Linux, we need to execute the operation since the background thread
+      // only tells us the fd is ready (via _raw_result which is just 0 for success).
+      // We call run_blocking() to actually perform the I/O operation.
+      let blocking_result = operation.run_blocking();
+
+      // Call operation.result() to convert the blocking result to T::Result
+      let result = operation.result(blocking_result);
+
+      // Invoke the user's callback with the owned result
+      callback(result);
+    }
+
+    let callback_ptr = Box::into_raw(Box::new(callback)) as *const ();
+    let op_callback = crate::op_registration::OpCallback {
+      callback: callback_ptr,
+      call_callback_fn: call_callback::<T>,
+    };
+
+    let mut lock = self.wakers.lock();
+    if let Some(registration) = lock.get_mut(&id) {
+      // Assert that no waker is set (mutual exclusion)
+      assert!(
+        !registration.has_waker(),
+        "Cannot set callback when waker is already set (operation_id {} has waker)",
+        id
+      );
+      registration.callback = Some(op_callback);
+    }
+  }
+
+  #[cfg(feature = "high")]
   pub(crate) fn register_repoll(
     &self,
     key: u64,
@@ -445,6 +682,13 @@ impl Driver {
         "register_repoll: fd mismatch - provided {}, registration has {}",
         fd,
         registration.fd
+      );
+
+      // Assert that no callback is set - operations with callbacks should complete immediately
+      assert!(
+        registration.callback.is_none(),
+        "register_repoll: operation_id {} has callback set - callback operations should not re-poll",
+        key
       );
 
       // Check if a waker already exists. If it does, we update it with the new one.
@@ -599,6 +843,11 @@ impl Driver {
         reg.fd,
         key
       );
+
+      // Drop the operation to free memory
+      (reg.drop_fn)(reg.op);
+      #[cfg(feature = "tracing")]
+      tracing::trace!(operation_id = key, "detach: dropped operation");
 
       if reg.has_waker() {
         #[cfg(feature = "tracing")]
@@ -764,6 +1013,47 @@ impl Driver {
               }
             };
 
+            // Check for callback first - if present, we handle completion immediately
+            if let Some(callback) = entry.callback.take() {
+              #[cfg(feature = "tracing")]
+              tracing::debug!(
+                operation_id = operation_id,
+                "background thread: found callback, will execute operation and invoke callback"
+              );
+
+              // Remove the registration since we're handling completion now
+              let reg = _lock.remove(&operation_id).unwrap();
+
+              // Assert mutual exclusion: callback and waker should not both exist
+              assert!(
+                !reg.has_waker(),
+                "background thread: operation_id {} has both callback and waker (mutual exclusion violated)",
+                operation_id
+              );
+
+              // Drop the lock before executing operation
+              drop(_lock);
+
+              // Execute the operation to get the real result
+              // SAFETY: Reconstruct the operation from the pointer stored in OpRegistration
+              // We need to know the type T to execute it, but we can't access T here.
+              // The callback function handles the type erasure and execution via call_callback_fn.
+              // We pass the result from run_blocking() which happens inside call_callback_fn.
+
+              // Actually, we need to execute the operation HERE to get the real i32 result.
+              // But we can't because we don't know the type T at this point.
+              // The call_callback_fn handles type erasure - it will reconstruct the operation,
+              // call run_blocking(), and get the real result.
+
+              // For non-Linux, we pass 0 to indicate "fd is ready, execute the operation".
+              // The call_callback function will execute run_blocking() to get the real result.
+              (callback.call_callback_fn)(callback.callback, reg.op, 0);
+
+              // Callback consumed both callback and operation, nothing left to drop
+              continue;
+            }
+
+            // No callback, handle normally by waking the future
             // Take the waker but keep the entry in the map.
             // The entry will be updated by register_repoll() if the operation
             // needs to continue, or removed by detach() if it completes.
@@ -836,7 +1126,6 @@ mod utils {
   {
     thread::Builder::new()
       .name("lio".into())
-      .stack_size(64 * 1024)
       .spawn(handle)
       .expect("failed to launch the worker thread")
   }

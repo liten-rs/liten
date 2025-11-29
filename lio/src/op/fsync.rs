@@ -3,6 +3,8 @@ use std::os::fd::RawFd;
 #[cfg(linux)]
 use io_uring::types::Fd;
 
+use crate::op::DetachSafe;
+
 use super::Operation;
 
 pub struct Fsync {
@@ -14,6 +16,8 @@ impl Fsync {
     Self { fd }
   }
 }
+
+unsafe impl DetachSafe for Fsync {}
 
 impl Operation for Fsync {
   impl_result!(());

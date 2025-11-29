@@ -1,3 +1,4 @@
+use crate::op::DetachSafe;
 #[cfg(not(linux))]
 use std::io::ErrorKind;
 use std::time::Duration;
@@ -13,6 +14,9 @@ use super::Operation;
 pub struct Timeout {
   timespec: Timespec,
 }
+
+// wtf are you doing waiting and then not waiting??
+unsafe impl DetachSafe for Timeout {}
 
 impl Timeout {
   pub(crate) fn new(duration: Duration) -> Self {

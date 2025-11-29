@@ -1,3 +1,4 @@
+#![cfg(feature = "high")]
 /// write in append mode is not tested since `pwrite` doesn't support it.
 mod common;
 

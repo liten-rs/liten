@@ -3,9 +3,9 @@ use std::{io, os::fd::RawFd};
 #[cfg(linux)]
 use io_uring::types::Fd;
 
-use crate::BufResult;
 #[cfg(not(linux))]
 use crate::op::EventType;
+use crate::{BufResult, op::DetachSafe};
 
 use super::Operation;
 
@@ -14,6 +14,8 @@ pub struct Recv {
   buf: Option<Vec<u8>>,
   flags: i32,
 }
+
+unsafe impl DetachSafe for Recv {}
 
 impl Recv {
   pub(crate) fn new(fd: RawFd, buf: Vec<u8>, flags: Option<i32>) -> Self {

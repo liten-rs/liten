@@ -1,3 +1,4 @@
+#![cfg(feature = "high")]
 use lio::{accept, bind, connect, listen, recv, send, socket};
 use proptest::prelude::*;
 use socket2::{Domain, Protocol, Type};

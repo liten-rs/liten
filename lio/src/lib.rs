@@ -1,119 +1,70 @@
 //! # Lio - Platform-Independent Async I/O Library
 //!
-//! Lio is a high-performance, platform-independent async I/O library that provides
-//! native support for the most efficient I/O mechanisms on each platform:
-//!
-//! - **Linux**: Uses [io_uring](https://man7.org/linux/man-pages/man7/io_uring.7.html) for maximum performance
-//! - **Windows**: Uses [IOCP](https://docs.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports) (I/O Completion Ports)
-//! - **macOS**: Uses [kqueue](https://man.openbsd.org/kqueue.2) for event notification
+//! Lio is a high-performance, platform-independent async I/O library that uses
+//! the most efficient IO for each platform.
 //!
 //! ## Features
+//! - **Zero-copy operations** where possible.
+//! - **Automatic fallback** to blocking operations when async isn't supported.
+//! - **Manual control** with high level async API.
 //!
-//! - **Zero-copy operations** where possible
-//! - **Async/await support** with standard Rust futures
-//! - **Platform-specific optimizations** automatically selected
-//! - **File I/O operations**: read, write, open, close, truncate
-//! - **Network operations**: socket, bind, listen, accept, connect, send, recv
-//! - **Automatic fallback** to blocking operations when async isn't supported
+//! *Note:* This is a quite low-level library. This library creates os resources
+//! (fd's) which it doesn't cleanup automatically.
 //!
-//! ## **NOTE**
-//! Currently this library is a bit finicky ([`libc::accept`] especially) on linux machines that doesn't support
-//! io-uring operations, like wsl2. If anyone has a good idea of api design and detecting io-uring support on linux,
-//! please file an issue.
+//! ## Platform support
 //!
-//! This problem arises when the library checks for the specific operation support, if yes
-//! everything works. If no, it will call the blocking normal syscall. With accept, that means
-//! blocking in a future which is really bad.
+//! | Platform   | I/O Mechanism            | Status                  |
+//! |------------|--------------------------|-------------------------|
+//! | Linux      | io_uring                 | Yes                     |
+//! | Windows    | IOCP                     | Not supported (planned) |
+//! | macOS      | kqueue                   | Yes                     |
+//! | Other Unix | poll/epoll/event ports   | Yes                     |
+//!
 //!
 //! ## Quick Start
 //!
 //! ```rust
-//! use lio::{read, write, close};
+//! # #![cfg(feature = "high")]
 //! use std::os::fd::RawFd;
+//!
+//! fn handle_result(result: std::io::Result<i32>, buf: Vec<u8>) {
+//!   println!("result: {result:?}, buf: {buf:?}");
+//! }
 //!
 //! async fn example() -> std::io::Result<()> {
 //!     let fd: RawFd = 1; // stdout
 //!     let data = b"Hello, World!\n".to_vec();
-//!     
-//!     // Async write operation
-//!     let (result, _buf) = write(fd, data, 0).await;
-//!     println!("Wrote {} bytes", result?);
-//!     
+//!
+//!     // Async API (on "high" feature flag).
+//!     let (result, buf) = lio::write(fd, data.clone(), 0).await;
+//!     handle_result(result, buf);
+//!
+//!     // Channel API (on "high" feature flag).
+//!     let receiver: oneshot::Receiver<(std::io::Result<i32>, Vec<u8>)> = lio::write(fd, data.clone(), 0).get_receiver();
+//!     let (result, buf) = receiver.recv().unwrap();
+//!     handle_result(result, buf);
+//!
+//!     // Callback API.
+//!     lio::write(fd, data.clone(), 0).when_done(|(result, buf)| {
+//!       handle_result(result, buf);
+//!     });
+//!
 //!     Ok(())
 //! }
 //! ```
 //!
-//! ## Architecture
-//!
-//! The library automatically selects the most efficient I/O mechanism:
-//!
-//! - On Linux with io_uring support, operations are submitted to the kernel's submission queue
-//! - On other platforms, operations use polling-based async I/O with automatic fallback to blocking
-//! - All operations return `OperationProgress<T>` which implements `Future<Output = io::Result<[different based on operation]>>`
-//!
-//! ## Platform Support
-//!
-//! | Platform | I/O Mechanism | Status |
-//! |----------|---------------|---------|
-//! | Linux    | io_uring      | ✅ Async IO support |
-//! | Windows  | IOCP          | ✅ Full support |
-//! | macOS    | kqueue        | ✅ event notification (kqueue) |
-//! | Other Unix | poll/epoll   | ✅ event notification (epoll/poll/event ports) |
-//!
-//! ## Examples
-//!
-//! ### File I/O
-//!
-//! ```rust
-//! use std::ffi::CString;
-//!
-//! async fn file_operations() -> std::io::Result<()> {
-//!     let path = CString::new("/tmp/test.txt").unwrap();
-//!     let fd = lio::openat(libc::AT_FDCWD, path, libc::O_CREAT | libc::O_WRONLY).await?;
-//!     
-//!     let data = b"Hello, async I/O!".to_vec();
-//!     let (result_bytes_written, _buf) = lio::write(fd, data, 0).await;
-//!
-//!     let _ = result_bytes_written?;
-//!     
-//!     lio::close(fd).await?;
-//!     Ok(())
-//! }
-//! ```
-//!
-//! ### Network I/O
-//!
-//! ```rust
-//! use socket2::{Domain, Type, Protocol};
-//!
-//! async fn network_operations() -> std::io::Result<()> {
-//!     let sock = lio::socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).await?;
-//!     let addr = "127.0.0.1:8080".parse::<std::net::SocketAddr>().unwrap();
-//!     
-//!     lio::bind(sock, addr).await?;
-//!     lio::listen(sock, 128).await?;
-//!     
-//!     // Accept connections...
-//!     Ok(())
-//! }
-//! ```
+//! **Note**: Only one of these API's can be used for one operation.
 //!
 //! ## Safety and Threading
 //!
-//! - All operations are safe and follow Rust's memory safety guarantees
-//! - The library automatically handles thread management for background I/O processing
+//! - The library handles thread management for background I/O processing
 //! - Operations can be safely used across different threads
-//! - Proper cleanup is guaranteed through Rust's drop semantics
 //!
 //! ## Error Handling
 //!
-//! All operations return `std::io::Result<T>` or `BufResult<T, B>` for operations
+//! All operations return [`std::io::Result`] or [`BufResult`] for operations
 //! that return buffers. Errors are automatically converted from platform-specific
 //! error codes to Rust's standard I/O error types.
-//!
-//! ## License
-//!
-//! This project is licensed under the MIT License - see the LICENSE file for details.
 
 use std::{
   ffi::{CString, NulError},
@@ -125,6 +76,8 @@ use std::{
 ///
 /// This is commonly used for read/write operations where the buffer
 /// is returned along with the operation result.
+///
+/// Example: See [`lio::read`](crate::read).
 pub type BufResult<T, B> = (std::io::Result<T>, B);
 
 #[macro_use]
@@ -134,8 +87,6 @@ mod driver;
 
 pub mod op;
 use op::*;
-// #[doc(inline)]
-// pub use op::*;
 
 mod op_progress;
 mod op_registration;
@@ -146,50 +97,94 @@ use crate::driver::Driver;
 use std::path::Path;
 
 macro_rules! impl_op {
+  // Internal helper: Generate function with common documentation
+  (@impl_fn
+    { $desc:expr, $operation:ident, $name:ident, [$($arg:ident : $arg_ty:ty),*], $ret:ty }
+    $( #[$($doc:tt)*] )*
+    { $($body:tt)* }
+  ) => {
+    #[doc = $desc]
+    #[doc = "# Returns"]
+    #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
+    #[doc = "This function signature is equivalent to:"]
+    #[doc = concat!("```ignore\nasync fn ",stringify!($name), "(", stringify!($($arg_ty),*), ") -> ", stringify!($ret), "\n```")]
+    #[doc = "# Behavior"]
+    #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
+    #[doc = "\n\nSee more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
+    $( #[$($doc)*] )*
+    $($body)*
+  };
+
+  // !detach variant with error type
   (
-    $desc:tt,
+    !detach $desc:tt,
+    $(#[$($doc:tt)*])*
+    $operation:ident, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty ; $err:ty
+  ) => {
+    impl_op!(
+      concat!($desc, "\n\n**Not detach safe**\n: This method can be dangerous to call when_done on. It is not `detach safe' which means that resources will not be cleaned up if not handled carefully."),
+      $(#[$($doc)*])*
+      $operation,
+      fn $name($($arg: $arg_ty),*) -> $ret:ty ; $err:ty
+    );
+  };
+
+  // !detach variant without error type
+  (
+    !detach $desc:tt,
+    $(#[$($doc:tt)*])*
+    $operation:ident, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty
+  ) => {
+    impl_op!(
+      concat!($desc, "\n\n**Not detach safe**\n: This method can be dangerous to call when_done on. It is not `detach safe` which means that resources will not be cleaned up if not handled carefully."),
+      $(#[$($doc)*])*
+      $operation,
+      fn $name($($arg: $arg_ty),*) -> $ret
+    );
+  };
+
+  // With error type - fallible constructor
+  (
+    $desc:expr,
     $(#[$($doc:tt)*])*
     $operation:ident, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty ; $err:ty
   ) => {
     use op::$operation;
 
-    #[doc = $desc]
-    #[doc = "# Returns"]
-    #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
-    #[doc = "This function signature is equivalent to:"]
-    #[doc = concat!("```ignore\nasync fn ",stringify!($name), "(", stringify!($($arg: $arg_ty),*), ") -> ", stringify!($ret), "\n```")]
-    #[doc = "# Behavior"]
-    #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
-    #[doc = "\n\nSee more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
-    $(#[$($doc)*])*
-    pub fn $name($($arg: $arg_ty),*) -> Result<OperationProgress<$operation>, $err> {
-      Ok(Driver::submit($operation::new($($arg),*)?))
-    }
+    impl_op!(@impl_fn
+      { $desc, $operation, $name, [$($arg : $arg_ty),*], $ret }
+      $( #[$($doc)*] )*
+      {
+        pub fn $name($($arg: $arg_ty),*) -> Result<OperationProgress<$operation>, $err> {
+          Ok(Driver::submit($operation::new($($arg),*)?))
+        }
+      }
+    );
   };
+
+  // Without error type - infallible constructor
   (
-    $desc:tt,
+    $desc:expr,
     $(#[$($doc:tt)*])*
     $operation:ident, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty
   ) => {
-    #[doc = $desc]
-    #[doc = "# Returns"]
-    #[doc = concat!("This function returns `OperationProgress<", stringify!($operation), ">`.")]
-    #[doc = "This function signature is equivalent to:"]
-    #[doc = concat!("```ignore\nasync fn ",stringify!($name), "(", stringify!($($arg: $arg_ty),*), ") -> ", stringify!($ret), "\n```")]
-    #[doc = "# Behavior"]
-    #[doc = "As soon as this function is called, the operation is submitted into the io-driver used by the current platform (for example io-uring). If the user then chooses to drop [`OperationProgress`] before the [`Future`] is ready, the operation will **NOT** tried be cancelled, but instead \"detached\"."]
-    #[doc = "\n\nSee more [what methods are available to the return type](crate::OperationProgress#impl-OperationProgress<T>)."]
-    $(#[$($doc)*])*
-    pub fn $name($($arg: $arg_ty),*) -> OperationProgress<$operation> {
-      Driver::submit($operation::new($($arg),*))
-    }
+    impl_op!(@impl_fn
+      { $desc, $operation, $name, [$($arg : $arg_ty),*], $ret }
+      $( #[$($doc)*] )*
+      {
+        pub fn $name($($arg: $arg_ty),*) -> OperationProgress<$operation> {
+          Driver::submit($operation::new($($arg),*))
+        }
+      }
+    );
   };
 
+  // Convenience: no description provided
   (
     $(#[$($doc:tt)*])*
     $operation:ty, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty
   ) => {
-      impl_op!("", $(#[$($doc)*])* $operation, fn $name($($arg: $arg_ty),*) -> $ret);
+    impl_op!("", $(#[$($doc)*])* $operation, fn $name($($arg: $arg_ty),*) -> $ret);
   };
 }
 
@@ -197,142 +192,143 @@ macro_rules! impl_op {
 use std::time::Duration;
 
 impl_op!(
-    "Shuts socket down.",
-    /// # Examples
-    ///
-    /// ```rust
-    /// async fn write_example() -> std::io::Result<()> {
-    ///     let socket = lio::socket(socket2::Domain::IPV4, socket2::Type::STREAM, None).await?;
-    ///     let how = 0;
-    ///     lio::shutdown(socket, how).await?;
-    ///     Ok(())
-    /// }
-    /// ```
-    Shutdown, fn shutdown(fd: RawFd, how: i32) -> io::Result<()>
+ "Shuts socket down.",
+ /// # Examples
+ ///
+ /// ```rust
+ /// async fn write_example() -> std::io::Result<()> {
+ ///     let socket = lio::socket(socket2::Domain::IPV4, socket2::Type::STREAM, None).await?;
+ ///     let how = 0;
+ ///     lio::shutdown(socket, how).await?;
+ ///     Ok(())
+ /// }
+ /// ```
+ Shutdown, fn shutdown(fd: RawFd, how: i32) -> io::Result<()>
 );
 
 #[cfg(linux)]
 impl_op!(
-    "Times out something",
-    /// # Examples
-    ///
-    /// ```rust
-    /// use lio::timeout;
-    /// use std::{time::Duration, os::fd::RawFd};
-    ///
-    /// async fn write_example() -> std::io::Result<()> {
-    ///     timeout(Duration::from_millis(10)).await?;
-    ///     Ok(())
-    /// }
-    /// ```
-    Timeout, fn timeout(duration: Duration) -> BufResult<i32, Vec<u8>>
+  "Times out something",
+  /// # Examples
+  ///
+  /// ```rust
+  /// use lio::timeout;
+  /// use std::{time::Duration, os::fd::RawFd};
+  ///
+  /// async fn write_example() -> std::io::Result<()> {
+  ///     timeout(Duration::from_millis(10)).await?;
+  ///     Ok(())
+  /// }
+  /// ```
+  Timeout, fn timeout(duration: Duration) -> BufResult<i32, Vec<u8>>
 );
 
 impl_op!(
-    "Create a soft-link",
-    /// # Examples
-    ///
-    /// ```rust
-    /// async fn write_example() -> std::io::Result<()> {
-    ///     # let fd = 0;
-    ///     // todo
-    // ///     let (bytes_written, _buf) = lio::symlinkat(fd).await?;
-    ///     Ok(())
-    /// }
-    /// ```
-    SymlinkAt, fn symlinkat(new_dir_fd: RawFd, target: impl AsRef<Path>, linkpath: impl AsRef<Path>) -> io::Result<()> ; NulError
+  "Create a soft-link",
+  /// # Examples
+  ///
+  /// ```rust
+  /// async fn write_example() -> std::io::Result<()> {
+  ///     # let fd = 0;
+  ///     // todo
+  // ///     let (bytes_written, _buf) = lio::symlinkat(fd).await?;
+  ///     Ok(())
+  /// }
+  /// ```
+  SymlinkAt, fn symlinkat(new_dir_fd: RawFd, target: impl AsRef<Path>, linkpath: impl AsRef<Path>) -> io::Result<()> ; NulError
 );
 
 impl_op!(
-    "Create a hard-link",
-    /// # Examples
-    ///
-    /// ```rust
-    /// async fn write_example() -> std::io::Result<()> {
-    ///     # let fd = 0;
-    ///       // todo
-    // ///     let (bytes_written, _buf) = lio::linkat(fd)?.await?;
-    ///     Ok(())
-    /// }
-    /// ```
-    LinkAt, fn linkat(old_dir_fd: RawFd, old_path: impl AsRef<Path>, new_dir_fd: RawFd, new_path: impl AsRef<Path>) -> io::Result<()> ; NulError
+  "Create a hard-link",
+  /// # Examples
+  ///
+  /// ```rust
+  /// async fn write_example() -> std::io::Result<()> {
+  ///     # let fd = 0;
+  ///       // todo
+  // ///     let (bytes_written, _buf) = lio::linkat(fd)?.await?;
+  ///     Ok(())
+  /// }
+  /// ```
+  LinkAt, fn linkat(old_dir_fd: RawFd, old_path: impl AsRef<Path>, new_dir_fd: RawFd, new_path: impl AsRef<Path>) -> io::Result<()> ; NulError
 );
 
 impl_op!(
-    "Sync to fd.",
-    /// # Examples
-    ///
-    /// ```rust
-    /// async fn write_example() -> std::io::Result<()> {
-    ///     # let fd = 0;
-    ///     lio::fsync(fd).await?;
-    ///     Ok(())
-    /// }
-    /// ```
-    Fsync, fn fsync(fd: RawFd) -> io::Result<()>
+  "Sync to fd.",
+  /// # Examples
+  ///
+  /// ```rust
+  /// async fn write_example() -> std::io::Result<()> {
+  ///     # let fd = 0;
+  ///     lio::fsync(fd).await?;
+  ///     Ok(())
+  /// }
+  /// ```
+  Fsync, fn fsync(fd: RawFd) -> io::Result<()>
 );
 
 impl_op!(
-    "Performs a write operation on a file descriptor. Equivalent to the `pwrite` syscall.",
-    /// # Examples
-    ///
-    /// ```rust
-    /// async fn write_example() -> std::io::Result<()> {
-    ///     # let fd = 0;
-    ///     let data = b"Hello, World!".to_vec();
-    ///     let (result_bytes_written, _buf) = lio::write(fd, data, 0).await;
-    ///     println!("Wrote {} bytes", result_bytes_written?);
-    ///     Ok(())
-    /// }
-    /// ```
-    Write, fn write(fd: RawFd, buf: Vec<u8>, offset: i64) -> BufResult<i32, Vec<u8>>
+  "Performs a write operation on a file descriptor. Equivalent to the `pwrite` syscall.",
+  /// # Examples
+  ///
+  /// ```rust
+  /// async fn write_example() -> std::io::Result<()> {
+  ///     # let fd = 0;
+  ///     let data = b"Hello, World!".to_vec();
+  ///     let (result_bytes_written, _buf) = lio::write(fd, data, 0).await;
+  ///     println!("Wrote {} bytes", result_bytes_written?);
+  ///     Ok(())
+  /// }
+  /// ```
+  Write, fn write(fd: RawFd, buf: Vec<u8>, offset: i64) -> BufResult<i32, Vec<u8>>
 );
 
 impl_op!(
-    "Performs a read operation on a file descriptor. Equivalent of the `pread` syscall.",
-    /// # Examples
-    ///
-    /// ```rust
-    /// async fn read_example() -> std::io::Result<()> {
-    ///     # let fd = 0;
-    ///     let mut buffer = vec![0u8; 1024];
-    ///     let (res_bytes_read, buf) = lio::read(fd, buffer, 0).await;
-    ///     let bytes_read = res_bytes_read?;
-    ///     println!("Read {} bytes: {:?}", bytes_read, &buf[..bytes_read as usize]);
-    ///     Ok(())
-    /// }
-    /// ```
-    Read, fn read(fd: RawFd, mem: Vec<u8>, offset: i64) -> BufResult<i32, Vec<u8>>
+  "Performs a read operation on a file descriptor. Equivalent of the `pread` syscall.",
+  /// # Examples
+  ///
+  /// ```rust
+  /// async fn read_example() -> std::io::Result<()> {
+  ///     # let fd = 0;
+  ///     let mut buffer = vec![0u8; 1024];
+  ///     let (res_bytes_read, buf) = lio::read(fd, buffer, 0).await;
+  ///     let bytes_read = res_bytes_read?;
+  ///     println!("Read {} bytes: {:?}", bytes_read, &buf[..bytes_read as usize]);
+  ///     Ok(())
+  /// }
+  /// ```
+  Read, fn read(fd: RawFd, mem: Vec<u8>, offset: i64) -> BufResult<i32, Vec<u8>>
 );
 
 impl_op!(
-    "Truncates a file to a specified length.",
-    /// # Examples
-    ///
-    /// ```rust
-    /// async fn truncate_example() -> std::io::Result<()> {
-    ///     # let fd = 0;
-    ///     lio::truncate(fd, 1024).await?; // Truncate to 1KB
-    ///     Ok(())
-    /// }
-    /// ```
-    Truncate, fn truncate(fd: RawFd, len: u64) -> std::io::Result<()>
+  "Truncates a file to a specified length.",
+  /// # Examples
+  ///
+  /// ```rust
+  /// async fn truncate_example() -> std::io::Result<()> {
+  ///     # let fd = 0;
+  ///     lio::truncate(fd, 1024).await?; // Truncate to 1KB
+  ///     Ok(())
+  /// }
+  /// ```
+  Truncate, fn truncate(fd: RawFd, len: u64) -> std::io::Result<()>
 );
 
 impl_op!(
-    "Creates a new socket with the specified domain, type, and protocol.",
-    /// # Examples
-    ///
-    /// ```rust
-    /// use socket2::{Domain, Type, Protocol};
-    ///
-    /// async fn socket_example() -> std::io::Result<()> {
-    ///     let sock = lio::socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).await?;
-    ///     println!("Created socket with fd: {}", sock);
-    ///     Ok(())
-    /// }
-    /// ```
-    Socket, fn socket(domain: socket2::Domain, ty: socket2::Type, proto: Option<socket2::Protocol>) -> std::io::Result<i32>
+  !detach
+  "Creates a new socket with the specified domain, type, and protocol.",
+  /// # Examples
+  ///
+  /// ```rust
+  /// use socket2::{Domain, Type, Protocol};
+  ///
+  /// async fn socket_example() -> std::io::Result<()> {
+  ///     let sock = lio::socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).await?;
+  ///     println!("Created socket with fd: {}", sock);
+  ///     Ok(())
+  /// }
+  /// ```
+  Socket, fn socket(domain: socket2::Domain, ty: socket2::Type, proto: Option<socket2::Protocol>) -> std::io::Result<i32>
 );
 
 impl_op!(

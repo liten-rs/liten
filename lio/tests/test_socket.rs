@@ -1,3 +1,4 @@
+#![cfg(feature = "high")]
 use lio::socket;
 use socket2::{Domain, Protocol, Type};
 

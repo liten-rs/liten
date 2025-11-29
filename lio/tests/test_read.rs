@@ -1,3 +1,4 @@
+#![cfg(feature = "high")]
 mod common;
 
 use lio::read;

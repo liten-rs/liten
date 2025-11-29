@@ -65,6 +65,9 @@ pub use write::*;
 trait Sealed {}
 impl<O: Operation> Sealed for O {}
 
+#[allow(private_bounds)]
+pub unsafe trait DetachSafe: Sealed {}
+
 // Things that implement this trait represent a command that can be executed using io-uring.
 #[allow(private_bounds)]
 pub trait Operation: Sealed {

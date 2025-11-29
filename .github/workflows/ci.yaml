@@ -3,12 +3,13 @@ name: CI
 on:
   push:
     branches: [ "main" ]
+  pull_request:
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check-fmt-n-doc:
+  check-fmt:
     name: Check fmt
     runs-on: ubuntu-latest
     steps:
@@ -28,9 +29,9 @@ jobs:
       - name: Check format
         run: nix develop .#ci -c cargo fmt --check
 
-  clippy-n-flags:
+  clippy:
     runs-on: ubuntu-latest
-    name: Clippy n Flags
+    name: Clippy
     steps:
       - uses: actions/checkout@v6
 
@@ -47,10 +48,6 @@ jobs:
 
       - name: Check format
         run: nix develop .#ci -c cargo clippy
-
-      - name: Check flags
-        # Hmmm not sure if I should put this into the matrix.
-        run: nix develop .#ci -c cargo hack check --feature-powerset --lib --tests
 
   build-test:
     name: Build and test
@@ -81,6 +78,9 @@ jobs:
       - name: Run tests
         run: nix develop .#ci -c cargo nextest r
 
+      - name: Check flags
+        # Hmmm not sure if I should put this into the matrix.
+        run: nix develop .#ci -c cargo hack check --feature-powerset --lib --tests
 
   nix-flake-check:
     runs-on: ubuntu-latest

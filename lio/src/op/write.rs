@@ -1,5 +1,5 @@
 use super::Operation;
-use crate::BufResult;
+use crate::{BufResult, op::DetachSafe};
 
 #[cfg(not(linux))]
 use crate::op::EventType;
@@ -14,6 +14,8 @@ pub struct Write {
   buf: Option<Vec<u8>>,
   offset: i64,
 }
+
+unsafe impl DetachSafe for Write {}
 
 impl Write {
   pub(crate) fn new(fd: RawFd, buf: Vec<u8>, offset: i64) -> Write {

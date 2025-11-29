@@ -6,6 +6,7 @@ use crate::op::EventType;
 
 use super::Operation;
 
+// Not detach safe.
 pub struct Socket {
   domain: socket2::Domain,
   ty: socket2::Type,

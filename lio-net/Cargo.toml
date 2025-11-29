@@ -1,0 +1,10 @@
+[package]
+name = "lio-net"
+version = "0.1.0"
+edition = "2024"
+description = "reserved name"
+license = "MIT"
+
+[dependencies]
+lio = { path = "../lio", version = "0.1.1", features = ["high"] }
+socket2 = "0.6.1"

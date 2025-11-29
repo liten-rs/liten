@@ -6,6 +6,7 @@ use io_uring::types::Fd;
 
 use super::Operation;
 
+// TODO: not sure detach safe.
 pub struct Tee {
   fd_in: RawFd,
   fd_out: RawFd,

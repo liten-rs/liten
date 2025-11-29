@@ -3,11 +3,15 @@ use std::os::fd::RawFd;
 #[cfg(linux)]
 use io_uring::{opcode, types::Fd};
 
+use crate::op::DetachSafe;
+
 use super::Operation;
 
 pub struct Close {
   fd: RawFd,
 }
+
+unsafe impl DetachSafe for Close {}
 
 impl Close {
   pub(crate) fn new(fd: RawFd) -> Self {

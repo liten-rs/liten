@@ -3,6 +3,8 @@ use std::{io, os::fd::RawFd};
 #[cfg(linux)]
 use io_uring::types::Fd;
 
+use crate::op::DetachSafe;
+
 use super::Operation;
 
 pub struct Shutdown {
@@ -15,6 +17,8 @@ impl Shutdown {
     Self { fd, how }
   }
 }
+
+unsafe impl DetachSafe for Shutdown {}
 
 impl Operation for Shutdown {
   impl_result!(());
