@@ -34,14 +34,7 @@ impl Operation for Shutdown {
   // NOTE: Not sure here, kqueue can prob be used with flags.
   impl_no_readyness!();
 
-  // #[cfg(not(linux))]
-  // const EVENT_TYPE: Option<EventType> = Some(EventType::Write);
-  //
-  // #[cfg(not(linux))]
-  // fn fd(&self) -> Option<RawFd> {
-  //   Some(self.fd)
-  // }
-
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> io::Result<i32> {
     syscall!(shutdown(self.fd, self.how)).map(|t| t as i32)
   }

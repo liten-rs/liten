@@ -39,6 +39,7 @@ impl Operation for OpenAt {
       .flags(self.flags)
       .build()
   }
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> std::io::Result<i32> {
     syscall!(openat(self.fd, self.pathname.as_ptr(), self.flags))
   }

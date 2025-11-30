@@ -53,6 +53,7 @@ impl Operation for Recv {
     Some(self.fd)
   }
 
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> io::Result<i32> {
     let buf = self.buf.as_ref().unwrap();
     syscall!(recv(self.fd, buf.as_ptr() as *mut _, buf.len(), self.flags))

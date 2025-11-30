@@ -45,6 +45,7 @@ impl Operation for Read {
 
   impl_no_readyness!();
 
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> io::Result<i32> {
     let buf = self.buf.as_ref().unwrap();
     syscall!(pread(self.fd, buf.as_ptr() as *mut _, buf.len(), self.offset))

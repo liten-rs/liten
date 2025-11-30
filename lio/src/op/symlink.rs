@@ -61,6 +61,7 @@ impl Operation for SymlinkAt {
     .build()
   }
 
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> std::io::Result<i32> {
     syscall!(symlinkat(self.target.as_ptr(), self.fd, self.linkpath.as_ptr()))
   }

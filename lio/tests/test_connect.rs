@@ -3,6 +3,7 @@ use lio::{bind, connect, listen, socket};
 use socket2::{Domain, Protocol, Type};
 use std::mem::MaybeUninit;
 use std::net::SocketAddr;
+use tracing::Level;
 
 #[test]
 fn test_connect_basic() {
@@ -183,6 +184,7 @@ fn test_connect_multiple_clients() {
 
 #[test]
 fn test_connect_already_connected() {
+  tracing_subscriber::fmt().with_max_level(Level::TRACE).init();
   liten::block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
       .await
@@ -219,7 +221,7 @@ fn test_connect_already_connected() {
     let result = connect(client_sock, bound_addr).await;
 
     // Should fail with already connected
-    assert!(result.is_err(), "Second connect should fail");
+    assert!(result.is_err(), "Second connect should fail: err {result:#?}");
 
     unsafe {
       libc::close(client_sock);

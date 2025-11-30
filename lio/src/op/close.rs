@@ -32,6 +32,7 @@ impl Operation for Close {
 
   impl_no_readyness!();
 
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> std::io::Result<i32> {
     syscall!(close(self.fd))
   }

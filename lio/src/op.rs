@@ -73,6 +73,9 @@ pub unsafe trait DetachSafe: Sealed {}
 pub trait Operation: Sealed {
   type Output: Sized;
   type Result; // = most often io::Result<Self::Output>;
+  /// This is guarranteed to fire after this has completed and only fire ONCE.
+  /// i32 is guarranteed to be >= 0.
+  fn result(&mut self, _ret: io::Result<i32>) -> Self::Result;
 
   #[cfg(linux)]
   const OPCODE: u8;
@@ -86,17 +89,20 @@ pub trait Operation: Sealed {
   fn create_entry(&mut self) -> io_uring::squeue::Entry;
 
   #[cfg(not(linux))]
-  const EVENT_TYPE: Option<EventType>;
+  const IS_CONNECT: bool = false;
+
+  #[cfg(not(linux))]
+  const EVENT_TYPE: Option<EventType> = None;
 
   #[cfg(not(linux))]
   fn fd(&self) -> Option<RawFd>;
 
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> io::Result<i32>;
-  /// This is guarranteed to fire after this has completed and only fire ONCE.
-  /// i32 is guarranteed to be >= 0.
-  fn result(&mut self, _ret: io::Result<i32>) -> Self::Result;
 }
 
+#[cfg(not(linux))]
+#[derive(Debug)]
 pub enum EventType {
   Read,
   Write,

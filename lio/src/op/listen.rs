@@ -33,6 +33,7 @@ impl Operation for Listen {
     io_uring::opcode::Listen::new(Fd(self.fd), self.backlog).build()
   }
 
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> std::io::Result<i32> {
     syscall!(listen(self.fd, self.backlog))
   }

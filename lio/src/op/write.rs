@@ -47,6 +47,7 @@ impl Operation for Write {
     None
   }
 
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> std::io::Result<i32> {
     syscall!(pwrite(
       self.fd,
@@ -56,6 +57,7 @@ impl Operation for Write {
     ))
     .map(|u| u as i32)
   }
+
   fn result(&mut self, _ret: std::io::Result<i32>) -> Self::Result {
     let buf = self.buf.take().expect("ran Recv::result more than once.");
 

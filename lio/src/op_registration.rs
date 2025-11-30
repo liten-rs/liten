@@ -1,106 +1,270 @@
 // NOTE: OpRegistration should **NEVER** impl Sync.gg
-use std::task::Waker;
+use std::{io, task::Waker};
 
 #[cfg(not(linux))]
 use std::os::fd::RawFd;
 
+use crate::op::Operation;
+
 pub struct OpCallback {
-  pub callback: *const (),
-  pub call_callback_fn: fn(*const (), *const (), i32),
+  callback: *const (),
+  call_callback_fn: fn(*const (), &mut OpRegistration),
+}
+//
+impl OpCallback {
+  pub fn new<T, F>(callback: F) -> Self
+  where
+    T: Operation,
+    F: FnOnce(T::Result) + Send,
+  {
+    OpCallback {
+      callback: Box::into_raw(Box::new(callback)) as *const (),
+      call_callback_fn: Self::call_callback::<T, F>,
+    }
+  }
+
+  pub fn call(self, reg: &mut OpRegistration) {
+    (self.call_callback_fn)(self.callback, reg);
+  }
+
+  fn call_callback<T, F>(callback_ptr: *const (), reg: &mut OpRegistration)
+  where
+    T: Operation,
+    F: FnOnce(T::Result),
+  {
+    // SAFETY: We created this pointer with Box::into_raw from a Box<dyn FnOnce(T::Result) + Send>
+    let callback = unsafe { Box::from_raw(callback_ptr as *mut F) };
+
+    match reg.try_extract::<T>() {
+      TryExtractOutcome::HasCancelled => {
+        println!("cancelling");
+      }
+      TryExtractOutcome::StillWaiting => panic!("wtf??"),
+      TryExtractOutcome::Done(res) => callback(res),
+    };
+  }
 }
 
 unsafe impl Send for OpCallback {}
 
 pub struct OpRegistration {
-  #[cfg(linux)]
-  pub status: OpRegistrationStatus,
+  status: OpRegistrationStatus,
 
   // Fields common to both platforms
-  pub op: *const (),
-  pub drop_fn: fn(*const ()), // Function to properly drop the operation
-  pub callback: Option<OpCallback>,
+  op: Option<*const ()>,
+  op_fn_drop: fn(*const ()), // Function to properly drop the operation
+  #[cfg(not(linux))]
+  op_fn_run_blocking: fn(*const ()) -> std::io::Result<i32>, // Function to properly drop the operation
 
   #[cfg(not(linux))]
-  registered_waker: Option<Waker>,
-  #[cfg(not(linux))]
-  pub(crate) fd: RawFd,
+  fd: RawFd,
+}
+
+impl Drop for OpRegistration {
+  fn drop(&mut self) {
+    if let Some(operation) = self.op {
+      (self.op_fn_drop)(operation);
+    }
+  }
 }
 
 unsafe impl Send for OpRegistration {}
 
-#[cfg(linux)]
 pub enum OpRegistrationStatus {
   Waiting {
-    registered_waker: Option<Waker>,
+    notifier: Option<OpNotification>,
   },
   /// This operation is not tied to any entity waiting for it, either because they got dropped or
   /// because they weren't interested in the result.
   Cancelling,
   Done {
     // TODO: wtf
-    #[cfg_attr(not(feature = "high"), allow(unused))]
-    ret: i32,
+    // #[cfg_attr(not(feature = "high"), allow(unused))]
+    ret: Option<io::Result<i32>>,
   },
 }
 
-#[cfg(linux)]
-impl OpRegistration {
-  pub fn new<T>(op: Box<T>) -> Self {
-    fn drop_op<T>(ptr: *const ()) {
-      drop(unsafe { Box::from_raw(ptr as *mut T) })
-    }
+// Option's is for ownership rules.
+pub enum OpNotification {
+  #[cfg(feature = "high")]
+  Waker(Option<Waker>),
+  Callback(Option<OpCallback>),
+}
 
-    OpRegistration {
-      op: Box::into_raw(op) as *const (),
-      status: OpRegistrationStatus::Waiting { registered_waker: None },
-      drop_fn: drop_op::<T>,
-      callback: None,
+pub enum ExtractedOpNotification {
+  #[cfg(feature = "high")]
+  Waker(Waker),
+  Callback(OpCallback),
+}
+
+impl OpNotification {
+  fn extract_notification(&mut self) -> Option<ExtractedOpNotification> {
+    match self {
+      #[cfg(feature = "high")]
+      OpNotification::Waker(waker) => {
+        let waker = waker
+          .take()
+          .expect("Tried to call wake on non-registered waker registration");
+        #[cfg(feature = "tracing")]
+        tracing::debug!("background thread: waker woken");
+        Some(ExtractedOpNotification::Waker(waker))
+      }
+      OpNotification::Callback(call) => {
+        #[cfg(feature = "tracing")]
+        tracing::debug!("background thread: callback called");
+        let callback = call
+          .take()
+          .expect("Tried to call callback on non-registered fn registration");
+
+        Some(ExtractedOpNotification::Callback(callback))
+      }
     }
   }
 }
 
-#[cfg(not(linux))]
-impl OpRegistration {
-  pub fn new<T>(op: Box<T>, fd: RawFd) -> Self {
-    assert!(fd != 0);
+pub enum TryExtractOutcome<T = io::Result<i32>> {
+  Done(T),
+  StillWaiting,
+  HasCancelled,
+}
 
+impl OpRegistration {
+  fn op_ptr(&self) -> *const () {
+    self.op.expect("trying to run run_blocking after result")
+  }
+  #[cfg(not(linux))]
+  pub(crate) fn fd(&self) -> RawFd {
+    self.fd
+  }
+
+  pub fn new<T>(op: Box<T>, #[cfg(not(linux))] fd: RawFd) -> Self
+  where
+    T: Operation,
+  {
     fn drop_op<T>(ptr: *const ()) {
       drop(unsafe { Box::from_raw(ptr as *mut T) })
     }
 
+    #[cfg(not(linux))]
+    fn op_fn_run_blocking<T>(ptr: *const ()) -> std::io::Result<i32>
+    where
+      T: Operation,
+    {
+      let op: &T = unsafe { &*(ptr as *const T) };
+      op.run_blocking()
+    }
+
     OpRegistration {
-      op: Box::into_raw(op) as *const (),
-      drop_fn: drop_op::<T>,
-      callback: None,
-      registered_waker: None,
+      op: Some(Box::into_raw(op) as *const ()),
+      op_fn_drop: drop_op::<T>,
+      #[cfg(not(linux))]
+      op_fn_run_blocking: op_fn_run_blocking::<T>,
+      status: OpRegistrationStatus::Waiting { notifier: None },
+      #[cfg(not(linux))]
       fd,
     }
   }
 
-  pub fn waker(&mut self) -> Option<Waker> {
-    self.registered_waker.take()
+  #[cfg(not(linux))]
+  pub fn run_blocking(&mut self) -> io::Result<i32> {
+    (self.op_fn_run_blocking)(self.op_ptr())
+  }
+
+  pub fn try_extract<T>(&mut self) -> TryExtractOutcome<T::Result>
+  where
+    T: Operation,
+  {
+    match self.status {
+      OpRegistrationStatus::Waiting { notifier: _ } => {
+        TryExtractOutcome::StillWaiting
+      }
+      OpRegistrationStatus::Cancelling => TryExtractOutcome::HasCancelled,
+      OpRegistrationStatus::Done { ref mut ret } => {
+        let res = ret.take().expect("Already taken ret value after done");
+
+        let ptr = self.op.take().expect("guarranteed not to panic, because we have owned and drop can't be called.");
+        let mut op = unsafe { Box::from_raw(ptr as *mut T) };
+
+        TryExtractOutcome::Done(op.result(res))
+      }
+    }
   }
 
   /// Sets the waker, replacing any existing waker
   #[cfg(feature = "high")]
   pub fn set_waker(&mut self, waker: Waker) {
-    // Assert mutual exclusion: can't have both waker and callback
-    assert!(
-      self.callback.is_none(),
-      "Cannot set waker when callback is already set (operation_id has callback)"
-    );
-
-    let _had_previous_waker = self.registered_waker.replace(waker).is_some();
-    #[cfg(feature = "tracing")]
-    if _had_previous_waker {
-      tracing::debug!(
-        fd = self.fd,
-        "waker replaced (spurious poll or context change)"
-      );
-    }
+    let notifier = match self.status {
+      OpRegistrationStatus::Cancelling => panic!("not waiting"),
+      OpRegistrationStatus::Done { .. } => panic!("not waiting"),
+      OpRegistrationStatus::Waiting { ref mut notifier } => notifier,
+    };
+    if let Some(noti) = notifier {
+      match noti {
+        OpNotification::Callback(_) => {
+          unreachable!("tried to set waker on callback notified operation.")
+        }
+        OpNotification::Waker(waker_container) => {
+          // Wakers sometimes need replacing.
+          let _ = waker_container.replace(waker);
+        }
+      }
+    } else {
+      *notifier = Some(OpNotification::Waker(Some(waker)));
+    };
+  }
+  pub fn set_callback(&mut self, callback: OpCallback) {
+    let notifier = match self.status {
+      OpRegistrationStatus::Cancelling => panic!("not waiting"),
+      OpRegistrationStatus::Done { .. } => panic!("not waiting"),
+      OpRegistrationStatus::Waiting { ref mut notifier } => notifier,
+    };
+    if let Some(noti) = notifier {
+      match noti {
+        OpNotification::Callback(callback_container) => {
+          match callback_container {
+            Some(_) => {
+              panic!(
+                "Tried to replace a callback on callback notified operation."
+              )
+            }
+            None => {
+              *callback_container = Some(callback);
+            }
+          }
+        }
+        #[cfg(feature = "high")]
+        OpNotification::Waker(_) => {
+          unreachable!("tried to set callback on waker notified operation.")
+        }
+      }
+    } else {
+      *notifier = Some(OpNotification::Callback(Some(callback)));
+    };
   }
 
-  pub fn has_waker(&self) -> bool {
-    self.registered_waker.is_some()
+  pub fn set_done(
+    &mut self,
+    res: io::Result<i32>,
+  ) -> Option<ExtractedOpNotification> {
+    use std::mem;
+
+    let old = mem::replace(
+      &mut self.status,
+      OpRegistrationStatus::Done { ret: Some(res) },
+    );
+
+    match old {
+      OpRegistrationStatus::Done { .. } => {
+        unreachable!("set done whilst already done?")
+      }
+      OpRegistrationStatus::Cancelling => unreachable!("Invalid path"),
+      OpRegistrationStatus::Waiting { notifier } => {
+        if let Some(mut notifier) = notifier {
+          notifier.extract_notification()
+        } else {
+          None
+        }
+      }
+    }
   }
 }

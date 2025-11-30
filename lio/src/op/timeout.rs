@@ -66,6 +66,7 @@ impl Operation for Timeout {
     None
   }
 
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> std::io::Result<i32> {
     todo!();
     // syscall!(timeout(self.fd, self.size as i64))

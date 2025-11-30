@@ -210,6 +210,7 @@ impl Operation for Socket {
     None
   }
 
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> io::Result<i32> {
     // Path 1: Platforms with SOCK_CLOEXEC support (atomic CLOEXEC flag)
     #[cfg(any(

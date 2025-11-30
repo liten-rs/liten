@@ -41,6 +41,7 @@ impl Operation for Truncate {
     None
   }
 
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> std::io::Result<i32> {
     syscall!(ftruncate(self.fd, self.size as i64))
   }

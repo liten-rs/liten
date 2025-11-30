@@ -38,6 +38,7 @@ impl Operation for Bind {
 
   impl_no_readyness!();
 
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> io::Result<i32> {
     let storage = unsafe { &*self.addr.get() };
     let addrlen = if storage.ss_family == libc::AF_INET as libc::sa_family_t {

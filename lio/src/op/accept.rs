@@ -61,6 +61,7 @@ impl Operation for Accept {
     Some(self.fd)
   }
 
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> std::io::Result<i32> {
     #[cfg(any(
       target_os = "android",

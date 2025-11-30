@@ -58,6 +58,7 @@ impl Operation for LinkAt {
     .build()
   }
 
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> std::io::Result<i32> {
     syscall!(linkat(
       self.old_dir_fd,

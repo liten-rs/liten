@@ -12,14 +12,15 @@ pub fn libc_socketaddr_into_std(
 
   if sockaddr.ss_family == libc::AF_INET as libc::sa_family_t {
     let ipv4_ptr = storage.cast::<libc::sockaddr_in>();
-    let ipv4 = Ipv4Addr::from(unsafe { *ipv4_ptr }.sin_addr.s_addr);
+    let ipv4 = Ipv4Addr::from(unsafe { *ipv4_ptr }.sin_addr.s_addr.to_be());
     let port = u16::from_be(unsafe { *ipv4_ptr }.sin_port);
 
     Ok(SocketAddr::from(SocketAddrV4::new(ipv4, port)))
   } else if sockaddr.ss_family == libc::AF_INET6 as libc::sa_family_t {
     let ipv6_ptr = storage.cast::<libc::sockaddr_in6>();
     let in6 = unsafe { *ipv6_ptr };
-    let ipv6 = Ipv6Addr::from(in6.sin6_addr.s6_addr);
+    let ipv6 =
+      Ipv6Addr::from(u128::from_le_bytes(in6.sin6_addr.s6_addr).to_be());
     let port = u16::from_be(in6.sin6_port);
 
     Ok(SocketAddr::from(SocketAddrV6::new(

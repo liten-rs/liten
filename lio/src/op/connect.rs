@@ -62,6 +62,9 @@ impl Operation for Connect {
   }
 
   #[cfg(not(linux))]
+  const IS_CONNECT: bool = true;
+
+  #[cfg(not(linux))]
   const EVENT_TYPE: Option<EventType> = Some(EventType::Write);
 
   #[cfg(not(linux))]
@@ -69,6 +72,7 @@ impl Operation for Connect {
     Some(self.fd)
   }
 
+  #[cfg(not(linux))]
   fn run_blocking(&self) -> std::io::Result<i32> {
     let result =
       syscall!(connect(self.fd, self.addr.get().cast(), self.get_addrlen(),));
@@ -88,10 +92,6 @@ impl Operation for Connect {
             // Subsequent connect() returned EISCONN = connection completed
             return Ok(0);
           }
-        }
-
-        if errno == libc::EALREADY {
-          return Err(std::io::Error::from_raw_os_error(libc::EINPROGRESS));
         }
       }
     };

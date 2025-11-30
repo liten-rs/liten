@@ -5,3 +5,9 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 4472ff84c5dbe06cd079a37e4accbf355c8850f676fc996dfeb1bb9563654e57 # shrinks to data_size = 1, seed = 0
+cc 6e7017889a664cb9820bf5531671239263fdde3841ce5a9796bf4e04e61c2395 # shrinks to data_size = 5272, seed = 9106367967442704559
+cc 55b33041ae0fa3f5cec921d973624f5f476b864776baa2381aabe8b85baffb03 # shrinks to data_size = 1090, seed = 7427950650514722767
+cc bca6fef81a82fb3d42ca9c45a0ec9ef3688948b2543bcefcfa48bead3613dc1d # shrinks to data_size = 5330, seed = 8485910116793327929
+cc 508201d947d578a1b6d1645cee55c5587d41b048cfe1a8701e391a1e9206e6b9 # shrinks to data_size = 330, seed = 9576292299608934224
+cc 7d189224324499cef3db4f0d577f63571cbf7a611566a74b9516c1a69691a93b # shrinks to data_size = 4763, seed = 14518818225150522400
+cc bcbce9ee628bba4c933c482c6d4c4121ee5b295239b934cabb1f4c13b0bdd227 # shrinks to data_size = 2075, seed = 14913426254820679456

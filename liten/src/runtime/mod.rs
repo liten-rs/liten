@@ -69,7 +69,6 @@ impl Default for Runtime {
 
 impl Drop for Runtime {
   fn drop(&mut self) {
-    eprintln!("running drop");
     let _ = THREAD_RUNTIME.replace(None);
   }
 }
