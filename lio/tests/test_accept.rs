@@ -3,10 +3,12 @@ use lio::{accept, bind, connect, listen, socket};
 use socket2::{Domain, Protocol, Type};
 use std::mem::MaybeUninit;
 use std::net::SocketAddr;
+#[cfg(feature = "tracing")]
 use tracing::Level;
 
 #[test]
 fn test_accept_basic() {
+  #[cfg(feature = "tracing")]
   tracing_subscriber::fmt().with_max_level(Level::TRACE).init();
   liten::block_on(async {
     // Create and setup server socket
@@ -14,15 +16,30 @@ fn test_accept_basic() {
       .await
       .expect("Failed to create server socket");
 
-    let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+    let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
     bind(server_sock, addr).await.expect("Failed to bind");
+
+    let bound_addr = unsafe {
+      let mut addr_storage = MaybeUninit::<libc::sockaddr_in>::zeroed();
+      let mut addr_len =
+        std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+      libc::getsockname(
+        server_sock,
+        addr_storage.as_mut_ptr() as *mut libc::sockaddr,
+        &mut addr_len,
+      );
+      let sockaddr_in = addr_storage.assume_init();
+      let port = u16::from_be(sockaddr_in.sin_port);
+      format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap()
+    };
 
     listen(server_sock, 128).await.expect("Failed to listen");
 
-    let socket = socket(Domain::IPV4, Type::STREAM, None).await.unwrap();
+    let client_sock = socket(Domain::IPV4, Type::STREAM, None).await.unwrap();
 
     // // Wait for accept
-    let (res2, res) = liten::join!(connect(socket, addr), accept(server_sock));
+    let (res2, res) =
+      liten::join!(connect(client_sock, bound_addr), accept(server_sock));
     let _ = res2.unwrap();
     let (accepted_fd, _) = res.unwrap();
 
@@ -30,10 +47,9 @@ fn test_accept_basic() {
 
     // Cleanup
     unsafe {
-      // libc::close(client_sock);
       libc::close(accepted_fd);
       libc::close(server_sock);
-      libc::close(socket);
+      libc::close(client_sock);
     }
   });
 }
@@ -227,6 +243,7 @@ fn test_accept_ipv6() {
 
 #[test]
 fn test_accept_concurrent() {
+  #[cfg(feature = "tracing")]
   tracing_subscriber::fmt().with_max_level(Level::TRACE).init();
   liten::block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))

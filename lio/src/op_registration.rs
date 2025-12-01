@@ -80,7 +80,10 @@ pub enum OpRegistrationStatus {
   Done {
     // TODO: wtf
     // #[cfg_attr(not(feature = "high"), allow(unused))]
+    // TODO: Can be optimised.
     ret: Option<io::Result<i32>>,
+    // Fixes datarace when operation is done before registering callback/waker.
+    before_notifier: bool,
   },
 }
 
@@ -179,7 +182,7 @@ impl OpRegistration {
         TryExtractOutcome::StillWaiting
       }
       OpRegistrationStatus::Cancelling => TryExtractOutcome::HasCancelled,
-      OpRegistrationStatus::Done { ref mut ret } => {
+      OpRegistrationStatus::Done { ref mut ret, before_notifier: _ } => {
         let res = ret.take().expect("Already taken ret value after done");
 
         let ptr = self.op.take().expect("guarranteed not to panic, because we have owned and drop can't be called.");
@@ -194,10 +197,21 @@ impl OpRegistration {
   #[cfg(feature = "high")]
   pub fn set_waker(&mut self, waker: Waker) {
     let notifier = match self.status {
-      OpRegistrationStatus::Cancelling => panic!("not waiting"),
-      OpRegistrationStatus::Done { .. } => panic!("not waiting"),
+      OpRegistrationStatus::Cancelling => {
+        unreachable!("internal lio: not allowed.")
+      }
+      // Fixes datarace when operation is done before registering callback/waker.
+      OpRegistrationStatus::Done { ref before_notifier, .. } => {
+        if *before_notifier {
+          waker.wake();
+          return;
+        } else {
+          unreachable!("internal lio: not allowed.");
+        };
+      }
       OpRegistrationStatus::Waiting { ref mut notifier } => notifier,
     };
+
     if let Some(noti) = notifier {
       match noti {
         OpNotification::Callback(_) => {
@@ -214,10 +228,23 @@ impl OpRegistration {
   }
   pub fn set_callback(&mut self, callback: OpCallback) {
     let notifier = match self.status {
-      OpRegistrationStatus::Cancelling => panic!("not waiting"),
-      OpRegistrationStatus::Done { .. } => panic!("not waiting"),
+      OpRegistrationStatus::Cancelling => {
+        // Not doing anything here (right??).
+        // let _ = callback;
+        // return;
+        unreachable!("internal lio: not allowed.");
+      }
+      OpRegistrationStatus::Done { ref before_notifier, .. } => {
+        if *before_notifier {
+          callback.call(self);
+          return;
+        } else {
+          unreachable!("internal lio: not allowed.");
+        };
+      }
       OpRegistrationStatus::Waiting { ref mut notifier } => notifier,
     };
+
     if let Some(noti) = notifier {
       match noti {
         OpNotification::Callback(callback_container) => {
@@ -248,14 +275,22 @@ impl OpRegistration {
   ) -> Option<ExtractedOpNotification> {
     use std::mem;
 
+    let before_notifier = match &self.status {
+      OpRegistrationStatus::Waiting { notifier } => notifier.is_none(),
+      OpRegistrationStatus::Cancelling => unimplemented!(),
+      OpRegistrationStatus::Done { .. } => {
+        unreachable!("set done whilst already done?")
+      }
+    };
+
     let old = mem::replace(
       &mut self.status,
-      OpRegistrationStatus::Done { ret: Some(res) },
+      OpRegistrationStatus::Done { ret: Some(res), before_notifier },
     );
 
     match old {
       OpRegistrationStatus::Done { .. } => {
-        unreachable!("set done whilst already done?")
+        unreachable!("See couple of lines up unreachable statement.")
       }
       OpRegistrationStatus::Cancelling => unreachable!("Invalid path"),
       OpRegistrationStatus::Waiting { notifier } => {

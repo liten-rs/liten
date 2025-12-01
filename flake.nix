@@ -32,6 +32,7 @@
               (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
               cargo-nextest
               cargo-hack
+              valgrind
             ];
           in
           {

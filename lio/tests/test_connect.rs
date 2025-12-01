@@ -3,6 +3,7 @@ use lio::{bind, connect, listen, socket};
 use socket2::{Domain, Protocol, Type};
 use std::mem::MaybeUninit;
 use std::net::SocketAddr;
+#[cfg(feature = "tracing")]
 use tracing::Level;
 
 #[test]
@@ -184,6 +185,7 @@ fn test_connect_multiple_clients() {
 
 #[test]
 fn test_connect_already_connected() {
+  #[cfg(feature = "tracing")]
   tracing_subscriber::fmt().with_max_level(Level::TRACE).init();
   liten::block_on(async {
     let server_sock = socket(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
