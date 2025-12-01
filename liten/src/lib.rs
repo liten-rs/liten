@@ -32,10 +32,10 @@ cfg_sync! {
 
 pub mod task;
 
-#[cfg(not(loom))]
-cfg_time! {
-  pub mod time;
-}
+// #[cfg(not(loom))]
+// cfg_time! {
+//   pub mod time;
+// }
 
 // mod parking;
 

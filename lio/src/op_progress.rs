@@ -319,11 +319,11 @@ impl<T> Drop for OperationProgress<T> {
   fn drop(&mut self) {
     match self {
       #[cfg(not(linux))]
-      OperationProgress::Poll { id, .. } => {
+      OperationProgress::Poll { id: _, .. } => {
         // Driver::get().detach(*id);
       }
       #[cfg(linux)]
-      OperationProgress::IoUring { id, _m, .. } => {
+      OperationProgress::IoUring { id: _, _m, .. } => {
         // Driver::get().detach(*id);
       }
       #[cfg(not(linux))]
@@ -331,7 +331,7 @@ impl<T> Drop for OperationProgress<T> {
         // Blocking operations don't need cleanup
       }
       #[cfg(not(linux))]
-      OperationProgress::FromResult { res, operation } => {}
+      OperationProgress::FromResult { res: _, operation: _ } => {}
     }
   }
 }

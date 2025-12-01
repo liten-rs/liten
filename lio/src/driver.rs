@@ -2,6 +2,7 @@ use crate::OperationProgress;
 #[cfg(not(linux))]
 use crate::op::EventType;
 use crate::op::Operation;
+#[cfg(feature = "high")]
 use crate::op_registration::TryExtractOutcome;
 
 use parking_lot::Mutex;
@@ -9,8 +10,11 @@ use parking_lot::Mutex;
 use std::os::fd::RawFd;
 #[cfg(linux)]
 use std::sync::atomic::AtomicBool;
+#[cfg(feature = "high")]
+use std::task::Waker;
 use std::{
   collections::HashMap,
+  io,
   sync::{
     OnceLock,
     atomic::{AtomicU64, Ordering},
@@ -18,11 +22,6 @@ use std::{
   },
   thread,
 };
-#[cfg(all(not(linux), feature = "high"))]
-use std::{io, task::Waker};
-
-#[cfg(all(linux, feature = "high"))]
-use std::task::Waker;
 
 #[cfg(linux)]
 use io_uring::{IoUring, Probe};
@@ -160,6 +159,7 @@ impl Driver {
   }
 
   // FIXME: On first run per key, run run_blocking and that will fix it.
+  #[cfg(feature = "high")]
   pub fn check_done<T>(&self, key: u64) -> TryExtractOutcome<T::Result>
   where
     T: Operation,
@@ -171,8 +171,6 @@ impl Driver {
 
     match entry.try_extract::<T>() {
       TryExtractOutcome::Done(res) => {
-        #[cfg(not(linux))]
-        Self::delete_interest(&self.poller, entry.fd()).unwrap();
         let _ = _lock.remove(&key).expect("wtf?");
         drop(_lock);
         TryExtractOutcome::Done(res)
@@ -194,6 +192,7 @@ impl Driver {
     entry.set_callback(OpCallback::new::<T, F>(callback));
   }
 
+  #[cfg(feature = "high")]
   pub(crate) fn set_waker(&self, id: u64, waker: Waker) {
     let mut _lock = self.wakers.lock();
     let entry = _lock.get_mut(&id).unwrap();
@@ -260,6 +259,7 @@ impl Driver {
           {
             None => {}
             Some(value) => match value {
+              #[cfg(feature = "high")]
               ExtractedOpNotification::Waker(waker) => {
                 drop(_lock);
                 waker.wake()
@@ -541,10 +541,14 @@ impl Driver {
                 .get_mut(&operation_id)
                 .expect("Cannot find matching operation");
 
+              #[cfg(not(linux))]
+              Self::delete_interest(&self.poller, entry.fd()).unwrap();
+
               // if should keep.
               match entry.set_done(result) {
                 None => {}
                 Some(value) => match value {
+                  #[cfg(feature = "high")]
                   ExtractedOpNotification::Waker(waker) => {
                     drop(_lock);
                     waker.wake()

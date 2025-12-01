@@ -1,8 +1,10 @@
 // NOTE: OpRegistration should **NEVER** impl Sync.gg
-use std::{io, task::Waker};
+use std::io;
 
 #[cfg(not(linux))]
 use std::os::fd::RawFd;
+#[cfg(feature = "high")]
+use std::task::Waker;
 
 use crate::op::Operation;
 
@@ -76,6 +78,7 @@ pub enum OpRegistrationStatus {
   },
   /// This operation is not tied to any entity waiting for it, either because they got dropped or
   /// because they weren't interested in the result.
+  // TODO: implement.
   Cancelling,
   Done {
     // TODO: wtf

@@ -96,10 +96,7 @@ impl Future for Sleep {
 // }
 #[cfg(all(test, not(loom)))]
 mod tests2 {
-  use std::{
-    future::pending,
-    time::{Duration, Instant},
-  };
+  use std::time::{Duration, Instant};
 
   use crate::{
     // future::{timeout::Timeout, FutureExt},

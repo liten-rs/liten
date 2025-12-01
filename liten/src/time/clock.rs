@@ -1,10 +1,6 @@
-use std::{
-  sync::atomic::{AtomicUsize, Ordering},
-  task::Waker,
-  time::Instant,
-};
+use std::time::Instant;
 
-use crate::time::{utils, wheel::TimerTickResult};
+use crate::time::wheel::TimerTickResult;
 
 use super::wheel::Wheel;
 

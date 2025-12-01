@@ -341,11 +341,8 @@ impl TimeHandle {
 mod tests {
   use super::*;
   use std::{
-    sync::{
-      atomic::{AtomicBool, Ordering},
-      Arc,
-    },
-    task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
+    sync::{atomic::AtomicBool, Arc},
+    task::{RawWaker, RawWakerVTable, Waker},
   };
 
   fn dummy_waker() -> Waker {
@@ -366,9 +363,9 @@ mod tests {
     let thing = Arc::new(AtomicBool::new(false));
     let _thing = thing.clone();
     let (sender, receiver) = std::sync::mpsc::channel();
-    let driver = TimeHandle::add_fn(
+    let _ = TimeHandle::add_fn(
       move || {
-        sender.send(0);
+        sender.send(0).unwrap();
       },
       200,
     );

@@ -10,7 +10,6 @@ time = ["dep:oneshot", "dep:parking_lot"]
 blocking = ["sync"]
 fs = ["blocking"]
 runtime = []
-# io = ["dep:lio", "dep:libc", "dep:socket2"]
 compat = ["dep:tokio"]
 full = ["sync", "time", "blocking", "fs", "runtime", "compat"]
 
