@@ -282,7 +282,32 @@ impl Driver {
   {
     let driver = Self::get();
     if T::entry_supported(&driver.probe) {
-      let operation_id = driver.push::<T>(op);
+      let operation_id = Self::next_id();
+
+      let mut op = Box::new(op);
+      let entry = op.create_entry().user_data(operation_id);
+
+      // Insert the operation into wakers first
+      {
+        let mut _lock = driver.wakers.lock();
+        _lock.insert(operation_id, OpRegistration::new(op));
+      }
+
+      // Then submit to io_uring
+      // SAFETY: because of references rules, a "fake" lock has to be implemented here, but because
+      // of it, this is safe.
+      let _g = driver.submission_guard.lock();
+      unsafe {
+        let mut sub = driver.inner.submission_shared();
+        // FIXME
+        sub.push(&entry).expect("unwrapping for now");
+        sub.sync();
+        drop(sub);
+      }
+      drop(_g);
+
+      driver.inner.submit().unwrap();
+      driver.has_done_work.store(true, Ordering::SeqCst);
       OperationProgress::<T>::new_uring(operation_id)
     } else {
       // TODO:
@@ -290,36 +315,6 @@ impl Driver {
 
       unimplemented!("")
     }
-  }
-  fn push<T: op::Operation>(&self, op: T) -> u64 {
-    let operation_id = Self::next_id();
-
-    let mut op = Box::new(op);
-    let entry = op.create_entry().user_data(operation_id);
-
-    // Insert the operation into wakers first
-    {
-      let mut _lock = self.wakers.lock();
-      _lock.insert(operation_id, OpRegistration::new(op));
-    }
-
-    // Then submit to io_uring
-    // SAFETY: because of references rules, a "fake" lock has to be implemented here, but because
-    // of it, this is safe.
-    let _g = self.submission_guard.lock();
-    unsafe {
-      let mut sub = self.inner.submission_shared();
-      // FIXME
-      sub.push(&entry).expect("unwrapping for now");
-      sub.sync();
-      drop(sub);
-    }
-    drop(_g);
-
-    self.inner.submit().unwrap();
-    self.has_done_work.store(true, Ordering::SeqCst);
-
-    operation_id
   }
 }
 
