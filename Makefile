@@ -5,7 +5,9 @@ doc:
 
 lio-cbuild:
 	RUSTFLAGS="--cfg lio_unstable_ffi" cargo rustc -p lio --crate-type dylib --features ffi --release
-	cbindgen --crate lio --output lio/include/lio.h --cpp-compat
+	cbindgen --crate lio --output lio/include/lio.h --cpp-compat &> /dev/null
+	echo "lio: built c api at: $(pwd)/target/release/liblio.(dylib|so|dll)"
 
 test:
 	cargo nextest r --release
+	./lio/tests/ffi/test.sh

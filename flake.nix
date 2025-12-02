@@ -34,6 +34,7 @@
               cargo-hack
               gnumake
               rust-cbindgen
+              gcc
             ];
           in
           {
