@@ -21,12 +21,6 @@ gcc "$SCRIPT_DIR/c-src.c" \
 
 echo "C compilation successful"
 
-# # Link C executable
-# gcc "$TARGET_DIR/test_ffi_c.o" \
-#     -L"$TARGET_DIR" \
-#     -llio \
-#     -o "$TARGET_DIR/test_ffi_c"
-
 # Run C test
 $TARGET_DIR/test_ffi_c
 

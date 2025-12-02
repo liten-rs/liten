@@ -8,9 +8,10 @@ lio-cbuild:
 	cbindgen --crate lio --output lio/include/lio.h --cpp-compat &> /dev/null
 	echo "lio: built c api at: $(pwd)/target/release/liblio.(dylib|so|dll)"
 
-test:
-	cargo nextest r --release
+lio-test:
+	cargo nextest r --release -p lio
 	./lio/tests/ffi/test.sh
+	./lio/tests/nix-build/test.sh
 
 check-flags:
 	RUSTFLAGS="--cfg lio_unstable_ffi" cargo hack check --feature-powerset --lib --tests
