@@ -61,6 +61,11 @@
             cp lio/include/lio.h $out/include/
             cp target/release/liblio${pkgs.stdenv.hostPlatform.extensions.sharedLibrary} $out/lib/
 
+            # Fix install name on macOS
+            ${pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
+              install_name_tool -id $out/lib/liblio${pkgs.stdenv.hostPlatform.extensions.sharedLibrary} $out/lib/liblio${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}
+            ''}
+
             # Generate pkg-config file
             cat > $out/lib/pkgconfig/${pname}.pc << EOF
             prefix=$out

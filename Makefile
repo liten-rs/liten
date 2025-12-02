@@ -9,7 +9,7 @@ lio-cbuild:
 	echo "lio: built c api at: $(pwd)/target/release/liblio.(dylib|so|dll)"
 
 lio-test:
-	cargo nextest r --release -p lio
+	cargo nextest r --release -p lio --features high
 	./lio/tests/ffi/test.sh
 	./lio/tests/nix-build/test.sh
 
