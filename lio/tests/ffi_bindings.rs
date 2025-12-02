@@ -89,7 +89,7 @@ fn test_ffi_bindings() {
 
   // Verify library exists
   let lib_path = target_dir().join("debug").join(&format!("liblio.{ext}"));
-  assert!(lib_path.exists(), format!("liblio.{ext} was not built"));
+  assert!(lib_path.exists(), "liblio.{} was not built", ext);
 
   // Create a simple C test file
   let c_source = target_dir().join("test_ffi_compile.c");
