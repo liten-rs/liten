@@ -99,9 +99,6 @@ jobs:
             ~/.cargo/git
           key: cargo-build-cache
 
-      - name: Install cbindgen
-        run: cargo install cbindgen
-
       - name: Run make lio-cbuild
         run: nix develop .#ci -c make lio-cbuild
 

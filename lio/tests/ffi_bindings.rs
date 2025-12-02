@@ -51,7 +51,7 @@ fn project_root() -> PathBuf {
 }
 
 fn target_dir() -> PathBuf {
-  project_root().join("target")
+  project_root().join("target/release")
 }
 
 #[cfg(target_os = "macos")]
@@ -76,7 +76,7 @@ fn test_ffi_bindings() {
 
   assert!(
     output.status.success(),
-    "make lio-cbuild failed: {:?}",
+    "make lio-cbuild failed:\n{}",
     String::from_utf8_lossy(&output.stderr)
   );
 
@@ -88,7 +88,7 @@ fn test_ffi_bindings() {
   assert!(root.join("lio/include/lio.h").exists(), "lio.h was not generated");
 
   // Verify library exists
-  let lib_path = target_dir().join("debug").join(&format!("liblio.{EXT}"));
+  let lib_path = target_dir().join(&format!("liblio.{EXT}"));
   assert!(lib_path.exists(), "liblio.{} was not built", EXT);
 
   // Create a simple C test file
@@ -130,7 +130,7 @@ fn test_ffi_bindings() {
       cpp_source.to_str().unwrap(),
       "-o",
       target_dir().join("test_ffi_compile_cpp.o").to_str().unwrap(),
-      "-Ltarget/release",
+      &format!("-L{}", target_dir().display()),
       "-I",
       root.join("lio/include").to_str().unwrap(),
     ])
@@ -155,7 +155,7 @@ fn test_ffi_bindings() {
     .args(&[
       c_run_source.to_str().unwrap(),
       "-L",
-      target_dir().join("debug").to_str().unwrap(),
+      target_dir().to_str().unwrap(),
       "-llio",
       "-o",
       exe_path.to_str().unwrap(),
