@@ -54,6 +54,15 @@ fn target_dir() -> PathBuf {
   project_root().join("target")
 }
 
+#[cfg(target_os = "macos")]
+const EXT: &str = "dylib";
+
+#[cfg(target_os = "linux")]
+const EXT: &str = "so";
+
+#[cfg(target_os = "windows")]
+const EXT: &str = "dll";
+
 #[test]
 fn test_ffi_bindings() {
   let root = project_root();
@@ -78,18 +87,9 @@ fn test_ffi_bindings() {
   // Verify lio.h exists
   assert!(root.join("lio/include/lio.h").exists(), "lio.h was not generated");
 
-  #[cfg(target_os = "macos")]
-  let ext = "dylib";
-
-  #[cfg(target_os = "linux")]
-  let ext = "dylib";
-
-  #[cfg(target_os = "windows")]
-  let ext = "dll";
-
   // Verify library exists
-  let lib_path = target_dir().join("debug").join(&format!("liblio.{ext}"));
-  assert!(lib_path.exists(), "liblio.{} was not built", ext);
+  let lib_path = target_dir().join("debug").join(&format!("liblio.{EXT}"));
+  assert!(lib_path.exists(), "liblio.{} was not built", EXT);
 
   // Create a simple C test file
   let c_source = target_dir().join("test_ffi_compile.c");
