@@ -11,3 +11,6 @@ lio-cbuild:
 test:
 	cargo nextest r --release
 	./lio/tests/ffi/test.sh
+
+check-flags:
+	RUSTFLAGS="--cfg lio_unstable_ffi" cargo hack check --feature-powerset --lib --tests
