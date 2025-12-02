@@ -78,9 +78,18 @@ fn test_ffi_bindings() {
   // Verify lio.h exists
   assert!(root.join("lio/include/lio.h").exists(), "lio.h was not generated");
 
+  #[cfg(target_os = "macos")]
+  let ext = "dylib";
+
+  #[cfg(target_os = "linux")]
+  let ext = "dylib";
+
+  #[cfg(target_os = "windows")]
+  let ext = "dll";
+
   // Verify library exists
-  let lib_path = target_dir().join("debug").join("liblio.dylib");
-  assert!(lib_path.exists(), "liblio.dylib was not built");
+  let lib_path = target_dir().join("debug").join(&format!("liblio.{ext}"));
+  assert!(lib_path.exists(), format!("liblio.{ext} was not built"));
 
   // Create a simple C test file
   let c_source = target_dir().join("test_ffi_compile.c");

@@ -6,3 +6,6 @@ doc:
 lio-cbuild:
 	RUSTFLAGS="--cfg lio_unstable_ffi" cargo rustc -p lio --crate-type dylib --features ffi --release
 	cbindgen --crate lio --output lio/include/lio.h --cpp-compat
+
+test:
+	cargo nextest r --release
