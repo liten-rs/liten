@@ -93,7 +93,7 @@ fn test_ffi_bindings() {
     lib_path.exists(),
     "liblio.{} was not built: Couldn't find path {}",
     EXT,
-    lib_path
+    lib_path.display()
   );
   dbg!(std::fs::read_dir(target_dir()).unwrap().collect::<Vec<_>>());
 
