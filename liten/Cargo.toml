@@ -13,11 +13,6 @@ runtime = []
 compat = ["dep:tokio"]
 full = ["sync", "time", "blocking", "fs", "runtime", "compat"]
 
-_loom_testing = ["sync", "blocking", "fs", "runtime", "compat"]
-
-[target.'cfg(loom)'.dependencies]
-loom = { version = "0.7", features = ["futures"] }
-
 [dependencies]
 liten-macros = { version = "0.1.0", path = "../liten-macros" }
 lio = { version = "0.2.1", path = "../lio", optional = true }

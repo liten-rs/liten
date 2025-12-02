@@ -68,6 +68,9 @@
 //! that return buffers. Errors are automatically converted from platform-specific
 //! error codes to Rust's standard I/O error types.
 
+#[cfg(feature = "ffi")]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "ffi", lio_unstable_ffi))))]
+pub mod ffi;
 use std::{
   ffi::{CString, NulError},
   net::SocketAddr,
@@ -97,6 +100,35 @@ pub use op_progress::OperationProgress;
 
 use crate::driver::Driver;
 use std::path::Path;
+
+// #[cfg(feature = "ffi")]
+// #[unsafe(no_mangle)]
+// pub extern "C" fn lio_listen(
+//   fd: RawFd,
+//   backlog: i32,
+//   callback: extern "C" fn(i32),
+// ) {
+//   listen(fd, backlog).when_done(move |res| {
+//     let res = match res.map_err(|err| err.raw_os_error().unwrap()) {
+//       Ok(_) => 0,
+//       Err(err) => err,
+//     };
+//     callback(res)
+//   });
+// }
+//
+// #[cfg(feature = "ffi")]
+// #[unsafe(no_mangle)]
+// pub extern "C" fn lio_close(fd: RawFd, callback: extern "C" fn(i32)) {
+//   close(fd).when_done(move |res| {
+//     let res = match res.map_err(|err| err.raw_os_error().unwrap()) {
+//       Ok(_) => 0,
+//       Err(err) => err,
+//     };
+//     callback(res)
+//   });
+// }
+//
 
 macro_rules! impl_op {
   // Internal helper: Generate function with common documentation
@@ -223,7 +255,7 @@ impl_op!(
   ///     Ok(())
   /// }
   /// ```
-  Timeout, fn timeout(duration: Duration) -> BufResult<i32, Vec<u8>>
+  Timeout, fn timeout(duration: Duration) -> io::Result<()>
 );
 
 impl_op!(

@@ -94,28 +94,24 @@ impl Operation for Accept {
       target_os = "openbsd",
       target_os = "cygwin",
     )))]
-    let fd = {
-      let fd = syscall!(accept(
-        self.fd,
-        self.addr.get() as *mut libc::sockaddr,
-        self.len.get() as *mut libc::socklen_t
-      ))
-      .and_then(|socket| {
-        // Ensure the socket is closed if either of the `fcntl` calls
-        // error below.
-        // let s = unsafe { net::UnixStream::from_raw_fd(socket) };
-        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
-        syscall!(fcntl(socket, libc::F_SETFD, libc::FD_CLOEXEC))?;
+    let fd = syscall!(accept(
+      self.fd,
+      self.addr.get() as *mut libc::sockaddr,
+      self.len.get() as *mut libc::socklen_t
+    ))
+    .and_then(|socket| {
+      // Ensure the socket is closed if either of the `fcntl` calls
+      // error below.
+      // let s = unsafe { net::UnixStream::from_raw_fd(socket) };
+      #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
+      syscall!(fcntl(socket, libc::F_SETFD, libc::FD_CLOEXEC))?;
 
-        // See https://github.com/tokio-rs/mio/issues/1450
-        #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
-        syscall!(fcntl(socket, libc::F_SETFL, libc::O_NONBLOCK))?;
+      // See https://github.com/tokio-rs/mio/issues/1450
+      #[cfg(not(any(target_os = "espidf", target_os = "vita")))]
+      syscall!(fcntl(socket, libc::F_SETFL, libc::O_NONBLOCK))?;
 
-        Ok(socket)
-      })?;
-
-      fd
-    };
+      Ok(socket)
+    })?;
 
     Ok(fd)
   }

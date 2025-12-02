@@ -7,7 +7,7 @@ use std::{
 
 use crossbeam_queue::SegQueue;
 
-use crate::loom::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub struct Semaphore {
   limit: AtomicUsize,

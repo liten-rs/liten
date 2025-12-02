@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use super::{worker::Worker, Remote};
 
-use crate::loom::sync::Arc;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct Shared(Arc<SharedInner>);

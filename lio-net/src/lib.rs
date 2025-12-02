@@ -28,9 +28,7 @@ impl From<Socket> for TcpListener {
 
 impl TcpListener {
   pub async fn bind(addr: impl ToSocketAddrs) -> io::Result<Self> {
-    let mut iter = addr.to_socket_addrs()?;
-
-    while let Some(value) = iter.next() {
+    for value in addr.to_socket_addrs()? {
       let domain = match value {
         SocketAddr::V6(_) => Domain::IPV6,
         SocketAddr::V4(_) => Domain::IPV4,
@@ -43,10 +41,10 @@ impl TcpListener {
       return Ok(TcpListener(socket));
     }
 
-    return Err(io::Error::new(
+    Err(io::Error::new(
       io::ErrorKind::InvalidInput,
       "could not resolve to any addresses",
-    ));
+    ))
   }
 
   pub async fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
@@ -62,9 +60,7 @@ pub struct TcpStream(Socket);
 
 impl TcpStream {
   pub async fn connect(addr: impl ToSocketAddrs) -> io::Result<Self> {
-    let mut iter = addr.to_socket_addrs()?;
-
-    while let Some(value) = iter.next() {
+    for value in addr.to_socket_addrs()? {
       let domain = match value {
         SocketAddr::V6(_) => Domain::IPV6,
         SocketAddr::V4(_) => Domain::IPV4,
@@ -76,10 +72,10 @@ impl TcpStream {
       return Ok(TcpStream(socket));
     }
 
-    return Err(io::Error::new(
+    Err(io::Error::new(
       io::ErrorKind::InvalidInput,
       "could not resolve to any addresses",
-    ));
+    ))
   }
 
   pub fn send(
@@ -95,6 +91,10 @@ impl TcpStream {
   ) -> impl Future<Output = lio::BufResult<i32, Vec<u8>>> {
     self.0.recv(vec)
   }
+
+  pub fn shutdown(&self, how: i32) -> impl Future<Output = io::Result<()>> {
+    self.0.shutdown(how)
+  }
 }
 
 pub struct Socket(Fd);
@@ -108,7 +108,7 @@ impl Socket {
     let rawfd = lio::socket(domain, ty, proto).await?;
     // SAFETY: We literally just created it.
     let fd = unsafe { Fd::from_raw_fd(rawfd) };
-    return Ok(Socket(fd));
+    Ok(Socket(fd))
   }
 
   pub async fn bind(&self, addr: SocketAddr) -> io::Result<()> {
@@ -137,6 +137,9 @@ impl Socket {
   pub async fn send(&self, vec: Vec<u8>) -> lio::BufResult<i32, Vec<u8>> {
     lio::send(self.0.0, vec, None).await
   }
+  pub async fn shutdown(&self, how: i32) -> io::Result<()> {
+    lio::shutdown(self.0.0, how).await
+  }
 }
 
 impl From<Fd> for Socket {
@@ -144,37 +147,3 @@ impl From<Fd> for Socket {
     Socket(value)
   }
 }
-
-// pub fn close(self) -> impl Future<Output = io::Result<()>> {
-//   lio::close(self.0)
-// }
-//
-// pub fn pwrite(
-//   &self,
-//   buf: Vec<u8>,
-//   offset: i64,
-// ) -> impl Future<Output = lio::BufResult<i32, Vec<u8>>> {
-//   lio::write(self.0, buf, offset)
-// }
-//
-// pub fn write(
-//   &self,
-//   buf: Vec<u8>,
-// ) -> impl Future<Output = lio::BufResult<i32, Vec<u8>>> {
-//   self.pwrite(buf, -1)
-// }
-//
-// pub fn pread(
-//   &self,
-//   buf: Vec<u8>,
-//   offset: i64,
-// ) -> impl Future<Output = lio::BufResult<i32, Vec<u8>>> {
-//   lio::read(self.0, buf, offset)
-// }
-//
-// pub fn read(
-//   &self,
-//   buf: Vec<u8>,
-// ) -> impl Future<Output = lio::BufResult<i32, Vec<u8>>> {
-//   self.pread(buf, -1)
-// }

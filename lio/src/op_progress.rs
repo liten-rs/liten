@@ -293,7 +293,7 @@ where
       }
     }
 
-    let result = match *self {
+    match *self {
       #[cfg(linux)]
       OperationProgress::IoUring { id, _m } => check_done::<T>(id, cx),
       #[cfg(not(linux))]
@@ -309,9 +309,7 @@ where
         let result = operation.result(res.take().expect("Already awaited."));
         Poll::Ready(result)
       }
-    };
-
-    result
+    }
   }
 }
 

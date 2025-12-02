@@ -10,7 +10,7 @@ use std::{
   task::{Context, Poll},
 };
 
-use crate::loom::sync::Arc;
+use std::sync::Arc;
 
 use thiserror::Error;
 

@@ -134,7 +134,7 @@ impl Driver {
     #[cfg(not(linux))]
     {
       // Wake the poller so it can observe the shutdown flag
-      let _ = driver.poller.notify().unwrap();
+      driver.poller.notify().unwrap();
     };
     #[cfg(linux)]
     {
@@ -150,7 +150,7 @@ impl Driver {
       let _ = driver.inner.submit();
     };
 
-    let _ = sender.send(()).unwrap();
+    sender.send(()).unwrap();
 
     let mut _lock = driver.background_handle.lock();
     let handle = _lock.take().unwrap();
@@ -339,7 +339,7 @@ impl Driver {
         operation = std::any::type_name::<T>(),
         "submit: created polling operation"
       );
-      let _ = Driver::add_interest(
+      Driver::add_interest(
         &driver.poller,
         fd,
         operation_id,
@@ -442,7 +442,7 @@ impl Driver {
     unsafe {
       use std::os::fd::BorrowedFd;
 
-      poller.modify(&BorrowedFd::borrow_raw(fd), event)
+      poller.modify(BorrowedFd::borrow_raw(fd), event)
     }
   }
 
@@ -455,7 +455,7 @@ impl Driver {
     unsafe {
       use std::os::fd::BorrowedFd;
 
-      poller.delete(&BorrowedFd::borrow_raw(fd))
+      poller.delete(BorrowedFd::borrow_raw(fd))
     }
   }
   pub(crate) fn interest_wait(
@@ -500,7 +500,7 @@ impl Driver {
           Self::interest_wait(&self.poller).expect("background thread failed");
 
         #[cfg(feature = "tracing")]
-        if events.len() > 0 {
+        if events.is_empty() {
           tracing::debug!(
             event_count = events.len(),
             "background thread: received events"
@@ -526,7 +526,7 @@ impl Driver {
               if err.kind() == io::ErrorKind::WouldBlock
                 || err.raw_os_error() == Some(libc::EINPROGRESS) =>
             {
-              let _ = Self::modify_interest(&self.poller, entry.fd(), event)
+              Self::modify_interest(&self.poller, entry.fd(), event)
                 .expect("fd sure exists");
 
               continue;

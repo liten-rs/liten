@@ -1,7 +1,7 @@
 use std::mem::ManuallyDrop;
 use std::task::{RawWaker, RawWakerVTable, Waker};
 
-use crate::loom::{sync::Arc, thread};
+use std::{sync::Arc, thread};
 
 static RUNTIME_WAKER_VTABLE: RawWakerVTable =
   RawWakerVTable::new(waker_clone, waker_wake, waker_wake_by_ref, waker_drop);

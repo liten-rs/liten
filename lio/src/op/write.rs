@@ -52,7 +52,7 @@ impl Operation for Write {
     syscall!(pwrite(
       self.fd,
       self.buf.as_ref().unwrap().as_ptr() as *const _,
-      self.buf.as_ref().unwrap().len() as usize,
+      self.buf.as_ref().unwrap().len(),
       self.offset
     ))
     .map(|u| u as i32)

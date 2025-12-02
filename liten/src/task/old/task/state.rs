@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 use std::task::Waker;
 use std::{mem::MaybeUninit, ptr};
 
-use crate::loom::{
+use std::{
   cell::UnsafeCell,
   sync::atomic::{AtomicPtr, AtomicU8},
 };

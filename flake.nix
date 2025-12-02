@@ -32,6 +32,8 @@
               (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
               cargo-nextest
               cargo-hack
+              gnumake
+              rust-cbindgen
             ];
           in
           {

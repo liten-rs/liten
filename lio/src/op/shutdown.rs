@@ -36,6 +36,6 @@ impl Operation for Shutdown {
 
   #[cfg(not(linux))]
   fn run_blocking(&self) -> io::Result<i32> {
-    syscall!(shutdown(self.fd, self.how)).map(|t| t as i32)
+    syscall!(shutdown(self.fd, self.how))
   }
 }

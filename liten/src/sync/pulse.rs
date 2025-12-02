@@ -1,5 +1,5 @@
 mod imp;
-use crate::loom::sync::Arc;
+use std::sync::Arc;
 
 pub use imp::*;
 pub fn pulse() -> (imp::PulseSender, imp::PulseReceiver) {

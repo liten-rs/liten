@@ -82,6 +82,29 @@ jobs:
         # Hmmm not sure if I should put this into the matrix.
         run: nix develop .#ci -c cargo hack check --feature-powerset --lib --tests
 
+  lio-cbuild:
+    name: Check lio C build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        continue-on-error: false
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-build-cache
+
+      - name: Install cbindgen
+        run: cargo install cbindgen
+
+      - name: Run make lio-cbuild
+        run: nix develop .#ci -c make lio-cbuild
+
   nix-flake-check:
     runs-on: ubuntu-latest
     steps:

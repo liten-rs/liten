@@ -63,6 +63,79 @@ pub fn std_socketaddr_into_libc(addr: SocketAddr) -> libc::sockaddr_storage {
   storage.into_inner()
 }
 
+/// Converts a raw libc::sockaddr pointer and length into a safe std::net::SocketAddr.
+///
+/// # Safety
+///
+/// This function is highly unsafe. The caller must ensure:
+/// 1. `raw_addr_ptr` is a valid, non-null pointer to a properly initialized `sockaddr` struct.
+/// 2. The memory pointed to is valid for reading for the duration of the function call.
+/// 3. The length `addr_len` correctly specifies the size of the underlying structure (e.g., sizeof(sockaddr_in)).
+#[cfg(feature = "ffi")]
+pub fn sockaddr_to_socketaddr(
+  raw_addr_ptr: *const libc::sockaddr,
+  addr_len: libc::socklen_t,
+) -> Option<SocketAddr> {
+  if raw_addr_ptr.is_null() {
+    return None;
+  }
+
+  // Read the address family field to determine the actual type
+  let family = unsafe { *raw_addr_ptr }.sa_family as i32;
+
+  match family {
+    libc::AF_INET => {
+      // Check length consistency (optional but good practice)
+      if addr_len < mem::size_of::<libc::sockaddr_in>() as libc::socklen_t {
+        return None;
+      }
+
+      // Cast the general pointer to a specific IPv4 pointer
+      let raw_v4 = raw_addr_ptr as *const libc::sockaddr_in;
+      let sin_addr = unsafe { *raw_v4 }.sin_addr;
+      let sin_port = unsafe { *raw_v4 }.sin_port;
+
+      // Convert network byte order to host byte order for port
+      let port = u16::from_be(sin_port);
+
+      // `s_addr` is a u32 in network byte order; Ipv4Addr::from handles the conversion
+      let ipv4_addr = Ipv4Addr::from(u32::from_be(sin_addr.s_addr));
+
+      Some(SocketAddr::V4(SocketAddrV4::new(ipv4_addr, port)))
+    }
+    libc::AF_INET6 => {
+      // Check length consistency (optional but good practice)
+      if addr_len < mem::size_of::<libc::sockaddr_in6>() as libc::socklen_t {
+        return None;
+      }
+
+      // Cast the general pointer to a specific IPv6 pointer
+      let raw_v6 = raw_addr_ptr as *const libc::sockaddr_in6;
+      let sin6_addr = unsafe { *raw_v6 }.sin6_addr;
+      let sin6_port = unsafe { *raw_v6 }.sin6_port;
+      let sin6_flowinfo = unsafe { *raw_v6 }.sin6_flowinfo;
+      let sin6_scope_id = unsafe { *raw_v6 }.sin6_scope_id;
+
+      // Convert network byte order to host byte order for port
+      let port = u16::from_be(sin6_port);
+
+      // `s6_addr` is a [u8; 16] array; Ipv6Addr::from handles this directly
+      let ipv6_addr = Ipv6Addr::from(sin6_addr.s6_addr);
+
+      Some(SocketAddr::V6(SocketAddrV6::new(
+        ipv6_addr,
+        port,
+        u32::from_be(sin6_flowinfo), // Flow info and scope ID might need byte swap depending on platform/libc version
+        u32::from_be(sin6_scope_id),
+      )))
+    }
+    _ => {
+      // Address family is neither IPv4 nor IPv6 (e.g., AF_UNIX, AF_BLUETOOTH)
+      None
+    }
+  }
+}
+
 fn into_addr(addr: SocketAddrV4) -> libc::sockaddr_in {
   let mut _addr: libc::sockaddr_in = unsafe { mem::zeroed() };
 

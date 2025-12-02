@@ -5,7 +5,7 @@ use std::{
   task::{Context, Poll, Waker},
 };
 
-use crate::loom::sync::Arc;
+use std::sync::Arc;
 
 use thiserror::Error;
 

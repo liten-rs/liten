@@ -3,7 +3,6 @@
 
 #[macro_use]
 pub mod macros;
-mod loom;
 
 pub mod future;
 

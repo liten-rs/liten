@@ -12,12 +12,9 @@ use thiserror::Error;
 // #[cfg(feature = "time")]
 // use std::time::Duration;
 
-use crate::{
-  // future::Stream,
-  loom::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-  },
+use std::sync::{
+  atomic::{AtomicUsize, Ordering},
+  Arc,
 };
 
 pub fn bounded<T>(capacity: usize) -> (Sender<T>, Receiver<T>) {

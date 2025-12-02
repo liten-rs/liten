@@ -20,7 +20,7 @@ mod bind;
 mod close;
 mod connect;
 mod listen;
-mod net_utils;
+pub(crate) mod net_utils;
 mod openat;
 mod read;
 mod recv;
@@ -65,6 +65,7 @@ pub use write::*;
 trait Sealed {}
 impl<O: Operation> Sealed for O {}
 
+// Safety: Decides if resources can be leaked when using OperationProgress::detach
 #[allow(private_bounds)]
 pub unsafe trait DetachSafe: Sealed {}
 

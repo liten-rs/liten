@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::OnceLock, time::Duration};
 use crate::sync::mpmc;
 use private::JobRun;
 
-use crate::loom::{
+use std::{
   sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, Mutex,

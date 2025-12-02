@@ -2,11 +2,12 @@ use std::{
   cell::{Cell, RefCell},
   future::Future,
   marker::PhantomData,
+  sync::Arc,
   task::{Context, Poll},
+  thread,
 };
 
 use crate::{
-  loom::{sync::Arc, thread},
   runtime::scheduler::{single_threaded::SingleThreaded, Scheduler},
   task::{self, store::TaskStore},
 };
@@ -17,7 +18,7 @@ pub mod scheduler;
 pub(crate) mod waker;
 
 std::thread_local! {
-  static THREAD_RUNTIME: RefCell<Option<RuntimeHandle>> = RefCell::new(None);
+  static THREAD_RUNTIME: RefCell<Option<RuntimeHandle>> = const { RefCell::new(None) };
 }
 
 pub struct RuntimeHandle {

@@ -5,7 +5,7 @@ use std::{
   panic::{RefUnwindSafe, UnwindSafe},
 };
 
-use crate::loom::{
+use std::{
   sync::atomic::{AtomicBool, Ordering},
   thread,
 };
