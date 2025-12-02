@@ -91,7 +91,6 @@ fn test_ffi_bindings() {
   let lib_path = target_dir().join(&format!("liblio.{EXT}"));
   assert!(lib_path.exists(), "liblio.{} was not built", EXT);
   dbg!(std::fs::read_dir(target_dir()).unwrap().collect::<Vec<_>>());
-  panic!();
 
   // Create a simple C test file
   let c_source = target_dir().join("test_ffi_compile.c");
