@@ -247,9 +247,6 @@ impl<T: op::Operation> OperationProgress<T> {
   /// A easy way of calling non-async syscalls This method still makes use of
   /// lio's non-blocking core.
   ///
-  /// # Panics
-  /// Panics if the operation result cannot be received (should not happen under normal circumstances).
-  ///
   /// # Example
   /// ```rust
   /// # #[cfg(feature = "high")]
