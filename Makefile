@@ -5,7 +5,7 @@ doc:
 	RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --no-deps --all-features
 
 lio-cbuild:
-	cargo rustc -p lio --crate-type dylib --features ffi --release
+	cargo rustc -p lio --crate-type dylib --features unstable_ffi --release
 	cbindgen --crate lio --output lio/include/lio.h --cpp-compat &> /dev/null
 	echo "lio: built c api at: $(pwd)/target/release/liblio.(dylib|so|dll)"
 
