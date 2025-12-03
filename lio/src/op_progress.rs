@@ -268,15 +268,7 @@ impl<T: op::Operation> OperationProgress<T> {
     T::Result: Send,
     T: Send + 'static,
   {
-    let (sender, receiver) = oneshot::channel();
-
-    self.when_done(move |res| {
-      sender.send(res).expect(
-        "lio internal error: Receiver was dropped before value was received.",
-      );
-    });
-
-    receiver.recv().expect(
+    self.get_receiver().recv().expect(
       "lio internal error: Receiver was dropped before value was received.",
     )
   }
