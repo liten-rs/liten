@@ -85,8 +85,87 @@ pub extern "C" fn lio_fsync(fd: libc::c_int, callback: extern "C" fn(i32)) {
   });
 }
 
-// write todo
-// read todo
+/// Write data to a file descriptor.
+///
+/// # Parameters
+/// - `fd`: File descriptor to write to
+/// - `buf`: Pointer to the buffer containing data to write
+/// - `buf_len`: Length of the buffer in bytes
+/// - `offset`: File offset to write at (-1 for current position)
+/// - `callback`: Called with (result_code, buf_ptr, buf_len) when complete
+///
+/// # Safety
+/// - `buf` must be valid for `buf_len` bytes.
+/// - The buffer ownership is transferred to lio and returned via callback.
+/// - Caller must not modify or free the buffer until callback is invoked. It is
+///   undefined behaviour if it does.
+/// - The callback must free the buffer.
+#[unsafe(no_mangle)]
+pub extern "C" fn lio_write(
+  fd: libc::c_int,
+  buf: *mut u8,
+  buf_len: usize,
+  offset: i64,
+  callback: extern "C" fn(i32, *mut u8, usize),
+) {
+  // Take ownership of the buffer
+  let buf_vec = unsafe { Vec::from_raw_parts(buf, buf_len, buf_len) };
+
+  crate::write(fd, buf_vec, offset).when_done(move |(res, mut buf)| {
+    let result_code = match res {
+      Ok(n) => n,
+      Err(err) => err.raw_os_error().unwrap_or(-1),
+    };
+
+    // Return buffer ownership to caller
+    let buf_ptr = buf.as_mut_ptr();
+    let buf_len = buf.len();
+    std::mem::forget(buf); // Prevent deallocation
+
+    callback(result_code, buf_ptr, buf_len);
+  });
+}
+
+/// Read data from a file descriptor.
+///
+/// # Parameters
+/// - `fd`: File descriptor to read from
+/// - `buf`: Pointer to the buffer to read into
+/// - `buf_len`: Length of the buffer in bytes
+/// - `offset`: File offset to read from (-1 for current position)
+/// - `callback`: Called with (result_code, buf_ptr, buf_len) when complete
+///
+/// # Safety
+/// - `buf` must be valid for `buf_len` bytes.
+/// - The buffer ownership is transferred to lio and returned via callback.
+/// - Caller must not modify or free the buffer until callback is invoked. It is
+///   undefined behaviour if it does.
+/// - The callback must free the buffer.
+#[unsafe(no_mangle)]
+pub extern "C" fn lio_read(
+  fd: libc::c_int,
+  buf: *mut u8,
+  buf_len: usize,
+  offset: i64,
+  callback: extern "C" fn(i32, *mut u8, usize),
+) {
+  // Take ownership of the buffer
+  let buf_vec = unsafe { Vec::from_raw_parts(buf, buf_len, buf_len) };
+
+  crate::read(fd, buf_vec, offset).when_done(move |(res, mut buf)| {
+    let result_code = match res {
+      Ok(n) => n,
+      Err(err) => err.raw_os_error().unwrap_or(-1),
+    };
+
+    // Return buffer ownership to caller
+    let buf_ptr = buf.as_mut_ptr();
+    let buf_len = buf.len();
+    std::mem::forget(buf); // Prevent deallocation
+
+    callback(result_code, buf_ptr, buf_len);
+  });
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn lio_truncate(
@@ -178,8 +257,87 @@ pub extern "C" fn lio_listen(
   });
 }
 
-// send: TODO
-// recv: TODO
+/// Send data to a socket.
+///
+/// # Parameters
+/// - `fd`: Socket file descriptor
+/// - `buf`: Pointer to the buffer containing data to send
+/// - `buf_len`: Length of the buffer in bytes
+/// - `flags`: Send flags (e.g., MSG_DONTWAIT)
+/// - `callback`: Called with (result_code, buf_ptr, buf_len) when complete
+///
+/// # Safety
+/// - `buf` must be valid for `buf_len` bytes.
+/// - The buffer ownership is transferred to lio and returned via callback.
+/// - Caller must not modify or free the buffer until callback is invoked. It is
+///   undefined behaviour if it does.
+/// - The callback must free the buffer.
+#[unsafe(no_mangle)]
+pub extern "C" fn lio_send(
+  fd: libc::c_int,
+  buf: *mut u8,
+  buf_len: usize,
+  flags: i32,
+  callback: extern "C" fn(i32, *mut u8, usize),
+) {
+  // Take ownership of the buffer
+  let buf_vec = unsafe { Vec::from_raw_parts(buf, buf_len, buf_len) };
+
+  crate::send(fd, buf_vec, Some(flags)).when_done(move |(res, mut buf)| {
+    let result_code = match res {
+      Ok(n) => n,
+      Err(err) => err.raw_os_error().unwrap_or(-1),
+    };
+
+    // Return buffer ownership to caller
+    let buf_ptr = buf.as_mut_ptr();
+    let buf_len = buf.len();
+    std::mem::forget(buf); // Prevent deallocation
+
+    callback(result_code, buf_ptr, buf_len);
+  });
+}
+
+/// Receive data from a socket.
+///
+/// # Parameters
+/// - `fd`: Socket file descriptor
+/// - `buf`: Pointer to the buffer to receive into
+/// - `buf_len`: Length of the buffer in bytes
+/// - `flags`: Receive flags (e.g., MSG_PEEK)
+/// - `callback`: Called with (result_code, buf_ptr, buf_len) when complete
+///
+/// # Safety
+/// - `buf` must be valid for `buf_len` bytes.
+/// - The buffer ownership is transferred to lio and returned via callback.
+/// - Caller must not modify or free the buffer until callback is invoked. It is
+///   undefined behaviour if it does.
+/// - The callback must free the buffer.
+#[unsafe(no_mangle)]
+pub extern "C" fn lio_recv(
+  fd: libc::c_int,
+  buf: *mut u8,
+  buf_len: usize,
+  flags: i32,
+  callback: extern "C" fn(i32, *mut u8, usize),
+) {
+  // Take ownership of the buffer
+  let buf_vec = unsafe { Vec::from_raw_parts(buf, buf_len, buf_len) };
+
+  crate::recv(fd, buf_vec, Some(flags)).when_done(move |(res, mut buf)| {
+    let result_code = match res {
+      Ok(n) => n,
+      Err(err) => err.raw_os_error().unwrap_or(-1),
+    };
+
+    // Return buffer ownership to caller
+    let buf_ptr = buf.as_mut_ptr();
+    let buf_len = buf.len();
+    std::mem::forget(buf); // Prevent deallocation
+
+    callback(result_code, buf_ptr, buf_len);
+  });
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn lio_close(fd: libc::c_int, callback: extern "C" fn(i32)) {

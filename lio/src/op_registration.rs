@@ -38,9 +38,6 @@ impl OpCallback {
     let callback = unsafe { Box::from_raw(callback_ptr as *mut F) };
 
     match reg.try_extract::<T>() {
-      TryExtractOutcome::HasCancelled => {
-        println!("cancelling");
-      }
       TryExtractOutcome::StillWaiting => panic!("wtf??"),
       TryExtractOutcome::Done(res) => callback(res),
     };
@@ -76,10 +73,6 @@ pub enum OpRegistrationStatus {
   Waiting {
     notifier: Option<OpNotification>,
   },
-  /// This operation is not tied to any entity waiting for it, either because they got dropped or
-  /// because they weren't interested in the result.
-  // TODO: implement.
-  Cancelling,
   Done {
     // TODO: wtf
     // #[cfg_attr(not(feature = "high"), allow(unused))]
@@ -131,7 +124,6 @@ impl OpNotification {
 pub enum TryExtractOutcome<T = io::Result<i32>> {
   Done(T),
   StillWaiting,
-  HasCancelled,
 }
 
 impl OpRegistration {
@@ -184,7 +176,6 @@ impl OpRegistration {
       OpRegistrationStatus::Waiting { notifier: _ } => {
         TryExtractOutcome::StillWaiting
       }
-      OpRegistrationStatus::Cancelling => TryExtractOutcome::HasCancelled,
       OpRegistrationStatus::Done { ref mut ret, before_notifier: _ } => {
         let res = ret.take().expect("Already taken ret value after done");
 
@@ -200,9 +191,6 @@ impl OpRegistration {
   #[cfg(feature = "high")]
   pub fn set_waker(&mut self, waker: Waker) {
     let notifier = match self.status {
-      OpRegistrationStatus::Cancelling => {
-        unreachable!("internal lio: not allowed.")
-      }
       // Fixes datarace when operation is done before registering callback/waker.
       OpRegistrationStatus::Done { ref before_notifier, .. } => {
         if *before_notifier {
@@ -231,12 +219,6 @@ impl OpRegistration {
   }
   pub fn set_callback(&mut self, callback: OpCallback) {
     let notifier = match self.status {
-      OpRegistrationStatus::Cancelling => {
-        // Not doing anything here (right??).
-        // let _ = callback;
-        // return;
-        unreachable!("internal lio: not allowed.");
-      }
       OpRegistrationStatus::Done { ref before_notifier, .. } => {
         if *before_notifier {
           callback.call(self);
@@ -280,7 +262,6 @@ impl OpRegistration {
 
     let before_notifier = match &self.status {
       OpRegistrationStatus::Waiting { notifier } => notifier.is_none(),
-      OpRegistrationStatus::Cancelling => unimplemented!(),
       OpRegistrationStatus::Done { .. } => {
         unreachable!("set done whilst already done?")
       }
@@ -295,7 +276,6 @@ impl OpRegistration {
       OpRegistrationStatus::Done { .. } => {
         unreachable!("See couple of lines up unreachable statement.")
       }
-      OpRegistrationStatus::Cancelling => unreachable!("Invalid path"),
       OpRegistrationStatus::Waiting { notifier } => {
         if let Some(mut notifier) = notifier {
           notifier.extract_notification()

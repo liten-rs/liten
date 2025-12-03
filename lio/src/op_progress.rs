@@ -289,13 +289,12 @@ where
           Driver::get().set_waker(id, cx.waker().clone());
           Poll::Pending
         }
-        TryExtractOutcome::HasCancelled => todo!(),
       }
     }
 
     match *self {
       #[cfg(linux)]
-      OperationProgress::IoUring { id, _m } => check_done::<T>(id, cx),
+      OperationProgress::IoUring { id, _m: _ } => check_done::<T>(id, cx),
       #[cfg(not(linux))]
       OperationProgress::Poll { id } => check_done::<T>(id, cx),
       #[cfg(not(linux))]

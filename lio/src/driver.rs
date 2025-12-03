@@ -176,7 +176,6 @@ impl Driver {
         TryExtractOutcome::Done(res)
       }
       TryExtractOutcome::StillWaiting => TryExtractOutcome::StillWaiting,
-      TryExtractOutcome::HasCancelled => TryExtractOutcome::HasCancelled,
     }
   }
   pub(crate) fn set_callback<T, F>(&self, id: u64, callback: F)
