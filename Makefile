@@ -14,4 +14,4 @@ lio-test:
 	./lio/tests/nix-build/test.sh
 
 check-flags:
-	RUSTFLAGS="--cfg lio_unstable_ffi" cargo hack check --feature-powerset --lib --tests
+	cargo hack check --feature-powerset --lib --tests
