@@ -4,7 +4,4 @@ fn main() {
       macos: { target_os = "macos" },
       apple: { target_vendor = "apple" }
   }
-
-  // #[cfg(feature = "ffi")]
-  // cbindgen::generate(".").unwrap();
 }

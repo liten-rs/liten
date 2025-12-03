@@ -71,7 +71,7 @@ pub fn std_socketaddr_into_libc(addr: SocketAddr) -> libc::sockaddr_storage {
 /// 1. `raw_addr_ptr` is a valid, non-null pointer to a properly initialized `sockaddr` struct.
 /// 2. The memory pointed to is valid for reading for the duration of the function call.
 /// 3. The length `addr_len` correctly specifies the size of the underlying structure (e.g., sizeof(sockaddr_in)).
-#[cfg(feature = "ffi")]
+#[cfg(feature = "unstable_ffi")]
 pub fn sockaddr_to_socketaddr(
   raw_addr_ptr: *const libc::sockaddr,
   addr_len: libc::socklen_t,

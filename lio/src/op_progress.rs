@@ -210,6 +210,20 @@ impl<T: op::Operation> OperationProgress<T> {
     }
   }
 
+  /// Convert the operation into a channel receiver.
+  ///
+  /// Returns a oneshot receiver that will receive the operation result when complete.
+  /// Useful for integrating with channel-based async code or when you need to wait
+  /// for the result in a different context than where the operation was started.
+  ///
+  /// # Example
+  /// ```rust
+  /// # #[cfg(feature = "high")]
+  /// # {
+  /// let receiver = lio::read(fd, buf, 0).get_receiver();
+  /// let (result, buffer) = receiver.recv().unwrap();
+  /// # }
+  /// ```
   #[cfg(feature = "high")]
   pub fn get_receiver(self) -> oneshot::Receiver<T::Result>
   where
@@ -223,6 +237,44 @@ impl<T: op::Operation> OperationProgress<T> {
     });
 
     receiver
+  }
+
+  /// Block the current thread until the operation completes and return the result.
+  /// A easy way of calling non-async syscalls This method still makes use of
+  /// lio's non-blocking core.
+  ///
+  /// # Panics
+  /// Panics if the operation result cannot be received (should not happen under normal circumstances).
+  ///
+  /// # Example
+  /// ```rust
+  /// # #[cfg(feature = "high")]
+  /// # {
+  /// # let fd = 0;
+  /// let (result, buffer) = lio::listen(fd, 128).blocking();
+  /// match result {
+  ///     Ok(bytes_read) => println!("Read {} bytes", bytes_read),
+  ///     Err(e) => eprintln!("Error: {}", e),
+  /// }
+  /// # }
+  /// ```
+  #[cfg(feature = "high")]
+  pub fn blocking(self) -> T::Result
+  where
+    T::Result: Send,
+    T: Send + 'static,
+  {
+    let (sender, receiver) = oneshot::channel();
+
+    self.when_done(move |res| {
+      sender.send(res).expect(
+        "lio internal error: Receiver was dropped before value was received.",
+      );
+    });
+
+    receiver.recv().expect(
+      "lio internal error: Receiver was dropped before value was received.",
+    )
   }
 }
 

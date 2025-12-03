@@ -13,12 +13,12 @@ build = "build.rs"
 
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--cfg", "docsrs", "--cfg", "lio_unstable_ffi"]
+rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 tracing = ["dep:tracing"]
 high = ["dep:oneshot"]
-ffi = []
+unstable_ffi = []
 
 [dependencies]
 parking_lot = { version = "0.12" }

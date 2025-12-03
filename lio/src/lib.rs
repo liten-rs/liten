@@ -68,8 +68,7 @@
 //! that return buffers. Errors are automatically converted from platform-specific
 //! error codes to Rust's standard I/O error types.
 
-#[cfg(feature = "ffi")]
-#[cfg_attr(docsrs, doc(cfg(all(feature = "ffi", lio_unstable_ffi))))]
+#[cfg(feature = "unstable_ffi")]
 pub mod ffi;
 use std::{
   ffi::{CString, NulError},
@@ -101,35 +100,6 @@ pub use op_progress::OperationProgress;
 use crate::driver::Driver;
 use std::path::Path;
 
-// #[cfg(feature = "ffi")]
-// #[unsafe(no_mangle)]
-// pub extern "C" fn lio_listen(
-//   fd: RawFd,
-//   backlog: i32,
-//   callback: extern "C" fn(i32),
-// ) {
-//   listen(fd, backlog).when_done(move |res| {
-//     let res = match res.map_err(|err| err.raw_os_error().unwrap()) {
-//       Ok(_) => 0,
-//       Err(err) => err,
-//     };
-//     callback(res)
-//   });
-// }
-//
-// #[cfg(feature = "ffi")]
-// #[unsafe(no_mangle)]
-// pub extern "C" fn lio_close(fd: RawFd, callback: extern "C" fn(i32)) {
-//   close(fd).when_done(move |res| {
-//     let res = match res.map_err(|err| err.raw_os_error().unwrap()) {
-//       Ok(_) => 0,
-//       Err(err) => err,
-//     };
-//     callback(res)
-//   });
-// }
-//
-
 macro_rules! impl_op {
   // Internal helper: Generate function with common documentation
   (@impl_fn
@@ -156,7 +126,7 @@ macro_rules! impl_op {
     $operation:ident, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty ; $err:ty
   ) => {
     impl_op!(
-      concat!($desc, "\n\n**Not detach safe**\n: This method can be dangerous to call when_done on. It is not `detach safe' which means that resources will not be cleaned up if not handled carefully."),
+      concat!($desc, "\n\n### Detach safe\n This method is not [`detach safe`](crate::DetachSafe), which means that resources _**will**_ leak if not handled carefully."),
       $(#[$($doc)*])*
       $operation,
       fn $name($($arg: $arg_ty),*) -> $ret:ty ; $err:ty
@@ -170,7 +140,7 @@ macro_rules! impl_op {
     $operation:ident, fn $name:ident ( $($arg:ident: $arg_ty:ty),* ) -> $ret:ty
   ) => {
     impl_op!(
-      concat!($desc, "\n\n**Not detach safe**\n: This method can be dangerous to call when_done on. It is not `detach safe` which means that resources will not be cleaned up if not handled carefully."),
+      concat!($desc, "\n\n### Detach safe\n This method is not [`detach safe`](crate::DetachSafe), which means that resources _**will**_ leak if not handled carefully."),
       $(#[$($doc)*])*
       $operation,
       fn $name($($arg: $arg_ty),*) -> $ret
@@ -385,6 +355,7 @@ impl_op!(
 );
 
 impl_op!(
+  !detach
   "Accepts a connection on a listening socket.",
   /// # Examples
   ///
