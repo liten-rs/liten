@@ -220,6 +220,10 @@ impl<T: op::Operation> OperationProgress<T> {
   /// ```rust
   /// # #[cfg(feature = "high")]
   /// # {
+  /// # let fd = 0;
+  /// // Some fd defined.
+  /// // ...
+  /// let buf = vec![0; 10];
   /// let receiver = lio::read(fd, buf, 0).get_receiver();
   /// let (result, buffer) = receiver.recv().unwrap();
   /// # }
@@ -251,9 +255,9 @@ impl<T: op::Operation> OperationProgress<T> {
   /// # #[cfg(feature = "high")]
   /// # {
   /// # let fd = 0;
-  /// let (result, buffer) = lio::listen(fd, 128).blocking();
+  /// let result = lio::listen(fd, 128).blocking();
   /// match result {
-  ///     Ok(bytes_read) => println!("Read {} bytes", bytes_read),
+  ///     Ok(()) => println!("success"),
   ///     Err(e) => eprintln!("Error: {}", e),
   /// }
   /// # }
