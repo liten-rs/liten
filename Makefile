@@ -14,5 +14,7 @@ lio-test:
 	./lio/tests/ffi/test.sh
 	./lio/tests/nix-build/test.sh
 
+test: lio-test
+
 check-flags:
 	cargo hack check --feature-powerset --lib --tests

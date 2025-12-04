@@ -96,6 +96,7 @@ mod op_progress;
 mod op_registration;
 
 mod backends;
+pub use backends::IoBackend;
 
 pub use op_progress::OperationProgress;
 

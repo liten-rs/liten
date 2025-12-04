@@ -64,10 +64,7 @@ pub type Default = backends::IoUring;
 #[cfg(not(linux))]
 pub type Default = backends::Polling;
 
-pub(crate) struct Driver<Io = Default>
-where
-  Io: IoBackend,
-{
+pub(crate) struct Driver<Io = Default> {
   driver: Io,
   store: OpStore,
   // Shared shutdown state and background thread handle

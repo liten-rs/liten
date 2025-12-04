@@ -67,8 +67,6 @@ impl IoBackend for IoUring {
 
       let operation_id = io_entry.user_data();
 
-      // let mut _lock = self.wakers.lock();
-
       // If the operation id is not registered (e.g., wake-up NOP), skip.
       let Some(set_done_result) = store.get_mut(operation_id, |entry| {
         entry.set_done(Self::from_i32_to_io_result(io_entry.result()))

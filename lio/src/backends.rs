@@ -8,7 +8,6 @@ pub use io_uring::*;
 pub use polling::*;
 
 pub trait IoBackend {
-  // fn init() -> Self;
   fn tick(&self, store: &OpStore, can_wait: bool);
   fn submit<O>(&self, op: O, store: &OpStore) -> OperationProgress<O>
   where
