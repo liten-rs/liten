@@ -29,6 +29,8 @@ mod socket;
 
 mod fsync;
 mod linkat;
+#[cfg(linux)]
+pub mod nop;
 mod shutdown;
 mod symlink;
 #[cfg(linux)]
@@ -45,6 +47,8 @@ pub use connect::*;
 pub use fsync::*;
 pub use linkat::*;
 pub use listen::*;
+#[cfg(linux)]
+pub(crate) use nop::*;
 pub use openat::*;
 pub use read::*;
 pub use recv::*;
@@ -72,8 +76,7 @@ pub unsafe trait DetachSafe: Sealed {}
 // Things that implement this trait represent a command that can be executed using io-uring.
 #[allow(private_bounds)]
 pub trait Operation: Sealed {
-  type Output: Sized;
-  type Result; // = most often io::Result<Self::Output>;
+  type Result;
   /// This is guarranteed to fire after this has completed and only fire ONCE.
   /// i32 is guarranteed to be >= 0.
   fn result(&mut self, _ret: io::Result<i32>) -> Self::Result;

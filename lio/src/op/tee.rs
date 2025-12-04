@@ -23,8 +23,7 @@ impl Operation for Tee {
   #[cfg(linux)]
   const OPCODE: u8 = 33;
 
-  type Result = io::Result<Self::Output>;
-  type Output = i32;
+  type Result = io::Result<i32>;
 
   #[cfg(linux)]
   fn create_entry(&mut self) -> io_uring::squeue::Entry {

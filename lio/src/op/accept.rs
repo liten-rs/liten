@@ -33,8 +33,7 @@ impl Accept {
 }
 
 impl Operation for Accept {
-  type Output = (RawFd, SocketAddr);
-  type Result = std::io::Result<Self::Output>;
+  type Result = std::io::Result<(RawFd, SocketAddr)>;
 
   fn result(&mut self, res: std::io::Result<i32>) -> Self::Result {
     Ok((res?, libc_socketaddr_into_std(self.addr.get())?))

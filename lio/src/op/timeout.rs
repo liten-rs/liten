@@ -29,8 +29,7 @@ impl Timeout {
 }
 
 impl Operation for Timeout {
-  type Output = ();
-  type Result = std::io::Result<Self::Output>;
+  type Result = std::io::Result<()>;
   fn result(&mut self, res: std::io::Result<i32>) -> Self::Result {
     match res {
       Ok(v) => {

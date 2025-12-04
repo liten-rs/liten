@@ -24,8 +24,7 @@ impl Recv {
 }
 
 impl Operation for Recv {
-  type Output = i32;
-  type Result = BufResult<Self::Output, Vec<u8>>;
+  type Result = BufResult<i32, Vec<u8>>;
 
   #[cfg(linux)]
   const OPCODE: u8 = 27;

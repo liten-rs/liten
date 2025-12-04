@@ -1,8 +1,6 @@
 // NOTE: OpRegistration should **NEVER** impl Sync.gg
 use std::io;
 
-#[cfg(not(linux))]
-use std::os::fd::RawFd;
 #[cfg(feature = "high")]
 use std::task::Waker;
 
@@ -12,7 +10,7 @@ pub struct OpCallback {
   callback: *const (),
   call_callback_fn: fn(*const (), &mut OpRegistration),
 }
-//
+
 impl OpCallback {
   pub fn new<T, F>(callback: F) -> Self
   where
@@ -54,9 +52,6 @@ pub struct OpRegistration {
   op_fn_drop: fn(*const ()), // Function to properly drop the operation
   #[cfg(not(linux))]
   op_fn_run_blocking: fn(*const ()) -> std::io::Result<i32>, // Function to properly drop the operation
-
-  #[cfg(not(linux))]
-  fd: RawFd,
 }
 
 impl Drop for OpRegistration {
@@ -130,12 +125,8 @@ impl OpRegistration {
   fn op_ptr(&self) -> *const () {
     self.op.expect("trying to run run_blocking after result")
   }
-  #[cfg(not(linux))]
-  pub(crate) fn fd(&self) -> RawFd {
-    self.fd
-  }
 
-  pub fn new<T>(op: Box<T>, #[cfg(not(linux))] fd: RawFd) -> Self
+  pub fn new<T>(op: Box<T>) -> Self
   where
     T: Operation,
   {
@@ -158,8 +149,6 @@ impl OpRegistration {
       #[cfg(not(linux))]
       op_fn_run_blocking: op_fn_run_blocking::<T>,
       status: OpRegistrationStatus::Waiting { notifier: None },
-      #[cfg(not(linux))]
-      fd,
     }
   }
 

@@ -95,6 +95,8 @@ use op::*;
 mod op_progress;
 mod op_registration;
 
+mod backends;
+
 pub use op_progress::OperationProgress;
 
 use crate::driver::Driver;
@@ -495,16 +497,28 @@ impl_op!(
   Tee, fn tee(fd_in: RawFd, fd_out: RawFd, size: u32) -> std::io::Result<()>
 );
 
-/// Shut down the lio I/O driver background thread(s) and release OS resources.
+// / Shut down the lio I/O driver background thread(s) and release OS resources.
+// /
+// / After calling this, further I/O operations in this process are unsupported.
+// / Calling shutdown more than once will panic.
+// pub fn exit() {
+//   Driver::shutdown()
+// }
+
+pub fn tick() {
+  Driver::get().tick(false)
+}
+
+/// Deallocates the lio I/O driver, freeing all resources.
 ///
-/// After calling this, further I/O operations in this process are unsupported.
-/// Calling shutdown more than once will panic.
+/// This must be called after `exit()` to properly clean up the driver.
+/// Calling this before `exit()` or when the driver is not initialized will panic.
 pub fn exit() {
-  Driver::shutdown()
+  Driver::exit()
 }
 
 // #[cfg(any(loom, test))]
 #[doc(hidden)]
 pub fn init() {
-  let _ = Driver::get();
+  Driver::init();
 }
